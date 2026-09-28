@@ -509,10 +509,11 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <div class="ohead"><div><div class="kicker">SOURCES &amp; ASSUMPTIONS</div><h2 style="margin:4px 0 0;font-size:19px;">基準時点・出典・推定している所</h2></div><button class="closebtn" id="close-src" type="button">×</button></div>
     <div class="srcbody" style="font-size:12.5px;line-height:1.75;color:#d9d0b8">
       <p style="margin:0 0 10px"><b style="color:#e6a94d">基準時点:</b> 2027年春を想定しています（岡山駅前広場への路面電車の乗り入れが完成した後の姿。岡山市の公表では完成予定は 令和9年3月）。建物はそれより前（PLATEAU 2025年度）のデータなので、その後に建った・無くなった建物は反映されていません。</p>
+      <p style="margin:0 0 10px"><b style="color:#e6a94d">地図の範囲:</b> 東西 約6.9km × 南北 約6.4km（PLATEAU の 3 次メッシュ 6×7 区画）。北は岡山大学（津島）、南は大元駅・青江、東は操山（山頂を含む）まで。範囲の外は、国土地理院の標高と空中写真による遠景（建物・道路なし）です。</p>
       <p style="margin:0 0 4px"><b style="color:#e6a94d">出典（実際のデータ）</b></p>
       <ul style="margin:0 0 10px;padding-left:18px">
-        <li>建物（外壁写真・形）・車道・歩道・交通島・植生・地形: 国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0</li>
-        <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL、2026年9月に取得）</li>
+        <li>建物（外壁写真・形）・車道・歩道・交通島・植生・地形: 国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0。建物の外壁写真と、車道・歩道を分けた道路データは中心部（岡山駅〜表町〜岡山城の周り）だけで、その外の建物は箱形（高さは実測）、道路は道路の範囲だけのデータです</li>
+        <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL。中心部〔旧範囲〕は 2026年9月26日時点、広げた所は 9月28日時点のデータ）</li>
         <li>地面・屋根の航空写真: 国土地理院 シームレス空中写真（撮影時期は場所によって異なります）。遠景: 国土地理院 標高タイル・空中写真</li>
         <li>バスの停留所の順序: 晴れバスナビ（岡山の時刻表検索）。岡山駅東口ののりば: 岡山駅東口バスのりば行き先案内</li>
         <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材</li>
@@ -528,6 +529,8 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
         <li>JR の列車の本数（昼間の平均的な値）・車両の形と色・新幹線の高架の高さ（地面＋10.5m）・在来線のホーム（上屋の範囲から推定）: 仮定・簡略</li>
         <li>天満屋バスステーションの両備バスののりば（4番）: 推定</li>
         <li>路面電車・車・バスの加減速: 一般的な性能値による</li>
+        <li>中心部の外の建物の外壁（色・窓割り）: PLATEAU の用途・構造・建築年・階数から推定（写真ではありません）</li>
+        <li>中心部の外の道路の車道と歩道の分け方: PLATEAU の道路の範囲を、OSM の道路の種類・車線数で分けて推定。PLATEAU に道路面の無い道路（中心部の外の車道の約1.4%）は、OSM の中心線から幅を推定して作成</li>
         <li>夜の窓明かり: 乱数で点灯（実際の窓の位置とは一致しません）。袖看板は業種の一般名だけ（実在の店名ではありません）</li>
         <li>後楽園の建物の屋根材・岡山城の石垣の質感: 推定。岡山城天守のライトアップは、毎日 日没〜24時の白色の照明を再現（期間限定の色は再現していません）</li>
       </ul>
@@ -778,6 +781,73 @@ function facadeMaterial(kind){
   return m;
 }
 
+/* v29: データ範囲（地形・道路・建物のある所）。scene.json の drive 格子の範囲 */
+function dataIn(x, z, m){ const d = S.scene && S.scene.drive; if(!d) return false; m = m || 0;
+  return x > d.x0 + m && x < d.x0 + d.nx * d.step - m && z > d.z0 + m && z < d.z0 + d.nz * d.step - m; }
+/* ---------------- v29: 航空写真のページ（1024m 四方・0.5m/画素）を近くだけ読み込む ----------------
+   範囲を広げたので、全部のページを最初に読むと重い（GPU のメモリ）。範囲全体の縮小写真（2m/画素, ortho_ov）を先に読み、
+   近くのページだけ元の解像度で読む。ページを使う面（近くの地面・屋根）は、ページが無い間は縮小写真を同じ位置に貼る */
+const OrthoPages = (() => {
+  let ovTex = null, OV = null, active = false;
+  const tex = [], loading = new Set(), regs = new Map(), pmats = new Map(), omats = new Map();
+  let lastT = 0;
+  function setOverview(t, meta){ ovTex = t; OV = meta; active = true; }
+  function ovMat(p, kind){
+    const key = kind + p; if(omats.has(key)) return omats.get(key);
+    const pg = S.scene.ortho[p];
+    const T = new THREE.Vector4(pg.size / OV.w, pg.size / OV.d, (pg.x0 - OV.x0) / OV.w, 1 - (pg.z0 - OV.z0 + pg.size) / OV.d);
+    const m = kind === "roof" ? new THREE.MeshLambertMaterial({ map:ovTex, emissive:0x1c1c1c, emissiveMap:ovTex }) : new THREE.MeshLambertMaterial({ map:ovTex });
+    m.customProgramCacheKey = () => "ovT_" + kind;
+    m.onBeforeCompile = (sh) => { sh.uniforms.uOvT = { value:T };
+      sh.vertexShader = "uniform vec4 uOvT;\n" + sh.vertexShader.replace("#include <uv_vertex>", "#ifdef USE_UV\n vUv = uv * uOvT.xy + uOvT.zw;\n#endif"); };
+    if(kind === "roof") Env.patch(m, "ortho");
+    omats.set(key, m); return m;
+  }
+  function pageMat(p, kind){
+    const key = kind + p; if(pmats.has(key)) return pmats.get(key);
+    const t = tex[p];
+    const m = kind === "roof" ? new THREE.MeshLambertMaterial({ map:t, emissive:0x1c1c1c, emissiveMap:t }) : new THREE.MeshLambertMaterial({ map:t });
+    if(kind === "roof") Env.patch(m, "ortho");
+    pmats.set(key, m); return m;
+  }
+  function mat(p, kind){ return tex[p] ? pageMat(p, kind) : ovMat(p, kind); }
+  function reg(mesh, p, kind){ mesh.userData.op = p; mesh.userData.ok = kind; let s = regs.get(p); if(!s){ s = new Set(); regs.set(p, s); } s.add(mesh); }
+  function unreg(mesh){ const p = mesh.userData.op; if(p === undefined) return; const s = regs.get(p); if(s) s.delete(mesh); }
+  function swap(p){ const s = regs.get(p); if(s) for(const m of s) m.material = mat(p, m.userData.ok); }
+  function dist(p, c, lift){ const P = S.scene.ortho[p]; const dx = Math.max(P.x0 - c.x, 0, c.x - (P.x0 + P.size)), dz = Math.max(P.z0 - c.z, 0, c.z - (P.z0 + P.size)); return Math.hypot(dx, dz, lift); }
+  // 読む範囲: 地面の細かい面（GROUND_NEAR）より広く。ヘリで高く上がると広げる（最大 MAXP 枚。v28 までは全部で 12 枚を常に持っていた）
+  const MAXP = 20;
+  function radius(agl){ return 1300 + Math.min(1500, agl * 2.5); }
+  function tick(c, lift, agl){
+    if(!active) return;
+    const now = performance.now(); if(now - lastT < 400) return; lastT = now;
+    const R_IN = radius(agl), R_OUT = R_IN + 350;
+    const n = S.scene.ortho.length, d = new Array(n);
+    for(let p = 0; p < n; p++) d[p] = dist(p, c, lift);
+    const want = [...Array(n).keys()].filter(p => d[p] < R_IN).sort((a, b) => d[a] - d[b]).slice(0, MAXP), wset = new Set(want);
+    for(let p = 0; p < n; p++) if(tex[p] && (d[p] > R_OUT || (!wset.has(p) && d[p] > R_IN))) release(p);
+    for(const p of want){ if(tex[p] || loading.has(p)) continue; if(loading.size >= 2) break; load(p); }
+  }
+  function load(p){
+    loading.add(p);
+    return loadTex(S.scene.ortho[p].file).then(t => { loading.delete(p); if(!t) return; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); tex[p] = t; swap(p); });
+  }
+  function release(p){
+    const t = tex[p]; delete tex[p];
+    swap(p);
+    for(const k of ["roof", "ground"]){ const m = pmats.get(k + p); if(m){ m.dispose(); pmats.delete(k + p); } }
+    if(t) t.dispose();
+  }
+  // 最初の画面: 出発地点の周りのページを読み終わるまで待つ
+  async function prime(c){
+    if(!active) return;
+    const n = S.scene.ortho.length, R_IN = radius(0);
+    const want = [...Array(n).keys()].filter(p => dist(p, c, 0) < R_IN).sort((a, b) => dist(a, c, 0) - dist(b, c, 0)).slice(0, MAXP);
+    await Promise.all(want.map(p => load(p)));
+  }
+  return { setOverview, mat, reg, unreg, tick, prime, get active(){ return active; }, get ovTex(){ return ovTex; }, get OV(){ return OV; },
+           get loadedCount(){ return tex.filter(Boolean).length; } };
+})();
 /* ---------------- 読み込み ---------------- */
 let loaded=0, toLoad=1;
 function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; }
@@ -805,7 +875,7 @@ const Env = (() => {
   };
   const st = { time:"noon", rain:false };
   const NIGHT_U = { value:0 }, WET_U = { value:0 };
-  const patched = new Set();
+  const patched = new WeakSet();   // v29: 読み込み・解放をくり返すので、捨てた材質を持ち続けない
   // 窓明かり: 鉛直面の世界座標で格子を作り、乱数で灯す（写真の外壁・簡略の外壁の両方）
   function addWindows(m){
     const prev = m.onBeforeCompile;
@@ -901,15 +971,21 @@ const Env = (() => {
 async function loadAll(){
   const [sc, rt] = await Promise.all([fetch("data/scene.json").then(r=>r.json()), fetch("data/routes.json").then(r=>r.json())]);
   S.scene=sc; S.routes=rt; S._atlas = S._atlas || [];   // v22: タイルの読み込み（Stream）が先に始まっても落ちないよう最初に用意
+  // v29: 車・信号・歩行者・JR・バス・地名のデータは、地形・建物と並行して先に取り寄せる（範囲拡大で大きくなったため）
+  const jget = n => fetch("data/"+n).then(r=>r.ok?r.json():null).catch(e=>{ console.warn(n, e); return null; });
+  const JP = { traffic: jget("traffic.json"), signals: jget("signals.json"), peds: jget("peds.json"), jr: jget("jr.json"), bus: jget("bus.json"), places: jget("places.json") };
   // v16: "@" の付いたファイル（建物・植生のタイル）は Stream が近くの分だけ読み込む。それ以外は最初に全部読む
   const core = Object.entries(sc.files).filter(([k])=>!k.includes("@"));
-  toLoad = core.reduce((a,[k,f])=>a+f.raw*0.9,0) + sc.ortho.length*900e3 + 6e7;
+  const OVM = !!sc.ortho_ov;   // v29: 縮小写真＋近くのページだけ（範囲拡大版）
+  toLoad = core.reduce((a,[k,f])=>a+f.raw*0.9,0) + (OVM ? 12*900e3 + 4e6 : sc.ortho.length*900e3) + 6e7;
   const bufs = {};
-  const texP = Promise.all(sc.ortho.map(o=>loadTex(o.file)));
+  const texP = OVM ? loadTex(sc.ortho_ov.file).then(t=>{ if(t){ t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy()); OrthoPages.setOverview(t, sc.ortho_ov); } return []; })
+                   : Promise.all(sc.ortho.map(o=>loadTex(o.file)));
   await Promise.all(core.map(async ([k,f])=>{ bufs[k]=await fetchPacked(f.file); }));
   const ortho = await texP;
   S._bufs = bufs; S._ortho = ortho;
-  buildGround(sc.ground, bufs.ground, ortho);
+  if(OrthoPages.active){ await OrthoPages.prime({x:0, z:0}); buildGroundOV(sc.ground, bufs.ground); groundTick({x:0, y:0, z:0}, false, 0, 99); }
+  else buildGround(sc.ground, bufs.ground, ortho);
   if(sc.drive && bufs.drive) Car.setGrid(sc.drive, bufs.drive);
   if(sc.hmax && bufs.hmax) Heli.setHmax(sc.hmax, bufs.hmax);
   if(sc.far && bufs.far){ Heli.setFar(sc.far, bufs.far); try { await buildFarTerrain(sc.far, bufs.far); } catch(e){ console.warn("far", e); } }
@@ -918,14 +994,16 @@ async function loadAll(){
   setVehicle(S.vehicle||"momo");
   // 出発地点（岡山駅前）の周りのタイルを先に読む
   $("start-label").textContent="周りの建物を読み込み中…";
-  await Stream.update(0, 0, true);
+  // v29: 最初は出発地点の近く（700m）だけ読み終わるのを待つ。その先は走り出してから順に読む（範囲拡大で数が多い）
+  await Stream.update(0, 0, true, 700);
   let tj=null;
-  try { Trams.init(rt); tj = await fetch("data/traffic.json").then(r=>r.ok?r.json():null); if(tj) Traffic.init(tj); } catch(e){ console.warn("traffic", e); }
-  try { const sj = await fetch("data/signals.json").then(r=>r.ok?r.json():null); buildSignals(sj, rt); } catch(e){ console.warn("signals", e); }
-  try { const pj = await fetch("data/peds.json").then(r=>r.ok?r.json():null); if(pj) Peds.init(pj); } catch(e){ console.warn("peds", e); }
-  try { const jj = await fetch("data/jr.json").then(r=>r.ok?r.json():null); if(jj) JR.init(jj); } catch(e){ console.warn("jr", e); }
-  try { const [bj, pj] = await Promise.all([fetch("data/bus.json").then(r=>r.ok?r.json():null), fetch("data/places.json").then(r=>r.ok?r.json():null)]);
+  try { Trams.init(rt); tj = await JP.traffic; if(tj) Traffic.init(tj); } catch(e){ console.warn("traffic", e); }
+  try { const sj = await JP.signals; buildSignals(sj, rt); } catch(e){ console.warn("signals", e); }
+  try { const pj = await JP.peds; if(pj) Peds.init(pj); } catch(e){ console.warn("peds", e); }
+  try { const jj = await JP.jr; if(jj) JR.init(jj); } catch(e){ console.warn("jr", e); }
+  try { const [bj, pj] = await Promise.all([JP.bus, JP.places]);
     Loc.init(pj, tj); if(bj) Bus.init(bj); } catch(e){ console.warn("bus/places", e); }
+  if(tj){ for(const l of tj.lanes) l.p=null; for(const c of tj.conns) c.p=null; }   // v29: 車線の形は Traffic・Loc の中に作り終えたので、元の JSON の点は捨てる（メモリ）
   buildRoutePicker(); setupRoute(S.key, true);
   Prefs.restore();
   Trams.populate(S.key, S.cum[0]+40, S.vehicle);
@@ -945,6 +1023,7 @@ const Stream = (() => {
   function tileDist(t, x, z){ const T=S.scene.tiles[t]; const dx=Math.max(T.x0-x, 0, x-(T.x0+T.size)), dz=Math.max(T.z0-z, 0, z-(T.z0+T.size)); return Math.hypot(dx,dz); }
   // v17: ヘリで高く上がると遠くまで読む（R.near/R.far/R.veg/R.detail を足す）
   const R = { near:0, far:0, veg:0, detail:0 };
+  const PRI = fk => fk.startsWith("road") ? 0 : fk.startsWith("bldg_tex") ? 1 : 2;   // v29
   function wanted(x, z, slack){
     const w = new Set(), photo = S.look==="photo";
     for(const t of Object.keys(S.scene.tiles||{})){
@@ -955,6 +1034,8 @@ const Stream = (() => {
       if(near && photo) w.add("bldg_tex@"+t); else w.add("bldg_proc@"+t);
       if(d < NEAR + R.veg + slack) w.add("veg@"+t);
       if(d < NEAR + R.detail + slack) w.add("detail@"+t);
+      w.add("road@"+t);                                   // v29: 道路（路面・縁石・標示）は建物と同じ範囲
+      if(d < NEAR + 600 + R.far * 0.3 + slack) w.add("cat@"+t);   // v29: 架線柱・バス停の柱など
     }
     return w;
   }
@@ -982,20 +1063,22 @@ const Stream = (() => {
   }
   function unload(fk){
     const e = loaded.get(fk); if(!e) return;
-    for(const m of e.meshes){ world.remove(m); m.geometry.dispose(); }
+    for(const m of e.meshes){ world.remove(m); m.geometry.dispose(); OrthoPages.unreg(m); }
     if(e.pages.length) releasePages(e.pages);
     loaded.delete(fk);
   }
   // x,z の周りを読み込む（wait=true なら全部読み終わるまで待つ）
-  async function update(x, z, wait){
+  async function update(x, z, wait, waitDist){
     if(!S.scene || !S.scene.tiles) return;
     const want = wanted(x, z, 0), keep = wanted(x, z, HYST);
     for(const fk of [...loaded.keys()]) if(!keep.has(fk)) unload(fk);
     // 近いものから
     const todo = [...want].filter(fk=>!loaded.has(fk) && !loading.has(fk) && S.scene.files[fk])
-      .sort((a,b)=>tileDist(a.split("@")[1],x,z)-tileDist(b.split("@")[1],x,z) || (a.startsWith("bldg_tex")?-1:1));
+      .sort((a,b)=>tileDist(a.split("@")[1],x,z)-tileDist(b.split("@")[1],x,z) || (PRI(a)-PRI(b)));
     const run = async (fk)=>{ const pr = load(fk).catch(e=>console.warn("tile", fk, e)).finally(()=>loading.delete(fk)); loading.set(fk, pr); return pr; };
-    if(wait){ for(let i=0;i<todo.length;i+=3) await Promise.all(todo.slice(i,i+3).map(run)); return; }
+    if(wait){
+      const now_ = waitDist ? todo.filter(fk=>tileDist(fk.split("@")[1],x,z) < waitDist) : todo;   // v29: 近いものだけ待つ（残りは tick で）
+      for(let i=0;i<now_.length;i+=3) await Promise.all(now_.slice(i,i+3).map(run)); return; }
     let n = loading.size;
     for(const fk of todo){ if(n>=2) break; run(fk); n++; }
   }
@@ -1010,7 +1093,8 @@ const Stream = (() => {
     const p = heli ? Heli.focus(_fp) : c;
     update(p.x, p.z, false);
     const gy = heli ? Heli.H.ground : 0;
-    for(const T of GROUND_TILES){ const dx=Math.max(T.x0-c.x,0,c.x-(T.x0+T.size)), dz=Math.max(T.z0-c.z,0,c.z-(T.z0+T.size)); const near=Math.hypot(dx,dz, heli ? (c.y-gy)*0.7 : 0)<700;
+    if(OrthoPages.active){ OrthoPages.tick(c, heli ? (c.y-gy)*0.7 : 0, agl); groundTick(c, heli, gy, 1); }
+    else for(const T of GROUND_TILES){ const dx=Math.max(T.x0-c.x,0,c.x-(T.x0+T.size)), dz=Math.max(T.z0-c.z,0,c.z-(T.z0+T.size)); const near=Math.hypot(dx,dz, heli ? (c.y-gy)*0.7 : 0)<700;
       for(const m of T.hi) m.visible=near; for(const m of T.lo) m.visible=!near; }
     // 電線（v17）: 近くのタイルだけ・高い所からは出さない（遠くで黒い筋になっていた）
     for(const W of PWIRES){ const dx=Math.max(W.x0-c.x,0,c.x-(W.x0+W.size)), dz=Math.max(W.z0-c.z,0,c.z-(W.z0+W.size)); W.obj.visible = Math.hypot(dx,dz) < 380 && c.y - (heli ? gy : 0) < 160; }
@@ -1048,6 +1132,70 @@ async function buildFarTerrain(meta, buf){
 }
 /* ---------------- 地面（標高 + 航空写真） ---------------- */
 const GROUND_TILES = [];   // v16: 地面は 800m 四方ごと・細かい(4m)と粗い(16m)の 2 段。近くだけ細かい方を表示
+/* v29: 範囲拡大版の地面。粗い(16m)面は最初に全部（範囲全体の縮小写真）、細かい(4m)面は近づいたタイルだけ作り、離れたら捨てる */
+const GROUND_NEAR = 1100, GROUND_DROP = 1450;
+let _gb = null;
+function buildGroundOV(g, buf){
+  const nx=g.nx, nz=g.nz, N=nx*nz;
+  const H=new Int16Array(buf,0,N), MK=new Uint8Array(buf,N*4,N), RD=new Uint8Array(buf,N*3,N), W=new Uint8Array(buf,N*2,N);
+  const pages = S.scene.ortho, OV = OrthoPages.OV;
+  const h = (j,i)=>{ j=Math.min(nz-1,j); i=Math.min(nx-1,i); const k=j*nx+i; return H[k]/100 - (RD[k]?0.35:0.12) - (W[k]?0.25:0); };
+  const pageOf=(cx,cz)=>{ for(let q=0;q<pages.length;q++){ const p=pages[q]; if(cx>=p.x0&&cx<p.x0+p.size&&cz>=p.z0&&cz<p.z0+p.size) return q; } return -1; };
+  const TS=800, cellsPer=Math.round(TS/g.step);
+  const mk = (cells, U, V, st)=>{
+    const n=cells.length/2; const pos=new Float32Array(n*18), uv=new Float32Array(n*12); let o=0,u=0;
+    for(let c=0;c<cells.length;c+=2){
+      const j=cells[c], i=cells[c+1];
+      const x0=g.x0+i*g.step, z0=g.z0+j*g.step, x1=x0+g.step*st, z1=z0+g.step*st;
+      const a=h(j,i), b=h(j,i+st), cc=h(j+st,i), d=h(j+st,i+st);
+      pos.set([x0,a,z0, x0,cc,z1, x1,b,z0, x1,b,z0, x0,cc,z1, x1,d,z1], o); o+=18;
+      uv.set([U(x0),V(z0), U(x0),V(z1), U(x1),V(z0), U(x1),V(z0), U(x0),V(z1), U(x1),V(z1)], u); u+=12;
+    }
+    const geo=new THREE.BufferGeometry(); geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
+    geo.setAttribute("uv",new THREE.BufferAttribute(uv,2));
+    geo.computeVertexNormals(); geo.computeBoundingSphere();
+    return geo;
+  };
+  const ovMat = new THREE.MeshLambertMaterial({map:OrthoPages.ovTex});
+  const U0=x=>(x-OV.x0)/OV.w, V0=z=>1-(z-OV.z0)/OV.d;
+  for(let tj=0; tj<nz-1; tj+=cellsPer) for(let ti=0; ti<nx-1; ti+=cellsPer){
+    const T={x0:g.x0+ti*g.step, z0:g.z0+tj*g.step, size:TS, ti, tj, hi:null, lo:[]};
+    const cells=[];
+    for(let j=tj;j<Math.min(nz-1,tj+cellsPer);j+=4) for(let i=ti;i<Math.min(nx-1,ti+cellsPer);i+=4){ if(MK[j*nx+i]) cells.push(j,i); }
+    if(cells.length){ const m=new THREE.Mesh(mk(cells, U0, V0, 4), ovMat); m.name="ground"; m.receiveShadow=true; world.add(m); T.lo.push(m); }
+    GROUND_TILES.push(T);
+  }
+  // 近くの細かい面（ページごとに分ける。ページが無い間は縮小写真を同じ位置に貼る）
+  function buildHi(T){
+    const groups=new Map();
+    for(let j=T.tj;j<Math.min(nz-1,T.tj+cellsPer);j++) for(let i=T.ti;i<Math.min(nx-1,T.ti+cellsPer);i++){
+      const k=j*nx+i; if(!MK[k]) continue;
+      const q=pageOf(g.x0+(i+0.5)*g.step, g.z0+(j+0.5)*g.step); if(q<0) continue;
+      let a=groups.get(q); if(!a){ a=[]; groups.set(q,a); } a.push(j,i);
+    }
+    T.hi=[];
+    for(const [q,cells] of groups){ const p=pages[q];
+      const m=new THREE.Mesh(mk(cells, x=>(x-p.x0)/p.size, z=>1-(z-p.z0)/p.size, 1), OrthoPages.mat(q, "ground"));
+      OrthoPages.reg(m, q, "ground"); m.name="ground"; m.receiveShadow=true; m.visible=false; world.add(m); T.hi.push(m); }
+  }
+  function dropHi(T){ for(const m of T.hi){ world.remove(m); m.geometry.dispose(); OrthoPages.unreg(m); } T.hi=null; }
+  _gb = { buildHi, dropHi };
+  // 水面（v11）: buildGround と同じ
+  buildWater(g, buf);
+}
+/* v29: 近くのタイルの細かい地面を作る・捨てる（budget: 1 回に作るタイルの数） */
+function groundTick(c, heli, gy, budget){
+  if(!_gb) return;
+  const lift = heli ? (c.y-gy)*0.7 : 0;
+  const L = GROUND_TILES.map(T=>{ const dx=Math.max(T.x0-c.x,0,c.x-(T.x0+T.size)), dz=Math.max(T.z0-c.z,0,c.z-(T.z0+T.size)); return [T, Math.hypot(dx,dz,lift)]; }).sort((a,b)=>a[1]-b[1]);
+  for(const [T,d] of L){
+    if(d<GROUND_NEAR && !T.hi && budget>0){ _gb.buildHi(T); budget--; }
+    if(T.hi && d>GROUND_DROP){ _gb.dropHi(T); }
+    const near = !!T.hi && d<GROUND_NEAR;
+    if(T.hi) for(const m of T.hi) m.visible=near;
+    for(const m of T.lo) m.visible=!near;
+  }
+}
 function buildGround(g, buf, ortho){
   const nx=g.nx, nz=g.nz, N=nx*nz;
   const H=new Int16Array(buf,0,N), W=new Uint8Array(buf,N*2,N), RD=new Uint8Array(buf,N*3,N), MK=new Uint8Array(buf,N*4,N);
@@ -1086,9 +1234,13 @@ function buildGround(g, buf, ortho){
     GROUND_TILES.push(T);
   }
   world.children.forEach(o=>{ if(o.name==="ground") o.receiveShadow=true; });
+  buildWater(g, buf);
+}
+function buildWater(g, buf){
+  const nx=g.nx, nz=g.nz, N=nx*nz;
   // 水面（v11）: 川・池。水位は OSM の水域内の地形を平滑化した値（ビルド時）
   if(buf.byteLength >= N*7){
-    const WL=new Int16Array(buf, N*5, N);
+    const WL = (N*5) % 2 === 0 ? new Int16Array(buf, N*5, N) : new Int16Array(buf.slice(N*5, N*7));   // v29: 升目の数が奇数だと位置が 2 の倍数にならない
     S._WL = { x0:g.x0, z0:g.z0, step:g.step, nx, nz, A:WL };   // v17: ヘリが水面に降りないように
     const cells=[]; for(let j=0;j<nz-1;j++) for(let i=0;i<nx-1;i++){ const k=j*nx+i; if(WL[k]!==-32768) cells.push(j,i); }
     if(cells.length){
@@ -1247,7 +1399,9 @@ function buildChunks(chunks, bufs, atlas, ortho){
     if(c.nrm!==undefined){ const ib=new THREE.InterleavedBuffer(new Int8Array(buf,c.nrm,c.count*4),4); geo.setAttribute("normal", new THREE.InterleavedBufferAttribute(ib,3,0,true)); }
     else geo.computeVertexNormals();
     geo.computeBoundingSphere();
-    const mesh=new THREE.Mesh(geo, mat(c,atlas,ortho));
+    const OPG = c.mat==="ortho" && OrthoPages.active;   // v29: 屋根の写真はページの読み込みに合わせて差し替える
+    const mesh=new THREE.Mesh(geo, OPG ? OrthoPages.mat(c.page, "roof") : mat(c,atlas,ortho));
+    if(OPG) OrthoPages.reg(mesh, c.page, "roof");
     mesh.position.set(c.origin[0],c.origin[1],c.origin[2]); mesh.scale.setScalar(c.scale);
     mesh.matrixAutoUpdate=false; mesh.updateMatrix(); mesh.name=c.layer; mesh.userData.file=c.file;
     mesh.receiveShadow = true; mesh.castShadow = /^(bldg|veg|frn|bridge|signal|stop|wire)$/.test(c.layer);
@@ -1998,6 +2152,11 @@ const Traffic = (()=>{
     D=data; NL=D.lanes.length; segs=[];
     D.lanes.forEach((l,i)=>{ const P=mkPath(l.p); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n}); });
     D.conns.forEach((c,i)=>{ const P=mkPath(c.p); const s={i:NL+i, P, v:c.v, next:[c.b], node:c.node, lane:false, kind:c.k, from:c.a}; segs.push(s); segs[c.a].next.push(NL+i); });
+    // v29: 出現させる車線を近くから選ぶための升目（250m）。範囲を広げると、全部の車線から無作為に選んでは近くに当たらない
+    BK = new Map();
+    for(let i=0;i<NL;i++){ const P=segs[i].P, seen=new Set();
+      for(let k=0;k<P.n;k+=5){ const key=Math.floor(P.P[k*3]/BKS)+","+Math.floor(P.P[k*3+2]/BKS); if(seen.has(key)) continue; seen.add(key); let a=BK.get(key); if(!a){ a=[]; BK.set(key,a); } a.push(i); }
+      const key=Math.floor(P.P[(P.n-1)*3]/BKS)+","+Math.floor(P.P[(P.n-1)*3+2]/BKS); if(!seen.has(key)){ let a=BK.get(key); if(!a){ a=[]; BK.set(key,a); } a.push(i); } }
     sigNodes=new Set(D.sig_nodes);
     // 信号の無い交差点（別方向から2本以上の車線が入る節点）は1台ずつ通す
     const dirs=new Map();
@@ -2028,9 +2187,18 @@ const Traffic = (()=>{
     return pathPt(segs[c.plan[i]].P, s, out);
   }
   let pmap=null;
+  let BK=null; const BKS=250; let _cand=null, _candKey="";
+  function nearLanes(center, rmax){
+    const key=Math.round(center.x/50)+","+Math.round(center.z/50)+","+rmax; if(key===_candKey) return _cand;
+    const set=new Set(), r=Math.ceil(rmax/BKS), ix=Math.floor(center.x/BKS), iz=Math.floor(center.z/BKS);
+    for(let a=ix-r;a<=ix+r;a++) for(let b=iz-r;b<=iz+r;b++){ const L=BK.get(a+","+b); if(L) for(const i of L) set.add(i); }
+    _cand=[...set]; _candKey=key; return _cand;
+  }
   function spawnCar(c, center, rmin, rmax, avoidView){
+    const cand = BK ? nearLanes(center, rmax) : null;
+    if(cand && !cand.length) return false;
     for(let tries=0;tries<80;tries++){
-      const seg=segs[Math.floor(Math.random()*NL)];
+      const seg=segs[cand ? cand[Math.floor(Math.random()*cand.length)] : Math.floor(Math.random()*NL)];
       if(seg.P.len<20 || seg.reach<250 || Math.random()>seg.P.len/90) continue;
       if((seg.c==="u"||seg.c==="r") && Math.random()<0.8) continue;
       const s=4+Math.random()*(seg.P.len-8); const p=pathPt(seg.P, s);
@@ -3693,7 +3861,7 @@ const Heli = (() => {
   // 屋上の高さ（4m 格子・1m 単位の uint8。0 = 建物なし）
   function setHmax(meta, buf){ HM = { ...meta, A:new Uint8Array(buf) }; }
   function setFar(meta, buf){ FAR = { ...meta, A:new Int16Array(buf) }; }
-  const inData = (x, z) => x > -698 && x < 2798 && z > -398 && z < 2198;
+  const inData = (x, z) => dataIn(x, z, 2);   // v29: データ範囲は scene.json の drive 格子から
   function farH(x, z){
     if(!FAR) return 0;
     const fx = (x - FAR.x0) / FAR.step, fz = (z - FAR.z0) / FAR.step;
@@ -4352,7 +4520,7 @@ const JR = (() => {
     tsuyama:    { head: 1800, vmax: 22, dec: 0.8, acc: 0.45, dwell: [240, 480], sets: [["kiha47", 2, 1]], both: true, term: true },
     kibi:       { head: 1800, vmax: 22, dec: 0.8, acc: 0.45, dwell: [240, 480], sets: [["kiha47", 2, 1]], both: true, term: true },
   };
-  const inData = (x, z) => x > -698 && x < 2798 && z > -398 && z < 2198;
+  const inData = (x, z) => dataIn(x, z, 2);   // v29
   function pt(L, s, out){ const n = L.n; let f = Math.max(0, Math.min(n - 1.001, s / 2)); const i = Math.floor(f), t = f - i, p = L.p;
     out.x = p[3*i] + (p[3*i+3] - p[3*i]) * t; out.y = p[3*i+1] + (p[3*i+4] - p[3*i+1]) * t; out.z = p[3*i+2] + (p[3*i+5] - p[3*i+2]) * t; return out; }
   function init(J){
@@ -4789,6 +4957,7 @@ function loop(now){
 requestAnimationFrame(loop);
 loadAll().catch(e=>{ console.error(e); $("start-label").textContent="読み込みに失敗しました: "+e.message; });
 window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
+window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera;   // v29: 試験用
 window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
 })();
 </script>
