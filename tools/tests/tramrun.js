@@ -1,0 +1,20 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch({executablePath:'/opt/pw-browsers/chromium', args:['--use-gl=swiftshader','--enable-unsafe-swiftshader','--ignore-gpu-blocklist']});
+  const p = await b.newPage({viewport:{width:1200,height:760}}); p.setDefaultTimeout(900000);
+  p.on('pageerror', e => console.log('ERR', e.message, (e.stack||'').split('\n').slice(1,4).join('|')));
+  p.on('console', m => { if(m.type()==='error') console.log('CON', m.text().slice(0,200)); });
+  await p.goto((process.env.URL||'http://localhost:8805/index.html'));
+  await p.waitForFunction(() => !document.getElementById('start').disabled, null, {timeout:1800000});
+  await p.evaluate(()=>document.getElementById('start').click());
+  await p.waitForTimeout(2000);
+  const st=()=>p.evaluate(()=>{const S=__S; return JSON.stringify({run:S.running,mode:S.mode,door:S.doorOpen,mc:S.mc,bv:S.bv,notch:S.notch,v:S.speed.toFixed(1),pos:S.pos.toFixed(1),t:S.t.toFixed(1)});});
+  console.log('start', await st());
+  await p.keyboard.press('d'); await p.waitForTimeout(500);
+  for(let i=0;i<6;i++) await p.keyboard.press('ArrowUp');
+  for(let i=0;i<3;i++) await p.keyboard.press('w');
+  await p.waitForTimeout(5000);
+  console.log('after', await st()); console.log(await p.evaluate(()=>{ try{ __tick(0.05); for(let i=0;i<400;i++){ __sim(0.05); __tick(0.05);} return 'tick ok t='+__S.t.toFixed(1)+' v='+__S.speed.toFixed(1)+' pos='+__S.pos.toFixed(1); }catch(e){ return 'tick err '+e.message+' '+e.stack.split('\n').slice(0,3).join('|'); } }));
+  await p.screenshot({path:'/tmp/tramrun.png'});
+  await b.close();
+})();

@@ -1,0 +1,564 @@
+<title>OKADEN運転席</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{
+  --cream:#f1ead9;
+  --panel:#17140f;
+  --panel-2:#221d15;
+  --brass:#c9a86a;
+  --amber:#e6a94d;
+  --red:#d6543f;
+  --leaf:#7fae72;
+  --line:rgba(201,168,106,.28);
+  color-scheme: dark;
+  background:#0c110d;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:#0c110d;
+  color:var(--cream);
+  font-family:'Zen Kaku Gothic New','Hiragino Sans',sans-serif;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
+@font-face{font-family:'Zen Kaku Gothic New';src:local('sans-serif');}
+
+#world{ position:fixed; inset:0; width:100%; height:100%; display:block; background:#0c110d; touch-action:none; }
+.veil{ position:fixed; inset:0; pointer-events:none; z-index:2;
+  background:
+    radial-gradient(120% 90% at 50% 108%, rgba(0,0,0,.55), transparent 55%),
+    radial-gradient(120% 60% at 50% -10%, rgba(0,0,0,.4), transparent 60%);
+}
+
+/* ---------- MENU ---------- */
+#menu{
+  position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+  padding:calc(28px + env(safe-area-inset-top,0px)) 18px calc(28px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg, rgba(9,13,10,.55), rgba(9,13,10,.85));
+  backdrop-filter: blur(3px);
+}
+.card{
+  width:min(440px, 100%);
+  max-height:100%;
+  overflow-y:auto;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:3px;
+  padding:26px 24px 22px;
+  box-shadow:0 30px 70px rgba(0,0,0,.5);
+}
+.brandline{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }
+.brandmark{ font-family:'Shippori Mincho', serif; font-weight:700; font-size:13px; letter-spacing:.14em; color:var(--amber); border:1px solid var(--amber); padding:3px 8px; border-radius:2px; }
+.brandline small{ color:var(--brass); letter-spacing:.08em; font-size:11.5px; }
+.card h1{ font-size:26px; line-height:1.35; margin:0 0 10px; font-weight:700; }
+.card h1 em{ font-style:normal; color:var(--amber); }
+.stopguide{ margin-top:8px; font-size:12px; color:#cfc5ac; }
+.stopguide .sgbar{ position:relative; height:10px; margin-top:4px; background:rgba(241,234,217,.12); border-radius:5px; overflow:hidden; }
+.stopguide .sgzone{ position:absolute; left:calc(50% - 11.6%); width:23.3%; top:0; bottom:0; background:rgba(120,200,120,.35); }
+.stopguide .sgmark{ position:absolute; top:0; bottom:0; width:3px; margin-left:-1px; background:#e6a94d; left:0; }
+.stopguide.ok .sgtxt{ color:#9fe09f; }
+.card p.lead{ margin:0 0 20px; color:#cfc5ac; font-size:14px; line-height:1.7; }
+
+.modes{ display:flex; gap:8px; flex-wrap:wrap; }
+@media (max-width:560px){ .modes:not(.opts) .mode-opt{ flex:1 1 40%; } }
+.iconbtn.rescue{ width:auto; padding:0 12px; font-size:13px; white-space:nowrap; }
+.iconbtn.rescue small{ opacity:.6; margin-left:4px; }
+.iconbtn.rescue.hint{ border-color:var(--amber); color:var(--amber); animation:rescuePulse 1.1s ease-in-out infinite; }
+@keyframes rescuePulse{ 50%{ box-shadow:0 0 14px rgba(230,169,77,.8); } }
+@media (prefers-reduced-motion: reduce){ .iconbtn.rescue.hint{ animation:none; } }
+.modes.opts button{ flex:1; padding:9px 6px; background:var(--panel-2); border:1px solid var(--line); color:#a99f88; border-radius:2px; font-family:inherit; font-size:12.5px; cursor:pointer; }
+.modes.opts button.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
+.locchip{ position:fixed; left:50%; transform:translateX(-50%); top:calc(58px + env(safe-area-inset-top,0px)); z-index:12; display:none; pointer-events:none;
+  background:rgba(23,20,15,.78); border:1px solid var(--line); border-radius:14px; padding:4px 12px; font-size:12.5px; color:var(--cream); white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; }
+.locchip.on{ display:block; } .locchip b{ color:var(--amber); font-weight:700; } .locchip i{ font-style:normal; color:#a99f88; margin:0 6px; }
+.busui{ display:none; } .busui.on{ display:block; }
+.busui .bpanel{ position:absolute; left:12px; top:calc(58px + env(safe-area-inset-top,0px)); width:min(300px, calc(100% - 24px)); background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:10px 12px; }
+.busui .bpanel h2{ margin:2px 0 0; font-size:18px; } .busui .bpanel .row{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.busui .bpanel .dist b{ font-size:22px; color:var(--amber); font-variant-numeric:tabular-nums; }
+.busui .req{ display:inline-block; margin-top:6px; padding:2px 10px; border-radius:3px; background:#2a2418; color:#6d624c; font-weight:900; letter-spacing:.1em; }
+.busui .req.on{ background:#b3261e; color:#fff; box-shadow:0 0 10px #e6503e; }
+.busui .small{ font-size:11.5px; color:#a99f88; margin-top:4px; }
+.busui .brack{ position:absolute; left:12px; top:calc(224px + env(safe-area-inset-top,0px)); display:flex; gap:6px; }
+.busui .brack .icard{ min-width:78px; }
+.busui .doorbtn{ position:absolute; right:18px; bottom:calc(150px + env(safe-area-inset-bottom,0px)); width:126px; height:44px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-family:inherit; font-size:14px; font-weight:700; cursor:pointer; }
+.busui .doorbtn.open{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+.busui .bmsg{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(96px + env(safe-area-inset-bottom,0px)); width:min(720px, calc(100% - 24px)); text-align:center; font-size:13px; color:#ffe7b8; text-shadow:0 1px 3px #000; }
+.vehs{ display:flex; gap:8px; flex-wrap:wrap; }
+.veh-opt{ flex:1 1 150px; display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:9px 10px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:13px; cursor:pointer; text-align:left; }
+.veh-opt small{ font-size:11px; opacity:.7; }
+.veh-opt .sw{ display:block; width:100%; height:8px; margin-bottom:4px; border-radius:1px; }
+.veh-opt.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
+.fade{ position:fixed; inset:0; z-index:40; background:#000; opacity:0; pointer-events:none; transition:opacity .6s; display:flex; align-items:center; justify-content:center; color:#f1ead9; font-size:16px; }
+.fade.on{ opacity:1; pointer-events:auto; }
+.mode-opt{ flex:1; padding:11px 8px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:14px; cursor:pointer; }
+.mode-opt.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
+/* 運転台視点: 下のコンソールを消し、ボタンだけ小さく残す（ハンドルは3Dの運転台で操作） */
+.ui.cab .console{ background:none; display:block; pointer-events:none; padding-bottom:calc(6px + env(safe-area-inset-bottom,0px)); }
+.ui.cab .state-block, .ui.cab .speedcard, .ui.cab .chead, .ui.cab .notchbar, .ui.cab .legend{ display:none; }
+.ui.cab .ctrl{ background:none; border:none; padding:0; max-width:380px; margin:0 auto; pointer-events:none; }
+.ui.cab .touch{ pointer-events:auto; grid-template-columns:repeat(6,1fr); margin:0; opacity:.9; }
+.ui.cab .touch button{ padding:6px 2px; font-size:10px; }
+/* 運転台視点: 字幕は運転台の机の上（前方の景色を隠さない）、案内パネルは左上の窓柱側に縦に並べる */
+.ui.cab .subtitle{ bottom:calc(92px + env(safe-area-inset-bottom,0px)); left:50%; right:auto; transform:translateX(-50%); width:min(760px, calc(100% - 24px)); font-size:12px; padding:6px 10px; background:rgba(12,17,13,.72); }
+.ui.cab .mission{ left:12px; right:auto; width:280px; transform:none; padding:8px 12px; }
+.ui.cab .mission .mrow h2{ font-size:16px; }
+.ui.cab .rack{ left:12px; right:auto; width:280px; transform:none; gap:6px; }
+.ui.cab .icard{ padding:6px 8px; }
+.ui.cab .icard .val strong{ font-size:15px; }
+.ui.cab .minimap{ right:12px; top:64px; width:96px; }
+.cabhint{ display:none; position:absolute; left:50%; transform:translateX(-50%); bottom:calc(58px + env(safe-area-inset-bottom,0px)); font-size:11px; color:#f1ead9; background:rgba(12,17,13,.7); padding:4px 10px; border-radius:2px; pointer-events:none; white-space:nowrap; }
+.ui.cab .cabhint{ display:block; }
+.cabspeed{ display:none; position:absolute; right:12px; bottom:calc(58px + env(safe-area-inset-bottom,0px)); background:rgba(23,20,15,.86); border:1px solid var(--line); padding:6px 10px; border-radius:2px; font-variant-numeric:tabular-nums; }
+.cabspeed b{ font-size:22px; color:var(--amber); } .ui.cab .cabspeed{ display:block; }
+/* 車モード */
+.carui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
+.carui.on{ display:block; }
+.carui > *{ pointer-events:auto; }
+.car-top{ position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); left:12px; right:12px; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.car-meter{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom,0px)); background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:8px 16px; text-align:center; min-width:150px; }
+.car-meter b{ font-size:34px; font-variant-numeric:tabular-nums; display:block; line-height:1; }
+.car-meter small{ color:#a99f88; font-size:11px; }
+.car-meter .rpm{ height:4px; background:rgba(255,255,255,.12); margin-top:6px; border-radius:2px; overflow:hidden; } .car-meter .rpm i{ display:block; height:100%; width:10%; background:var(--amber); }
+#car-wheel{ position:absolute; left:18px; bottom:calc(18px + env(safe-area-inset-bottom,0px)); width:150px; height:150px; touch-action:none; cursor:grab; }
+.pedals{ position:absolute; right:18px; bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:flex; gap:10px; align-items:flex-end; }
+.pedal{ width:64px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-family:inherit; font-size:12px; touch-action:none; user-select:none; cursor:pointer; }
+.pedal.brk{ height:78px; } .pedal.acc{ height:112px; width:52px; }
+.pedal.on{ background:#3a2f18; border-color:var(--amber); transform:translateY(3px); }
+.gearsel{ display:flex; flex-direction:column; gap:4px; }
+.gearsel button{ width:52px; height:46px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:#a99f88; font-size:18px; font-weight:900; font-family:inherit; cursor:pointer; }
+.gearsel button.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+#car-gr.on{ background:#4a1d16; color:#ffb4a4; border-color:#d6543f; }
+.gearlbl{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:3px; background:#3a2f18; color:var(--amber); font-weight:700; }
+.gearlbl.rev{ background:#4a1d16; color:#ffb4a4; }
+.car-msg{ position:absolute; left:50%; transform:translateX(-50%); top:80px; color:#ffd9a0; font-size:13px; text-shadow:0 1px 3px #000; pointer-events:none; }
+/* ヘリ（v17） */
+.hmeter{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:flex; gap:14px; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:8px 14px; }
+.hmeter > div{ display:flex; flex-direction:column; align-items:center; min-width:52px; }
+.hmeter b{ font-size:24px; line-height:1.05; font-variant-numeric:tabular-nums; color:var(--cream); } .hmeter b.sm{ font-size:15px; line-height:1.6; }
+.hmeter small{ font-size:10.5px; color:#a99f88; }
+.hpad{ position:absolute; bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:grid; gap:6px; }
+.hpad button{ border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.88); color:var(--cream); font-family:inherit; font-size:16px; touch-action:none; user-select:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; }
+.hpad button small{ font-size:9.5px; color:#a99f88; }
+.hpad button.on{ background:#3a2f18; border-color:var(--amber); color:var(--amber); }
+.hpad.left{ left:18px; grid-template-columns:repeat(3,52px); grid-template-rows:repeat(2,52px); }
+.hpad.left .up{ grid-column:2; grid-row:1; } .hpad.left .lf{ grid-column:1; grid-row:2; } .hpad.left .dn{ grid-column:2; grid-row:2; } .hpad.left .rt{ grid-column:3; grid-row:2; }
+.hpad.right{ right:18px; grid-template-columns:64px; grid-template-rows:52px 34px 52px; font-weight:700; }
+.hpad.right .fast{ font-size:12px; }
+#heli-msg{ top:104px; }
+#heli-auto{ width:auto; padding:0 10px; white-space:nowrap; }
+#heli-auto.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+.hstarts .hstart-opt{ flex:1; padding:9px 6px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:13px; cursor:pointer; }
+.hstarts .hstart-opt.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
+@media (max-width:640px){ .hmeter{ gap:8px; padding:6px 8px; bottom:calc(142px + env(safe-area-inset-bottom,0px)); } .hmeter b{ font-size:18px; } .hmeter > div{ min-width:40px; } }
+.sechead{ display:flex; justify-content:space-between; align-items:baseline; margin:18px 0 8px; }
+.sechead span{ font-size:12.5px; letter-spacing:.06em; color:var(--brass); }
+.sechead small{ font-size:11px; color:#8a8067; }
+
+.routes{ display:flex; flex-direction:column; gap:8px; }
+.route-opt{
+  display:flex; align-items:center; gap:12px; width:100%;
+  background:var(--panel-2); border:1px solid var(--line); border-radius:2px;
+  padding:11px 12px; color:var(--cream); text-align:left; cursor:pointer; font-family:inherit;
+}
+.route-opt.on{ border-color:var(--amber); background:#26200f; }
+.rcode{ width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:50%; font-weight:900; font-size:13px; }
+.rcode.h{ background:#e0b23a; color:#241a02; }
+.rcode.s{ background:#4c9cd6; color:#04121e; }
+.route-opt strong{ display:block; font-size:14.5px; }
+.route-opt .dir{ font-size:11.5px; color:#a99f88; }
+.route-opt .dir i{ font-style:normal; color:var(--amber); margin:0 4px; }
+
+.startbtn{
+  width:100%; margin-top:18px; padding:14px 16px; border:none; border-radius:2px;
+  background:var(--amber); color:#221503; font-weight:900; font-size:15px; letter-spacing:.02em;
+  display:flex; align-items:center; justify-content:space-between; cursor:pointer; font-family:inherit;
+}
+.startbtn:active{ transform:translateY(1px); }
+.foot{ margin-top:14px; font-size:11px; color:#8a8067; line-height:1.7; }
+
+/* ---------- GAME UI ---------- */
+.ui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
+.ui.on{ display:block; }
+.ui > *{ pointer-events:auto; }
+
+.topbar{
+  position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); left:12px; right:12px;
+  display:flex; justify-content:space-between; align-items:flex-start; gap:8px;
+}
+.chip{ background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:8px 12px; backdrop-filter: blur(4px); }
+.chip .rname{ font-size:12px; color:var(--brass); }
+.chip .rname b{ color:var(--cream); font-size:14px; margin-left:6px; }
+.iconbtn{ background:rgba(23,20,15,.86); border:1px solid var(--line); color:var(--cream); width:38px; height:38px; border-radius:2px; font-size:15px; cursor:pointer; }
+.topright{ display:flex; gap:8px; }
+
+.mission{
+  position:absolute; top:64px; left:12px; right:12px;
+  background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px;
+  padding:10px 14px; backdrop-filter: blur(4px);
+}
+.kicker{ font-size:10.5px; letter-spacing:.14em; color:var(--brass); }
+.mrow{ display:flex; justify-content:space-between; align-items:baseline; margin-top:2px; }
+.mrow h2{ margin:0; font-size:19px; }
+.mrow .dist{ font-size:13px; color:#cfc5ac; }
+.mrow .dist b{ font-size:20px; color:var(--amber); }
+.progtrack{ height:4px; background:rgba(255,255,255,.12); border-radius:2px; margin-top:8px; overflow:hidden; }
+.progtrack i{ display:block; height:100%; width:0%; background:var(--amber); }
+.mfoot{ display:flex; justify-content:space-between; margin-top:6px; font-size:10.5px; color:#8a8067; }
+
+.rack{ position:absolute; top:170px; left:12px; right:12px; display:flex; gap:8px; }
+.icard{ flex:1; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:9px 10px; backdrop-filter: blur(4px); }
+.icard .lbl{ font-size:10px; color:var(--brass); letter-spacing:.06em; }
+.icard .val{ display:flex; align-items:baseline; gap:4px; margin-top:2px; }
+.icard .val strong{ font-size:18px; font-variant-numeric: tabular-nums; }
+.icard .val span{ font-size:11px; color:#a99f88; }
+.siglamp{ width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; background:#3a3a3a; box-shadow:0 0 6px rgba(0,0,0,.5); }
+.siglamp.green{ background:#57d27a; box-shadow:0 0 8px #57d27a; }
+.siglamp.yellow{ background:#e6c33e; box-shadow:0 0 8px #e6c33e; }
+.siglamp.red{ background:#e6503e; box-shadow:0 0 8px #e6503e; }
+.sigrow{ display:flex; align-items:center; }
+
+.minimap{ position:absolute; top:170px; right:12px; width:112px; }
+.loadbar{ height:3px; background:rgba(255,255,255,.12); margin-top:10px; border-radius:2px; overflow:hidden; }
+.loadbar i{ display:block; height:100%; width:0%; background:var(--amber); transition:width .2s; }
+.minimap canvas{ width:100%; display:block; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; }
+
+.subtitle{
+  position:absolute; left:12px; right:12px; bottom:calc(200px + env(safe-area-inset-bottom,0px));
+  background:rgba(12,17,13,.82); border-left:3px solid var(--amber); border-radius:2px;
+  padding:9px 12px; font-size:13px; color:#f1ead9; backdrop-filter: blur(4px);
+}
+
+.console{
+  position:absolute; left:0; right:0; bottom:0; padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg, rgba(15,12,9,.2), rgba(10,8,6,.94) 34%);
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:end; gap:10px;
+}
+.state-block{ background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:10px 12px; }
+.state-block .k{ font-size:10px; color:var(--brass); letter-spacing:.1em; }
+.state-block strong#drive-state{ display:block; font-size:15px; margin:2px 0 8px; }
+.readouts{ display:flex; gap:14px; }
+.readouts span{ display:flex; flex-direction:column; font-size:10px; color:#a99f88; }
+.readouts b{ color:var(--cream); font-size:13px; font-variant-numeric: tabular-nums; }
+
+.speedcard{ display:flex; flex-direction:column; align-items:center; gap:2px; }
+.speedcard canvas{ display:block; }
+.speedreadout{ text-align:center; margin-top:-46px; }
+.speedreadout strong{ font-size:30px; display:block; line-height:1; font-variant-numeric: tabular-nums; }
+.speedreadout span{ font-size:11px; color:#a99f88; }
+
+.ctrl{ background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:10px 12px; }
+.chead{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+.chead .k{ font-size:10px; color:var(--brass); letter-spacing:.1em; }
+.chead strong{ font-size:16px; color:var(--amber); }
+.notchbar{ display:flex; gap:3px; height:26px; align-items:flex-end; }
+.notchbar i{ flex:1; background:rgba(255,255,255,.12); border-radius:1px; }
+.notchbar i.on.brake{ background:var(--red); }
+.notchbar i.on.power{ background:var(--leaf); }
+.legend{ display:flex; justify-content:space-between; font-size:9.5px; color:#8a8067; margin-top:4px; }
+
+.touch{ display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-top:10px; }
+.touch button{
+  background:rgba(23,20,15,.94); border:1px solid var(--line); border-radius:2px;
+  color:var(--cream); padding:9px 2px; font-size:10.5px; line-height:1.5; cursor:pointer; font-family:inherit;
+}
+.touch button .sym{ display:block; font-size:14px; font-weight:900; }
+.touch button.brake{ color:#f2b3a6; } .touch button.power{ color:#bfe0b4; }
+.touch button.emergency{ color:#f2b3a6; border-color:rgba(214,84,63,.5); }
+
+/* ---------- HELP / FINISH ---------- */
+.overlay{ position:fixed; inset:0; z-index:30; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(9,13,10,.72); backdrop-filter: blur(3px); }
+.overlay.on{ display:flex; }
+.ocard{ width:min(420px,100%); background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:22px; }
+.ohead{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+.closebtn{ background:none; border:1px solid var(--line); color:var(--cream); width:30px; height:30px; border-radius:2px; cursor:pointer; font-family:inherit; }
+.steps div{ display:flex; gap:10px; margin-bottom:10px; font-size:13px; }
+.steps b{ width:20px; height:20px; border-radius:50%; background:var(--amber); color:#221503; display:grid; place-items:center; font-size:11.5px; flex:0 0 auto; }
+.steps small{ display:block; color:#a99f88; margin-top:2px; }
+.shortcuts{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.shortcuts span{ font-size:11px; color:var(--brass); border:1px solid var(--line); padding:4px 8px; border-radius:2px; }
+
+.finish-card{ text-align:center; }
+.finish-card .kicker{ display:block; margin-bottom:6px; }
+#finish-score{ font-size:44px; font-family:'Shippori Mincho', serif; color:var(--amber); margin:10px 0 4px; }
+#finish-text{ font-size:13px; color:#cfc5ac; line-height:1.8; white-space:pre-line; margin-bottom:18px; }
+
+@media (min-width:760px){
+  .topbar,.mission,.rack{ max-width:640px; left:50%; transform:translateX(-50%); right:auto; }
+  .console{ max-width:820px; margin:0 auto; left:0; right:0; }
+  .minimap{ position:absolute; top:170px; right:calc(50% - 320px + 12px); }
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition:none !important; }
+}
+</style>
+
+<canvas id="world"></canvas>
+<div class="veil"></div>
+
+<!-- MENU -->
+<section id="menu">
+  <div class="card">
+    <div class="brandline"><span class="brandmark">OKADEN</span><small>DRIVER CAB SIMULATOR / 岡山</small></div>
+    <h1>実測データの街を、<br><em>運転する。</em></h1>
+    <p class="lead">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。</p>
+
+    <div class="sechead"><span>モード</span><small>路面電車／両備バス／車／ヘリコプター</small></div>
+    <div class="modes"><button type="button" class="mode-opt on" data-mode="tram">路面電車を運転</button><button type="button" class="mode-opt" data-mode="bus">バスを運転</button><button type="button" class="mode-opt" data-mode="car">車で自由に走る</button><button type="button" class="mode-opt" data-mode="heli">ヘリで空から</button></div>
+    <div id="routes-wrap"><div class="sechead"><span>運転する路線</span><small>往復とも選べます</small></div>
+    <div class="routes" id="routes"></div>
+    <div class="sechead"><span>車両</span><small>形式を選べます</small></div>
+    <div class="vehs">
+      <button type="button" class="veh-opt on" data-veh="momo"><i class="sw" style="background:linear-gradient(#c9ced3 55%,#1f4fa0 55%)"></i><b>9200形 MOMO</b><small>2車体連接 18.0m・低床・VVVF</small></button>
+      <button type="button" class="veh-opt" data-veh="t3005"><i class="sw" style="background:linear-gradient(#a9cfb4 58%,#e2772e 58%)"></i><b>3000形 3005号</b><small>東武日光軌道線 復元塗装・12m 単車</small></button>
+      <button type="button" class="veh-opt" data-veh="t3007"><i class="sw" style="background:linear-gradient(#141414 57%,#c9a54a 57%,#c9a54a 61%,#141414 61%)"></i><b>3000形 3007号 KURO</b><small>黒に金帯・赤いパンタ・12m 単車</small></button>
+    </div></div>
+    <div id="bus-note" style="display:none">
+      <div class="route-opt on" style="cursor:default"><div class="rcode" style="background:#1d3f86;color:#fff">両</div><div><strong>両備バス 西大寺線（314系統）</strong><div class="dir">岡山駅東口 13番のりば<i>→</i>天満屋<i>→</i>県庁前<i>→</i>古京<i>→</i>東山（11停留所・約4.4km）</div></div></div>
+      <p class="foot">道路・一方通行は OpenStreetMap、停留所の順序と位置は晴れバスナビ（岡山の時刻表検索）の経路ページと OSM の標柱による。天満屋バスステーションは県庁通りから西側の構内へ入り、駅舎の南を回って東側 4番のりばへ（両備バスは 2〜6番。4番は推定）。<br>操作: ↑/W アクセル　↓/S ブレーキ　←→/A D ハンドル　F 扉の開閉　V 視点（運転席／後ろ）　H 警笛。前扉を停留所の標柱に合わせ、歩道に寄せて止めてから扉を開けます。降車ボタンが押されたり、待っている人がいる停留所は必ず停車。</p>
+    </div>
+    <div id="heli-note" style="display:none">
+      <div class="sechead"><span>出発地</span><small>空の上から始まります</small></div>
+      <div class="modes opts hstarts">
+        <button type="button" class="hstart-opt on" data-start="station">岡山駅</button>
+        <button type="button" class="hstart-opt" data-start="castle">岡山城</button>
+        <button type="button" class="hstart-opt" data-start="garden">後楽園</button>
+        <button type="button" class="hstart-opt" data-start="high">上空 650m</button>
+      </div>
+      <p class="foot">小型ヘリコプターで街の上を自由に飛びます。高く上がるほど遠くの建物まで読み込み、地図の外は国土地理院の標高と空中写真による遠景（建物なし）が約 20km 四方に広がります。建物の屋上や地面には着地でき、建物の横から突っ込むと止まります。<br>操作: W/↑ 前進　S/↓ 後退　A/← D/→ 旋回　Q/E 横移動　R・Space 上昇　F・C 下降　Shift 速く　V 視点（後ろ／操縦席／真下）　O 自動で街を周回　マウスのドラッグで見回し・ホイールで距離。画面のボタンでも操作できます。</p>
+    </div>
+    <p class="foot" id="car-note" style="display:none">岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点　Space サイドブレーキ。画面のハンドルは指で回せます。</p>
+
+    <div class="sechead"><span>表示</span><small>PC の性能に合わせて</small></div>
+    <div class="modes opts">
+      <button type="button" class="look-opt on" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写（PLATEAU）</button>
+      <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁で描く簡略表示。色は写真から推定">建物: 簡略（軽い）</button>
+      <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
+    </div>
+    <div class="sechead"><span>時間帯・天気</span><small>走行中も N（時間帯）・M（天気）で切り替え</small></div>
+    <div class="modes opts">
+      <button type="button" class="time-opt" data-time="morning">朝</button>
+      <button type="button" class="time-opt on" data-time="noon">昼</button>
+      <button type="button" class="time-opt" data-time="evening">夕方</button>
+      <button type="button" class="time-opt" data-time="night">夜</button>
+      <button type="button" class="rain-opt">天気: 晴れ</button>
+    </div>
+    <button id="start" class="startbtn" disabled><span id="start-label">3D都市モデルを読み込み中…</span><span>→</span></button>
+    <div class="loadbar"><i id="loadbar"></i></div>
+    <p class="foot" id="records"></p>
+    <button type="button" id="src-btn" class="startbtn" style="background:#2a2418;color:#e9dfc6;margin-top:10px;font-size:13px;padding:10px 14px"><span>このシミュレーターの基準時点・出典・推定している所</span><span>ⓘ</span></button>
+    <p class="foot">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</p>
+  </div>
+</section>
+
+<!-- GAME UI -->
+<div class="ui" id="ui">
+  <header class="topbar">
+    <div class="chip"><span class="rname">ROUTE <b id="route-name">東山線</b></span></div>
+    <div class="topright">
+      <button class="iconbtn" id="view-toggle" title="視点切替">⟲</button>
+      <button class="iconbtn" id="sound-btn" title="音を消す">音</button>
+      <button class="iconbtn" id="help-btn">?</button>
+    </div>
+  </header>
+
+  <section class="mission">
+    <div class="kicker">NEXT STOP</div>
+    <div class="mrow"><h2 id="next-stop">岡山駅前</h2><div class="dist"><b id="distance">0</b> m</div></div>
+    <div class="progtrack"><i id="stop-progress"></i></div>
+    <div class="mfoot"><span>駅間進行</span><span id="stop-seq">1 / 10</span></div>
+    <div class="stopguide" id="stopguide"><div class="sgtxt" id="sgtxt">停止位置: ホーム先端の標識に車両先頭を合わせる</div><div class="sgbar"><i class="sgzone"></i><i class="sgmark" id="sgmark"></i></div></div>
+  </section>
+
+  <section class="rack">
+    <div class="icard">
+      <div class="lbl sigrow"><span class="siglamp green" id="siglamp"></span>前方信号</div>
+      <div class="val"><strong id="signal-text">進行</strong></div>
+      <div class="lbl" id="signal-distance">--</div>
+    </div>
+    <div class="icard">
+      <div class="lbl">制限速度</div>
+      <div class="val"><strong id="limit">40</strong><span>km/h</span></div>
+    </div>
+    <div class="icard">
+      <div class="lbl">快適スコア</div>
+      <div class="val"><strong id="score">1000</strong><span>点</span></div>
+      <div class="lbl" id="comfort">快適 100%</div>
+    </div>
+  </section>
+
+  <div class="minimap"><canvas id="mini-map" width="112" height="140"></canvas></div>
+
+  <div class="cabhint">左のマスコン・右のブレーキハンドルを左右にドラッグして回せます（キー: マスコン W/S、ブレーキ ↓/↑）</div>
+  <div class="cabspeed"><b id="cabspd">0</b> km/h</div>
+  <section class="subtitle"><span id="subtitle">停車中です。ドアを閉めて、力行ノッチを入れてください。</span></section>
+
+  <section class="console">
+    <div class="state-block">
+      <div class="k">DRIVER DESK</div>
+      <strong id="drive-state">停車中</strong>
+      <div class="readouts">
+        <span>ドア<b id="door">開</b></span>
+        <span>時刻<b id="clock">09:00</b></span>
+        <span>加減速<b id="accel">0.0</b></span>
+      </div>
+    </div>
+
+    <div class="speedcard">
+      <canvas id="speedometer" width="150" height="150"></canvas>
+      <div class="speedreadout"><strong id="speed">0</strong><span>km/h</span></div>
+    </div>
+
+    <div class="ctrl">
+      <div class="chead"><span class="k">MASTER CONTROLLER</span><strong id="notch">N</strong></div>
+      <div class="notchbar" id="notch-bar"></div>
+      <div class="legend"><span>制動</span><span>惰行</span><span>力行</span></div>
+      <div class="touch">
+        <button data-action="brake" class="brake" type="button"><span class="sym">B</span>制動</button>
+        <button data-action="coast" type="button"><span class="sym">N</span>惰行</button>
+        <button data-action="power" class="power" type="button"><span class="sym">P</span>力行</button>
+        <button data-action="door" type="button"><span class="sym">↔</span>ドア</button>
+        <button data-action="horn" type="button"><span class="sym">♪</span>警笛</button>
+        <button data-action="emergency" class="emergency" type="button"><span class="sym">E</span>非常</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="locchip" id="locchip"></div>
+<div id="fade" class="fade"><div id="fade-text"></div></div>
+<!-- CAR UI -->
+<div class="carui" id="carui">
+  <header class="car-top">
+    <div class="chip"><span class="rname">MODE <b id="car-mode-lbl">車で自由に走る</b></span></div>
+    <div class="topright">
+      <button class="iconbtn rescue" id="rescue-btn" title="すぐそばの道路へ戻る（T）">道路に戻る <small>T</small></button>
+      <button class="iconbtn" id="car-view" title="視点切替">⟲</button>
+      <button class="iconbtn" id="car-menu" title="メニューへ">≡</button>
+    </div>
+  </header>
+  <div class="car-msg" id="car-msg"></div>
+  <div class="busui" id="busui">
+    <section class="bpanel">
+      <div class="kicker" id="bus-route">西大寺線</div>
+      <div class="row"><h2 id="bus-next">天満屋</h2><div class="dist"><b id="bus-dist">0</b> m</div></div>
+      <div class="progtrack"><i id="bus-progress"></i></div>
+      <div class="row small"><span>停留所</span><span id="bus-seq">1 / 10</span></div>
+      <span class="req" id="bus-req">とまります</span> <span class="small" id="bus-wait"></span>
+      <div class="stopguide" id="bus-guide"><div class="sgtxt small" id="bus-zone"></div><div class="sgbar"><i class="sgzone" style="left:40%;width:20%"></i><i class="sgmark" id="bus-gmark"></i></div></div>
+    </section>
+    <section class="brack">
+      <div class="icard"><div class="lbl sigrow"><span class="siglamp green" id="bus-siglamp"></span>前方信号</div><div class="val"><strong id="bus-sig">進行</strong></div><div class="lbl" id="bus-sigd">--</div></div>
+      <div class="icard"><div class="lbl">制限速度</div><div class="val"><strong id="bus-lim">40</strong><span>km/h</span></div></div>
+      <div class="icard"><div class="lbl">スコア</div><div class="val"><strong id="bus-score">1000</strong><span>点</span></div><div class="lbl">乗客 <span id="bus-pax">0人</span></div></div>
+    </section>
+    <canvas id="bus-map" width="150" height="110" style="position:absolute;right:12px;top:calc(58px + env(safe-area-inset-top,0px));width:150px;height:110px;background:rgba(23,20,15,.86);border:1px solid var(--line);border-radius:2px"></canvas>
+    <button class="doorbtn" id="bus-doorbtn" type="button">扉 <span id="bus-door">開</span>（F）</button>
+    <div class="bmsg" id="bus-msg"></div>
+  </div>
+  <svg id="car-wheel" viewBox="-100 -100 200 200" aria-label="ハンドル">
+    <circle r="88" fill="none" stroke="#1b1b1b" stroke-width="18"/><circle r="88" fill="none" stroke="#3a3a3a" stroke-width="3"/>
+    <path d="M-80 10 Q0 -10 80 10 L60 30 Q0 20 -60 30 Z" fill="#2a2a2a"/><rect x="-10" y="10" width="20" height="70" fill="#2a2a2a"/>
+    <circle r="26" fill="#333"/><rect x="-4" y="-98" width="8" height="18" fill="#e6a94d"/>
+  </svg>
+  <div class="car-meter"><b id="car-speed">0</b><small>km/h<span class="gearlbl" id="car-gearlbl">D 前進</span>　<span id="car-place"></span></small><div class="rpm"><i id="car-rpm"></i></div></div>
+  <div class="pedals">
+    <div class="gearsel"><button type="button" id="car-gd" class="on">D</button><button type="button" id="car-gr">R</button></div>
+    <button class="pedal brk" id="car-brk" type="button">ブレーキ</button>
+    <button class="pedal acc" id="car-acc" type="button">アクセル</button>
+  </div>
+</div>
+
+<!-- HELI UI (v17) -->
+<div class="carui heliui" id="heliui">
+  <header class="car-top">
+    <div class="chip"><span class="rname">MODE <b>ヘリコプター</b></span></div>
+    <div class="topright">
+      <button class="iconbtn" id="heli-auto" title="自動で街を周回（O）">自動周回 <small>O</small></button>
+      <button class="iconbtn" id="heli-view" title="視点切替（V）">⟲</button>
+      <button class="iconbtn" id="heli-menu" title="メニューへ">≡</button>
+    </div>
+  </header>
+  <div class="car-msg" id="heli-msg"></div>
+  <div class="hmeter">
+    <div><small>速度</small><b id="heli-speed">0</b><small>km/h</small></div>
+    <div><small>高度（海抜）</small><b id="heli-alt">0</b><small>m</small></div>
+    <div><small>対地</small><b id="heli-agl">0</b><small>m</small></div>
+    <div><small>昇降</small><b id="heli-vs" class="sm">0</b><small>m/s</small></div>
+    <div><small>機首</small><b id="heli-hdg" class="sm">北</b></div>
+  </div>
+  <div class="hpad left">
+    <button type="button" id="hp-f" class="up">▲<small>前進</small></button>
+    <button type="button" id="hp-l" class="lf">⟲<small>左旋回</small></button>
+    <button type="button" id="hp-r" class="rt">⟳<small>右旋回</small></button>
+    <button type="button" id="hp-b" class="dn">▼<small>後退</small></button>
+  </div>
+  <div class="hpad right">
+    <button type="button" id="hp-u">上昇</button>
+    <button type="button" id="hp-fast" class="fast">速く</button>
+    <button type="button" id="hp-d">下降</button>
+  </div>
+</div>
+
+<!-- HELP -->
+<div class="overlay" id="src-overlay">
+  <div class="ocard" style="width:min(640px,100%);max-height:88vh;overflow-y:auto">
+    <div class="ohead"><div><div class="kicker">SOURCES &amp; ASSUMPTIONS</div><h2 style="margin:4px 0 0;font-size:19px;">基準時点・出典・推定している所</h2></div><button class="closebtn" id="close-src" type="button">×</button></div>
+    <div class="srcbody" style="font-size:12.5px;line-height:1.75;color:#d9d0b8">
+      <p style="margin:0 0 10px"><b style="color:#e6a94d">基準時点:</b> 2027年春を想定しています（岡山駅前広場への路面電車の乗り入れが完成した後の姿。岡山市の公表では完成予定は 令和9年3月）。建物はそれより前（PLATEAU 2025年度）のデータなので、その後に建った・無くなった建物は反映されていません。</p>
+      <p style="margin:0 0 10px"><b style="color:#e6a94d">地図の範囲:</b> 東西 約6.9km × 南北 約6.4km（PLATEAU の 3 次メッシュ 6×7 区画）。北は岡山大学（津島）、南は大元駅・青江、東は操山（山頂を含む）まで。範囲の外は、国土地理院の標高と空中写真による遠景（建物・道路なし）です。</p>
+      <p style="margin:0 0 4px"><b style="color:#e6a94d">出典（実際のデータ）</b></p>
+      <ul style="margin:0 0 10px;padding-left:18px">
+        <li>建物（外壁写真・形）・車道・歩道・交通島・植生・地形: 国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0。建物の外壁写真と、車道・歩道を分けた道路データは中心部（岡山駅〜表町〜岡山城の周り）だけで、その外の建物は箱形（高さは実測）、道路は道路の範囲だけのデータです</li>
+        <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL。中心部〔旧範囲〕は 2026年9月26日時点、広げた所は 9月28日時点のデータ）</li>
+        <li>地面・屋根の航空写真: 国土地理院 シームレス空中写真（撮影時期は場所によって異なります）。遠景: 国土地理院 標高タイル・空中写真</li>
+        <li>バスの停留所の順序: 晴れバスナビ（岡山の時刻表検索）。岡山駅東口ののりば: 岡山駅東口バスのりば行き先案内</li>
+        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材</li>
+      </ul>
+      <p style="margin:0 0 4px"><b style="color:#e6a94d">推定・仮定している所（実際とは異なる場合があります）</b></p>
+      <ul style="margin:0;padding-left:18px">
+        <li>駅前広場の軌道・新しい電停（2面3線）の線形とホームの寸法: 公表の完成イメージ図と航空写真から推定</li>
+        <li>駅前広場から出るバスの経路（軌道の南側を通り、駅前交差点の信号で軌道を渡る）: 推定。完成後の配置は公表資料で確認できていません</li>
+        <li>桃太郎大通りの旧 岡山駅前電停のホーム: 残したまま（電車は通過）。完成後の扱いは未確認</li>
+        <li>信号の周期（120秒）・青の秒数・交差点ごとのずれ、歩行者用信号の点滅の秒数: 幹線道路で一般的な値による仮定</li>
+        <li>信号機・歩行者用信号・電柱・電線の位置と向き: 日本の標準的な配置から推定</li>
+        <li>周りの車の台数・車種の割合、歩行者・自転車の人数と歩く速さ: 仮定</li>
+        <li>JR の列車の本数（昼間の平均的な値）・車両の形と色・新幹線の高架の高さ（地面＋10.5m）・在来線のホーム（上屋の範囲から推定）: 仮定・簡略</li>
+        <li>天満屋バスステーションの両備バスののりば（4番）: 推定</li>
+        <li>路面電車・車・バスの加減速: 一般的な性能値による</li>
+        <li>中心部の外の建物の外壁（色・窓割り）: PLATEAU の用途・構造・建築年・階数から推定（写真ではありません）</li>
+        <li>中心部の外の道路の車道と歩道の分け方: PLATEAU の道路の範囲を、OSM の道路の種類・車線数で分けて推定。PLATEAU に道路面の無い道路（中心部の外の車道の約1.4%）は、OSM の中心線から幅を推定して作成</li>
+        <li>夜の窓明かり: 乱数で点灯（実際の窓の位置とは一致しません）。袖看板は業種の一般名だけ（実在の店名ではありません）</li>
+        <li>後楽園の建物の屋根材・岡山城の石垣の質感: 推定。岡山城天守のライトアップは、毎日 日没〜24時の白色の照明を再現（期間限定の色は再現していません）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="help-overlay">
+  <div class="ocard">
+    <div class="ohead"><div><div class="kicker">HOW TO DRIVE</div><h2 style="margin:4px 0 0;font-size:19px;">運転のしかた</h2></div><button class="closebtn" id="close-help" type="button">×</button></div>
+    <div class="steps">
+      <div><b>1</b><span><strong>ドアを閉める</strong><small>停車中に「ドア」ボタンまたは D キー</small></span></div>
+      <div><b>2</b><span><strong>力行する</strong><small>ブレーキを ↑ で運転位置まで緩め、マスコンを W で進める（S で戻す）</small></span></div>
+      <div><b>3</b><span><strong>停留場に合わせる</strong><small>マスコンを S で切に戻し、ブレーキを ↓ で強める（↑ で緩める）。制限速度と信号を確認しながら減速</small></span></div>
+      <div><b>4</b><span><strong>ドアを開ける</strong><small>車両の先頭をホーム先端（白い停止目標線・標識）に合わせて止め、「ドア」または D キー（±3.5m 以内）。運転席視点では、左のマスコンと右のブレーキハンドルをドラッグして回せます。</small></span></div>
+    </div>
+    <div class="shortcuts"><span>マスコン W/S</span><span>ブレーキ ↓/↑</span><span>両方戻す C</span><span>警笛 H</span><span>音 右上の「音」</span><span>非常 Space</span><span>視点 V</span></div>
+  </div>
+</div>
+
+<!-- FINISH -->
+<div class="overlay" id="finish-overlay">
+  <div class="ocard finish-card">
+    <span class="kicker">SERVICE COMPLETE</span>
+    <h2 style="margin:0;font-size:19px;">運転終了</h2>
+    <div id="finish-score">0</div>
+    <p id="finish-text"></p>
+    <button id="turnback" class="startbtn" type="button" style="margin-bottom:8px"><span id="turnback-label">折り返し運転</span><span>⇄</span></button>
+    <button id="restart" class="startbtn" type="button" style="background:#3a3326;color:#f1ead9"><span>運転を終えてメニューへ</span><span>→</span></button>
+  </div>
+</div>
+
+<script>
