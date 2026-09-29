@@ -12,12 +12,40 @@ sys.path.insert(0, os.path.dirname(__file__))
 from osm_load import load as osm_load
 
 OUT = "/home/claude/okaden-x/data"
+def _rss():
+    """v30: 今のメモリ（MB）。段ごとに表示してどこで増えるかを見る"""
+    try: return int([l for l in open("/proc/self/status") if l.startswith("VmRSS")][0].split()[1]) // 1024
+    except Exception: return -1
+def ground_pred(Hc, dnx, dnz):
+    """v30: 走行格子（2m・升目の中心）の高さの予測 = 地面の格子（4m・節点）の高さ（cm）の双線形補間 − 12cm。
+    重みは 1/4 単位なので整数だけで計算する（geo_io・app.js で同じ値になる）"""
+    nz_, nx_ = Hc.shape; H_ = np.asarray(Hc, np.int64)
+    fi4 = 2 * np.arange(dnx) + 1; i0 = np.minimum(fi4 >> 2, nx_ - 2); a = np.minimum(fi4 - 4 * i0, 4)
+    fj4 = 2 * np.arange(dnz) + 1; j0 = np.minimum(fj4 >> 2, nz_ - 2); b = np.minimum(fj4 - 4 * j0, 4)
+    J = j0[:, None]; I = i0[None, :]; A = a[None, :]; B = b[:, None]
+    P16 = (H_[J, I] * (4 - A) + H_[J, I + 1] * A) * (4 - B) + (H_[J + 1, I] * (4 - A) + H_[J + 1, I + 1] * A) * B
+    return (P16 + 8) // 16 - 12
+def gres_encode(H, Hc):
+    """v30: 走行格子の高さを、地面の格子からの予測との差にし、下位・上位バイトの面に分ける（地面の所はほぼ 0 になり、よく縮む）"""
+    E = np.asarray(H, np.int64) - ground_pred(Hc, H.shape[1], H.shape[0])
+    assert np.abs(E).max() < 32768, "gres_encode: 差が int16 を超える"
+    u = E.astype(np.int16).view(np.uint16)
+    return (u & 255).astype(np.uint8).tobytes() + (u >> 8).astype(np.uint8).tobytes()
+def grad_encode(H):
+    """v30: int16 の格子を 2 次元の差分（左＋上−左上 の予測との差）にし、下位バイト・上位バイトの面に分ける（geo_io.grad_decode で戻す）"""
+    H = np.asarray(H, np.int32); E = H.copy()
+    E[:, 1:] -= H[:, :-1]; E[1:, :] -= H[:-1, :]; E[1:, 1:] += H[:-1, :-1]
+    assert np.abs(E).max() < 32768, "grad_encode: 差が int16 を超える"
+    u = E.astype(np.int16).view(np.uint16)
+    return (u & 255).astype(np.uint8).tobytes() + (u >> 8).astype(np.uint8).tobytes()
 os.makedirs(OUT, exist_ok=True)
 if not os.environ.get("TRACK_ONLY"):
     for f in glob.glob(OUT + "/*"):
         os.remove(f)
 
-R = pickle.load(open("/home/claude/wx/roads_final.pkl", "rb"))
+# v30: 道路の高さ・区分のラスタ（0.5m）はファイルのまま読む（範囲拡大で大きい。common.load_roads）
+from common import load_roads, road_parts
+R = load_roads("/home/claude/wx/roads_final.pkl", "r")
 T = pickle.load(open("/home/claude/wx/tracks.pkl", "rb"))
 M = pickle.load(open("/home/claude/wx/markings_v13.pkl" if os.path.exists("/home/claude/wx/markings_v13.pkl") else "/home/claude/wx/markings.pkl", "rb"))
 # v29: v28 の格子の端（最後の DEM 節点より外）の標示は、道路面の直し（merge_roads.py）と同じだけ高さを動かす
@@ -448,7 +476,7 @@ def beam(a, b, y, w=0.12, h=0.12):
     return np.concatenate([tri_poly(ln, lambda x, z: y + h), extrude_ring(ln.exterior, lambda x, z: y, lambda x, z: y + h)])
 
 # ================= 1) 航空写真（地面・屋根用） =================
-print("ortho pages...", flush=True)
+print("ortho pages...", flush=True); print("  [rss MB]", _rss(), flush=True)
 O = np.load("/home/claude/wx/ortho/ortho_local.npy", mmap_mode="r")
 from common import BX0 as _BX0, BZ0 as _BZ0
 OX0, OZ0, ORES = _BX0, _BZ0, 0.5   # v29: 航空写真の格子の原点 = データ範囲の北西の角
@@ -498,7 +526,7 @@ TBpoly = shapely.segmentize(TBpoly, 1.0)
 TBp = prep(TBpoly)
 
 # ================= 2) 地面（DEM + 土地利用 マスク） =================
-print("ground...", flush=True)
+print("ground...", flush=True); print("  [rss MB]", _rss(), flush=True)
 # 地面セル: 軌道から520m以内
 mask_img = Image.new("L", (nx, nz), 0); dm = ImageDraw.Draw(mask_img)
 for g in (corr.geoms if hasattr(corr, "geoms") else [corr]):
@@ -511,14 +539,20 @@ fac = int(round(DSTEP / RES))
 # v29: 以前は升目ごとの二重ループ（範囲拡大で遅い）。同じ窓（節点を中心に ±fac/2 の 0.5m 格子）の最小値を
 #      minimum_filter でまとめて求め、節点の位置で読む（結果は同じ）
 assert abs((DX0 - GX0) / RES - round((DX0 - GX0) / RES)) < 1e-6 and abs((DZ0 - GZ0) / RES - round((DZ0 - GZ0) / RES)) < 1e-6 and fac % 2 == 0
-_hrv = np.where(np.isfinite(HR), HR, np.inf).astype(np.float32)
-_mf = ndimage.minimum_filter(_hrv, size=fac + 1, mode="constant", cval=np.inf)
-del _hrv
 _rj = (np.round((DZ0 - GZ0) / RES).astype(int) + np.arange(nz) * fac); _ci = (np.round((DX0 - GX0) / RES).astype(int) + np.arange(nx) * fac)
 _okj = (_rj >= 0) & (_rj < HR.shape[0]); _oki = (_ci >= 0) & (_ci < HR.shape[1])
 _sub = np.full((nz, nx), np.inf, np.float32)
-_sub[np.ix_(_okj, _oki)] = _mf[np.ix_(_rj[_okj], _ci[_oki])]
-del _mf
+# v30: 0.5m のラスタ全体を一度に持たず、節点の行 64 本ずつ（上下に窓の半分の余白）で求める（結果は全体で求めた時と同じ）
+_hw = fac // 2
+_jl = np.nonzero(_okj)[0]
+for _b0 in range(0, len(_jl), 64):
+    _js = _jl[_b0:_b0 + 64]; _r0 = int(_rj[_js[0]]) - _hw; _r1 = int(_rj[_js[-1]]) + _hw + 1
+    _blk = np.full((_r1 - _r0, HR.shape[1]), np.inf, np.float32)
+    _a0, _a1 = max(0, _r0), min(HR.shape[0], _r1)
+    _h = np.asarray(HR[_a0:_a1], np.float32); _blk[_a0 - _r0:_a1 - _r0] = np.where(np.isfinite(_h), _h, np.inf); del _h
+    _mf = ndimage.minimum_filter(_blk, size=fac + 1, mode="constant", cval=np.inf)
+    _sub[np.ix_(_js, np.nonzero(_oki)[0])] = _mf[np.ix_(_rj[_js] - _r0, _ci[_oki])]
+    del _blk, _mf
 _fin = np.isfinite(_sub)
 HRMIN[_fin] = _sub[_fin].astype(np.float64)
 Hg[_fin] = np.minimum(Hg[_fin], HRMIN[_fin] - 0.08)
@@ -573,12 +607,22 @@ for e in _EX["elements"]:
                 if hs: P_ = P_.difference(unary_union(hs))
             _wp.append(P_)
 _WATER = unary_union(_wp).intersection(shapely.box(DX0, DZ0, DX0 + nx * DSTEP, DZ0 + nz * DSTEP)) if _wp else Polygon()
-_wimg = Image.new("L", (nx, nz), 0); _wd = ImageDraw.Draw(_wimg)
-for g in (_WATER.geoms if hasattr(_WATER, "geoms") else [_WATER]):
-    if not isinstance(g, Polygon) or g.is_empty: continue
-    _wd.polygon([((x - DX0) / DSTEP, (z - DZ0) / DSTEP) for x, z in g.exterior.coords], fill=255)
-    for hole in g.interiors: _wd.polygon([((x - DX0) / DSTEP, (z - DZ0) / DSTEP) for x, z in hole.coords], fill=0)
-Wm = (np.array(_wimg) > 0) | (LUSE == 204)
+def _water_raster(step, w, h):
+    """v30: 水域の多角形を 1 つずつ（穴を抜いて）塗って重ねる。以前は全体の画像に順に塗っていたので、
+    川の中の島（穴）にある池（後楽園の花葉の池など）が、塗る順によって川の穴で消えていた（範囲で順が変わる）"""
+    out = np.zeros((h, w), bool)
+    for g in (_WATER.geoms if hasattr(_WATER, "geoms") else [_WATER]):
+        if not isinstance(g, Polygon) or g.is_empty: continue
+        bx0, bz0, bx1, bz1 = g.bounds
+        i0 = max(0, int(math.floor((bx0 - DX0) / step)) - 2); j0 = max(0, int(math.floor((bz0 - DZ0) / step)) - 2)
+        i1 = min(w, int(math.ceil((bx1 - DX0) / step)) + 3); j1 = min(h, int(math.ceil((bz1 - DZ0) / step)) + 3)
+        if i1 <= i0 or j1 <= j0: continue
+        im = Image.new("L", (i1 - i0, j1 - j0), 0); dr = ImageDraw.Draw(im)
+        dr.polygon([((x - DX0) / step - i0, (z - DZ0) / step - j0) for x, z in g.exterior.coords], fill=255)
+        for hole in g.interiors: dr.polygon([((x - DX0) / step - i0, (z - DZ0) / step - j0) for x, z in hole.coords], fill=0)
+        out[j0:j1, i0:i1] |= np.array(im) > 0
+    return out
+Wm = _water_raster(DSTEP, nx, nz) | (LUSE == 204)
 _num = ndimage.gaussian_filter(np.where(Wm, DH, 0.0), 3.0); _den = ndimage.gaussian_filter(Wm.astype(float), 3.0)
 LVL = np.where(_den > 0.02, _num / np.maximum(_den, 1e-6), np.nan)
 # v13: 水位は周りの路面・岸（水域外の地面）より必ず下（西川など細い水路で DEM が岸の高さを拾い、道路へあふれていた）
@@ -591,16 +635,29 @@ _bed = Wm & np.isfinite(LVL)
 # v17: 岸をなめらかに。水域の外周までの符号付き距離（1m 格子で計算、外が正）で、岸から水中へ一定の勾配で下げる
 # （4m の升目ごとに川底を掘っていたので、水面と地面の交わる線が階段状になっていた）。道路の近くは従来どおり
 _FS1 = 1.0; _fw, _fh = int(nx * DSTEP / _FS1), int(nz * DSTEP / _FS1)
-_wim1 = Image.new("L", (_fw, _fh), 0); _wd1 = ImageDraw.Draw(_wim1)
-for g in (_WATER.geoms if hasattr(_WATER, "geoms") else [_WATER]):
-    if not isinstance(g, Polygon) or g.is_empty: continue
-    _wd1.polygon([((x - DX0) / _FS1, (z - DZ0) / _FS1) for x, z in g.exterior.coords], fill=255)
-    for hole in g.interiors: _wd1.polygon([((x - DX0) / _FS1, (z - DZ0) / _FS1) for x, z in hole.coords], fill=0)
-_lu1 = ndimage.gaussian_filter(np.kron((LUSE == 204).astype(np.float32), np.ones((int(DSTEP / _FS1), int(DSTEP / _FS1)), np.float32)), 1.5) > 0.5
-_W1 = (np.array(_wim1) > 0) | _lu1[:_fh, :_fw]
-_sd1 = ndimage.distance_transform_edt(~_W1) - ndimage.distance_transform_edt(_W1)
-_sdn = _sd1[np.clip((np.arange(nz) * DSTEP / _FS1).astype(int), 0, _fh - 1)][:, np.clip((np.arange(nx) * DSTEP / _FS1).astype(int), 0, _fw - 1)]
-del _sd1, _W1, _lu1, _wim1, _wd1   # v29: メモリ（範囲拡大で 1m 格子が大きい）
+# v30: 1m 格子は範囲拡大で大きい（1 億升）ので、節点の行ごとの帯（上下に 48m の余白）で求める。
+#      使うのは岸から 6m 以内（と水中 2.4m まで）だけなので、距離を ±32m で打ち切れば全体で求めた時と同じ
+_wa1 = _water_raster(_FS1, _fw, _fh)
+_lum = (LUSE == 204).astype(np.float32); _KR1 = int(DSTEP / _FS1)
+_sdn = np.zeros((nz, nx), np.float64)
+_rows = np.clip((np.arange(nz) * DSTEP / _FS1).astype(int), 0, _fh - 1); _cols = np.clip((np.arange(nx) * DSTEP / _FS1).astype(int), 0, _fw - 1)
+_MG = 48; _SDC = 32.0
+for _b0 in range(0, nz, 128):
+    _js = np.arange(_b0, min(nz, _b0 + 128)); _r0 = max(0, int(_rows[_js[0]]) - _MG); _r1 = min(_fh, int(_rows[_js[-1]]) + _MG + 1)
+    # 土地利用の水面（4m）を 1m にして平滑化（σ=1.5m、打ち切り 6m。余白 48m の中で足りる）
+    _q0 = _r0 // _KR1; _q1 = min(LUSE.shape[0], -(-_r1 // _KR1))
+    _k1 = np.kron(_lum[max(0, _q0 - 3):min(LUSE.shape[0], _q1 + 3)], np.ones((_KR1, _KR1), np.float32))
+    _kofs = _r0 - max(0, _q0 - 3) * _KR1
+    # 全体の配列の上下端では gaussian_filter の端の扱い（reflect）が全体と同じになるよう、端の行を含む時は端から切る
+    _g = ndimage.gaussian_filter(_k1, 1.5)
+    _lu = _g[_kofs:_kofs + (_r1 - _r0), :_fw] > 0.5; del _k1, _g
+    _W1 = _wa1[_r0:_r1, :_fw] | _lu; del _lu
+    if _W1.all(): _sd = np.full(_W1.shape, -_SDC)
+    elif not _W1.any(): _sd = np.full(_W1.shape, _SDC)
+    else: _sd = np.clip(ndimage.distance_transform_edt(~_W1) - ndimage.distance_transform_edt(_W1), -_SDC, _SDC)
+    _sdn[_js] = _sd[_rows[_js] - _r0][:, _cols]
+    del _W1, _sd
+del _wa1, _lum
 _nearroad = ndimage.binary_dilation(np.isfinite(HRMIN), iterations=2)
 _shore = np.isfinite(LVL) & (_sdn < 6.0) & ~_nearroad
 _tgt = np.maximum(LVL - 1.2, LVL + 0.45 * _sdn - 0.12)
@@ -613,12 +670,12 @@ Hc = np.round(Hg * 100).astype(np.int16)
 water = Wm.astype(np.uint8)
 road_cls = (LUSE == 215).astype(np.uint8)
 road_cls[:] = 0  # 高さは上で調整済み
-gbuf = Hc.tobytes() + water.tobytes() + road_cls.tobytes() + Mk.tobytes() + WL.tobytes()
+gbuf = grad_encode(Hc) + water.tobytes() + road_cls.tobytes() + Mk.tobytes() + WL.tobytes()   # v30: 高さは差分（grad2）
 bins["ground"] = bytearray(gbuf)
-manifest["ground"] = dict(file="ground", nx=int(nx), nz=int(nz), x0=DX0, z0=DZ0, step=DSTEP)
+manifest["ground"] = dict(file="ground", nx=int(nx), nz=int(nz), x0=DX0, z0=DZ0, step=DSTEP, enc="grad2")
 
 # ================= 3) 道路 =================
-print("roads...", flush=True)
+print("roads...", flush=True); print("  [rss MB]", _rss(), flush=True)
 RT = R["tris"]
 ROAD_TINT = {"lane": (1.0, 1.0, 1.0), "xing": (0.97, 0.97, 0.97), "walk": (1.0, 1.0, 1.0), "island": (1.0, 1.0, 1.0),
              "green": (1.0, 1.0, 1.0), "tramstop": (1.0, 1.0, 1.0), "rail": (1.0, 1.0, 1.0)}
@@ -684,8 +741,9 @@ add_chunk("mark", M["yellow"], col=tri_colors(len(M["yellow"]) // 3, (0.93, 0.74
 print("  marks white", len(M["white"]) // 3, "yellow", len(M["yellow"]) // 3, flush=True)
 del M; RT.clear(); R["tris"] = {}; R["curb"] = None   # v29: 出力済み（メモリ）
 
-print("bridge rails...", flush=True)
-allroad = unary_union([R["lanes"], R["raised"]])
+print("bridge rails...", flush=True); print("  [rss MB]", _rss(), flush=True)
+# v30: 道路は部分のリスト（lanes_parts・raised_parts）。v29 と同じく全体の和集合の輪郭のうち、軌道の近くを通る輪郭を使う
+allroad = unary_union(list(road_parts(R, "lanes")) + list(road_parts(R, "raised")))
 brail = []
 near_tr = TRACKS.buffer(250)
 def _in(pt):
@@ -779,7 +837,7 @@ if bpier:
 print("  bridge rail tris", len(brail) // 3, flush=True)
 
 # ================= 4) 軌道（軌道敷・レール） =================
-print("track...", flush=True)
+print("track...", flush=True); print("  [rss MB]", _rss(), flush=True)
 from scipy.spatial import cKDTree
 allpts = np.concatenate([t["xyz"] for t in T["tracks"]])
 ktree = cKDTree(allpts[:, [0, 2]])
@@ -832,7 +890,7 @@ add_chunk("track", grooves, col=tri_colors(len(grooves) // 3, (0.16, 0.15, 0.14)
 print("  bed", len(bed) // 3, "rails", len(rails) // 3, flush=True)
 
 # ================= 5) ホーム・路面表示のみの電停 =================
-print("platforms...", flush=True)
+print("platforms...", flush=True); print("  [rss MB]", _rss(), flush=True)
 # ホームの整形: OSM のホーム形状が線路に掛かる・幅が 1.8m 未満のものは、線路側を車両限界(軌道中心から1.40m)で切り、
 # 車道側へ広げて有効幅を確保する（岡電の電停は幅 1.8〜2.5m 程度）
 _TB140 = TRACKS.buffer(1.30)
@@ -982,7 +1040,7 @@ for key, r in T["routes"].items():
 add_chunk("mark", cat_(stop_marks), col=tri_colors(len(cat_(stop_marks)) // 3, (0.92, 0.92, 0.90)), mat="paint", file_key="road")
 
 # ================= 6) 架線柱・架線 =================
-print("catenary...", flush=True)
+print("catenary...", flush=True); print("  [rss MB]", _rss(), flush=True)
 KIND = R["KIND"]
 def raised_near(q, dirv, maxd=16):
     for d in np.arange(2.0, maxd, 0.25):
@@ -1059,7 +1117,7 @@ print("  poles tris", len(poles) // 3, flush=True)
 # 交差点ごとに組み立てる: OSM の traffic_signals ノードを 30m でまとめて交差点とし、
 # 交差点に入る道路（腕）ごとに、日本の標準的な配置（交差点の向こう側・進行方向左の柱から張り出した横型3灯）で灯器を置く。
 # 向かい合う腕どうしは同じ現示、直交する腕はもう一方の現示（2現示）。主道路＝路面電車の軌道に沿う方向。
-print("signals...", flush=True)
+print("signals...", flush=True); print("  [rss MB]", _rss(), flush=True)
 sig_geo = []; sig_heads = []; ISECT = []
 HW_CLASS = {"trunk": 4, "primary": 4, "secondary": 2, "tertiary": 2, "unclassified": 2, "residential": 2}
 road_ways = [w for w in ways if w["tags"].get("highway") in ("trunk", "primary", "secondary", "tertiary", "unclassified", "residential", "trunk_link", "primary_link", "secondary_link", "tertiary_link")]
@@ -1158,7 +1216,7 @@ manifest["isects"] = ISECT
 print("  intersections", len(ISECT), "signal heads", n_sig, flush=True)
 
 # ================= 7b) バス停（OpenStreetMap の実位置） =================
-print("bus stops...", flush=True)
+print("bus stops...", flush=True); print("  [rss MB]", _rss(), flush=True)
 bs_geo, bs_plate = [], []
 KND = R["KIND"]
 def nearest_walk(q, rad=8.0):
@@ -1196,7 +1254,7 @@ if bs_geo:
 print("  bus stops", n_bs, flush=True)
 
 # ================= 8) 建物 =================
-print("buildings...", flush=True)
+print("buildings...", flush=True); print("  [rss MB]", _rss(), flush=True)
 _clr = prep(EXTD["clear"])
 # v21: 電停のホームの上の PLATEAU の建物（旧 岡山駅前電停の上屋が地面までの箱になり、ホームがブロックで埋まっていた）は除く。
 #   上屋はホームの側（platforms）で柱と屋根として作る
@@ -1288,6 +1346,12 @@ if os.path.isdir(_OBC):
     _pk = lambda s_: s_.split("/p25/", 1)[-1]
     TEX_OLD = {_pk(img): np.concatenate(L)[:, [0, 2]].mean(0) for img, L in TEX_OLD.items()}
     print("  v28 facade images", len(TEX_OLD), "now", len(tex_groups), flush=True)
+    # v30: 重心を保存（out_bldg_core が無くても同じアトラスを作れるように。tools/work/core にも入れる）
+    json.dump({k_: [float(v_[0]), float(v_[1])] for k_, v_ in TEX_OLD.items()}, open("/home/claude/wx/tex_old_centroids.json", "w"))
+elif os.path.exists("/home/claude/wx/tex_old_centroids.json"):
+    _pk = lambda s_: s_.split("/p25/", 1)[-1]
+    TEX_OLD = {k_: np.array(v_, np.float64) for k_, v_ in json.load(open("/home/claude/wx/tex_old_centroids.json")).items()}
+    print("  v28 facade images (json)", len(TEX_OLD), "now", len(tex_groups), flush=True)
 for (p, c, kind, base_y, floor_h, variant), d in _plain_items():
     if True:
         t = _skylift(p).reshape(-1, 3, 3).astype(np.float64)
@@ -1495,7 +1559,7 @@ if roofP_pos:
         uv = np.stack([(pos[:, 0] - P0["x0"]) / P0["size"], 1 - (pos[:, 2] - P0["z0"]) / P0["size"]], 1)
         add_chunk("bldg", pos, uv=uv, mat="ortho", page=int(pi), file_key="bldg_proc")
 # ================= v17: ランドマーク（後楽園の建物・土塀、岡山城の石垣・金鯱） =================
-print("landmarks...", flush=True)
+print("landmarks...", flush=True); print("  [rss MB]", _rss(), flush=True)
 _GB = LMK.garden_buildings(_LDEM)
 _gwp, _gwu, _grp, _gru, _grc, _gtp = _GB
 if len(_gwp): add_chunk("bldg", _gwp, uv=_gwu, mat="wafu", file_key="bldg_plain", uv_int=True)
@@ -1521,34 +1585,38 @@ _tt = [p_.reshape(-1, 3, 3) for L_ in tex_groups.values() for p_, u_ in L_
 _sh = LMK.shachi([t for a in _tt for t in a]) if _tt else np.zeros((0, 3))
 if len(_sh): add_chunk("bldg", _sh, col=tri_colors(len(_sh) // 3, (0.95, 0.76, 0.3)), mat="gold", file_key="bldg_plain")
 # ---- 車モード用: 2m 格子の路面高さ(cm)と区分（0=地面 1=車道 2=歩道・島 9=建物） ----
-print("drive grid...", flush=True)
+print("drive grid...", flush=True); print("  [rss MB]", _rss(), flush=True)
 DG = 2.0; dnx = int(nx * DSTEP / DG); dnz = int(nz * DSTEP / DG)
 gx = DX0 + (np.arange(dnx) + 0.5) * DG; gz = DZ0 + (np.arange(dnz) + 0.5) * DG
-GXX, GZZ = np.meshgrid(gx, gz)
-fi = (GXX - DX0) / DSTEP; fj = (GZZ - DZ0) / DSTEP
-i0 = np.clip(np.floor(fi).astype(int), 0, nx - 2); j0 = np.clip(np.floor(fj).astype(int), 0, nz - 2)
-tx = np.clip(fi - i0, 0, 1); tz = np.clip(fj - j0, 0, 1)
-Hgv = (Hg[j0, i0] * (1 - tx) + Hg[j0, i0 + 1] * tx) * (1 - tz) + (Hg[j0 + 1, i0] * (1 - tx) + Hg[j0 + 1, i0 + 1] * tx) * tz - 0.12
-ri = np.clip(((GXX - GX0) / RES).astype(int), 0, HR.shape[1] - 1); rj = np.clip(((GZZ - GZ0) / RES).astype(int), 0, HR.shape[0] - 1)
-hr = HR[rj, ri]; kd = R["KIND"][rj, ri]
-# v13: 道路の縁の格子（中心が道路の外）は、近くの路面の高さでふさぐ（狭い道で地面との高さの差が段差・揺れになっていた）
-_hn = ~np.isfinite(hr)
-if _hn.any():
-    _dist, (_ji, _ii) = ndimage.distance_transform_edt(_hn, return_indices=True)
-    _fill = hr[_ji, _ii]
-    _ok = _hn & (_dist <= 1.5) & ~((GXX > -165) & (GXX < 5) & (GZZ > -60) & (GZZ < 125))   # 駅前広場は除く
-    hr = np.where(_ok, _fill, hr)
-    kd = np.where(_ok, 0, kd)
-DH_ = np.where(np.isfinite(hr), hr, Hgv).astype(np.float64)
-m_ext = (GXX > -145) & (GXX < 0) & (GZZ > -50) & (GZZ < 35) & np.isfinite(hr)
-for j_, i_ in zip(*np.nonzero(m_ext)): DH_[j_, i_] += ext_delta(GXX[j_, i_], GZZ[j_, i_])
-DC_ = np.where(np.isfinite(hr), kd, 0).astype(np.uint8)
-# v29: メモリ（範囲拡大）。以降は使わない一時配列を捨てる
-del fi, fj, i0, j0, tx, tz, Hgv, ri, rj, hr, kd, m_ext
-for _v in ("_dist", "_ji", "_ii", "_fill", "_ok"):
-    if _v in globals(): del globals()[_v]
+# v30: 範囲拡大（2m 格子で 2600 万升）のため、行の帯ごとに求める。道路の縁の穴埋め（1.5 升以内）のため上下に 3 行の余白。結果は全体で求めた時と同じ
+DH_ = np.zeros((dnz, dnx), np.float64); DC_ = np.zeros((dnz, dnx), np.uint8)
+_KRD = R["KIND"]; _SB = 256; _SM = 3
+for _b0 in range(0, dnz, _SB):
+    _b1s = min(dnz, _b0 + _SB); _e0 = max(0, _b0 - _SM); _e1 = min(dnz, _b1s + _SM); _sl = slice(_b0 - _e0, _b1s - _e0)
+    GXX, GZZ = np.meshgrid(gx, gz[_e0:_e1])
+    fi = (GXX - DX0) / DSTEP; fj = (GZZ - DZ0) / DSTEP
+    i0 = np.clip(np.floor(fi).astype(int), 0, nx - 2); j0 = np.clip(np.floor(fj).astype(int), 0, nz - 2)
+    tx = np.clip(fi - i0, 0, 1); tz = np.clip(fj - j0, 0, 1)
+    Hgv = (Hg[j0, i0] * (1 - tx) + Hg[j0, i0 + 1] * tx) * (1 - tz) + (Hg[j0 + 1, i0] * (1 - tx) + Hg[j0 + 1, i0 + 1] * tx) * tz - 0.12
+    del fi, fj, i0, j0, tx, tz
+    ri = np.clip(((GXX - GX0) / RES).astype(int), 0, HR.shape[1] - 1); rj = np.clip(((GZZ - GZ0) / RES).astype(int), 0, HR.shape[0] - 1)
+    hr = np.asarray(HR[rj, ri]); kd = np.asarray(_KRD[rj, ri]); del ri, rj
+    # v13: 道路の縁の格子（中心が道路の外）は、近くの路面の高さでふさぐ（狭い道で地面との高さの差が段差・揺れになっていた）
+    _hn = ~np.isfinite(hr)
+    if _hn.any() and (~_hn).any():
+        _dist, (_ji, _ii) = ndimage.distance_transform_edt(_hn, return_indices=True)
+        _fill = hr[_ji, _ii]
+        _ok = _hn & (_dist <= 1.5) & ~((GXX > -165) & (GXX < 5) & (GZZ > -60) & (GZZ < 125))   # 駅前広場は除く
+        hr = np.where(_ok, _fill, hr)
+        kd = np.where(_ok, 0, kd)
+        del _dist, _ji, _ii, _fill, _ok
+    hr = hr[_sl]; kd = kd[_sl]; Hgv = Hgv[_sl]; GXs = GXX[_sl]; GZs = GZZ[_sl]; del GXX, GZZ
+    _dh = np.where(np.isfinite(hr), hr, Hgv).astype(np.float64)
+    m_ext = (GXs > -145) & (GXs < 0) & (GZs > -50) & (GZs < 35) & np.isfinite(hr)
+    for j_, i_ in zip(*np.nonzero(m_ext)): _dh[j_, i_] += ext_delta(GXs[j_, i_], GZs[j_, i_])
+    DH_[_b0:_b1s] = _dh; DC_[_b0:_b1s] = np.where(np.isfinite(hr), kd, 0).astype(np.uint8)
+    del hr, kd, Hgv, GXs, GZs, _dh, m_ext, _hn
 import gc as _gc; _gc.collect()
-_bm = Image.new("L", (dnx, dnz), 0); _bd = ImageDraw.Draw(_bm)
 _rtl = [RP.reshape(-1, 3, 3)]
 for L_ in tex_groups.values():
     for p_, u_ in L_:
@@ -1557,41 +1625,77 @@ for L_ in tex_groups.values():
         if up_.any(): _rtl.append(t_[up_])
 _rtl.append(_grp.reshape(-1, 3, 3))
 _rt = np.concatenate(_rtl); del _rtl
+if os.environ.get("DUMP_RT"): np.save("/home/claude/wx/dbg_rt.npy", _rt)   # 試験用
 import cv2 as _cv2
-def _fill_tris(shape, step):
-    """三角形群（_rt）をまとめて塗る（cv2.fillPoly。PIL で 1 枚ずつより大幅に速い）"""
-    img = np.zeros(shape, np.uint8)
+def _tri_pts(step):
+    """三角形群（_rt）の頂点を塗り用の固定小数点（1/8 画素）に。z の範囲（行）も返す"""
     pts = np.round(np.stack([(_rt[:, :, 0] - DX0) / step, (_rt[:, :, 2] - DZ0) / step], -1) * 8).astype(np.int32)
-    for k in range(0, len(pts), 200000):
-        _cv2.fillPoly(img, list(pts[k:k + 200000]), 255, lineType=_cv2.LINE_8, shift=3)
-    return img
+    return pts, pts[:, :, 1].min(1) >> 3, (pts[:, :, 1].max(1) >> 3) + 1
+def _fill_rows(ptsz, w, r0, r1, fullh=None):
+    """行 r0..r1 の帯だけ塗る（頂点を整数の画素だけずらすので、全体を塗った時と同じ画素になる）。
+    帯に掛かる三角形は画像の上下の端で切られないよう、三角形の全体が入る高さの画像に塗ってから帯を切り出す
+    （cv2 は画像の外に出る多角形を切る時に辺の位置が少し変わるため。全体の画像の上下端は全体の時と同じく切る）"""
+    pts, zlo, zhi = ptsz
+    fullh = r1 if fullh is None else fullh
+    sel = np.nonzero((zhi >= r0 - 1) & (zlo <= r1 + 1))[0]
+    if not len(sel): return np.zeros((r1 - r0, w), np.uint8)
+    R0 = max(0, min(r0, int(zlo[sel].min()) - 2)); R1 = min(fullh, max(r1, int(zhi[sel].max()) + 2))
+    img = np.zeros((R1 - R0, w), np.uint8)
+    # cv2.fillPoly は 1 回の呼び出しの中で重なる多角形を偶奇で塗る（重なりが抜ける）。v29 と同じ結果にするため、
+    # 全体を 20 万個ずつ塗っていた時と同じ組（元の番号 // 200000）ごとに呼ぶ
+    grp = sel // 200000
+    for g in np.unique(grp):
+        s_ = sel[grp == g]; p_ = pts[s_].copy(); p_[:, :, 1] -= R0 * 8
+        _cv2.fillPoly(img, list(p_), 255, lineType=_cv2.LINE_8, shift=3)
+    return img[r0 - R0:r1 - R0]
+def _fill_tris(shape, step):
+    return _fill_rows(_tri_pts(step), shape[1], 0, shape[0])
 _bmask = _fill_tris((dnz, dnx), DG) > 0
 # v20: 道路の上の 2 階の連絡通路（下端を地上 5.2m へ持ち上げた _SKYS）は、下を車・バスが通れるので建物扱いにしない
-def _sky_raster(shape, step):
-    im = Image.new("L", (shape[1], shape[0]), 0); dr_ = ImageDraw.Draw(im)
-    for sp_ in _SKYS: dr_.polygon([((x - DX0) / step, (z - DZ0) / step) for x, z in sp_.exterior.coords], fill=255)
+def _sky_rows(w, step, r0, r1):
+    im = Image.new("L", (w, r1 - r0), 0); dr_ = ImageDraw.Draw(im)
+    for sp_ in _SKYS: dr_.polygon([((x - DX0) / step, (z - DZ0) / step - r0) for x, z in sp_.exterior.coords], fill=255)
     return np.array(im) > 0
+def _sky_raster(shape, step): return _sky_rows(shape[1], step, 0, shape[0])
 _bmask &= ~_sky_raster((dnz, dnx), DG)
 # 道路上に張り出した建物（デッキ等）は通れるよう、車道セルは建物扱いにしない
 DC_[_bmask & (DC_ != 1)] = 9
+del _bmask
 # v14: 衝突判定用の細かい建物マスク（1m・ビット列）。2m 格子では狭い道の縁が建物扱いになり、当たっていないのに衝突していた。
 # 屋根の輪郭（軒の出を含む）を 0.5m で描き 0.5m 内側へ縮め、車道（KIND==1）の所は除く。
+# v30: 0.5m の格子（範囲拡大で 4 億升）は、行の帯（1024 行＋上下 2 行の余白）ごとに求める（結果は全体の時と同じ）
 _FS = 0.5; _fnx = int(round(nx * DSTEP / _FS)); _fnz = int(round(nz * DSTEP / _FS))
-_ft = _fill_tris((_fnz, _fnx), _FS) > 0
-_fmask = ndimage.binary_erosion(_ft, iterations=1); del _ft
 _KR = R["KIND"]
 _oi = int(round((DX0 - GX0) / RES)); _oj = int(round((DZ0 - GZ0) / RES))
-_kr = np.zeros_like(_fmask)
+assert _oi >= 0 and _oj >= 0
 _h = min(_fnz, _KR.shape[0] - _oj); _w = min(_fnx, _KR.shape[1] - _oi)
-_kr[:_h, :_w] = _KR[_oj:_oj + _h, _oi:_oi + _w] == 1
-_fmask &= ~_kr
-_fmask &= ~_sky_raster((_fnz, _fnx), _FS)
-_b1 = _fmask[1::2, 1::2]
+_ptsF = _tri_pts(_FS)
+_b1L = []; _fmL = []
+_FB = 1024
+for _r0 in range(0, _fnz, _FB):
+    _r1 = min(_fnz, _r0 + _FB); _q0 = max(0, _r0 - 2); _q1 = min(_fnz, _r1 + 2)
+    _ft = _fill_rows(_ptsF, _fnx, _q0, _q1, _fnz) > 0
+    _fm = ndimage.binary_erosion(_ft, iterations=1)[_r0 - _q0:_r1 - _q0]; del _ft
+    _kr = np.zeros_like(_fm)
+    _a = min(_r1, _h)
+    if _a > _r0: _kr[:_a - _r0, :_w] = np.asarray(_KR[_oj + _r0:_oj + _a, _oi:_oi + _w]) == 1
+    _fm &= ~_kr; del _kr
+    _fm &= ~_sky_rows(_fnx, _FS, _r0, _r1)
+    _b1L.append(_fm[1::2, 1::2]); _fmL.append(np.packbits(_fm, axis=1)); del _fm
+del _ptsF
+_b1 = np.concatenate(_b1L); del _b1L
+_FMB = np.concatenate(_fmL); del _fmL   # v30: 0.5m の建物マスク（アーケード・小物で使う）はビット列で持つ
 _bnz, _bnx = _b1.shape
 _bbits = np.packbits(_b1.astype(np.uint8), axis=1)
-bins["drive"] = bytearray(np.round(DH_ * 100).astype(np.int16).tobytes() + DC_.tobytes() + _bbits.tobytes())
+# v30: 高さは 2 次元の差分（左＋上−左上 からの差）を下位・上位のバイトに分けて持つ（deflate がよく縮む。geo_io・app.js で戻す）
+_DHi = np.round(DH_ * 100).astype(np.int16)
+np.save("/home/claude/wx/drive_H.npy", _DHi)
+# v30: 高さは地面の格子（ground）からの予測との差（gres。地面の所はほぼ 0）。原点が同じで升目が半分の時だけ
+assert DG * 2 == DSTEP and dnx == 2 * nx and dnz == 2 * nz
+bins["drive"] = bytearray(gres_encode(_DHi, Hc) + DC_.tobytes() + _bbits.tobytes())
 manifest["drive"] = dict(file="drive", nx=int(dnx), nz=int(dnz), x0=float(DX0), z0=float(DZ0), step=DG,
-                         bnx=int(_bnx), bnz=int(_bnz), bstep=1.0, brow=int(_bbits.shape[1]))
+                         bnx=int(_bnx), bnz=int(_bnz), bstep=1.0, brow=int(_bbits.shape[1]), enc="gres")
+del _DHi
 print("  building mask 1m", _bnx, _bnz, "cells", int(_b1.sum()), flush=True)
 # v17: ヘリ用の屋上の高さ（4m 格子・1m 単位の絶対高さ。0 = 建物なし）。低い屋根から順に塗り、高い屋根で上書き
 _HS = 4.0; _hnx = int(round(nx * DSTEP / _HS)); _hnz = int(round(nz * DSTEP / _HS))
@@ -1628,7 +1732,7 @@ for img, L in tex_groups.items():
     else: allp = np.concatenate([p for p, u in L]); cxz = allp[:, [0, 2]].mean(0)
     with Image.open(img) as im: w, h = im.size
     hc_ = (int((cxz[0] - HC_X0) // HCELL), int((cxz[1] - HC_Z0) // HCELL))
-    assert 0 <= hc_[0] < 32 and 0 <= hc_[1] < 32, ("hi cell out of HIMASK", hc_)
+    assert 0 <= hc_[0] < 64 and 0 <= hc_[1] < 64, ("hi cell out of HIMASK（app.js は 64×64）", hc_)
     info.append([img, w, h, tile_of(*cxz), hc_, (not TEX_OLD) or (_pk(img) in TEX_OLD)])
 # v29: v28 の画像と、広げた所の画像は別々に詰める（v28 の画像のページは v28 と同じ。広げた所の画像は後ろのページ）
 tiles_img = {}
@@ -1720,12 +1824,12 @@ print("  hi-res facade pages", hp_count, "cells", len(hi_cells), "MB", round(hi_
 # ================= v16: 商店街のアーケード（表町・西大寺町・岡山駅前・奉還町 など） =================
 # OSM の商店街の道（covered=arcade/yes または名前が「〜商店街」の歩行者道）に沿って、両側の建物の間に屋根を架ける。
 # 幅は 0.5m の建物マスクで両側の建物までを測り（2〜7m の半幅）、高さは軒 7.2m・頂部 +1.6m の半円筒形。10m ごとにアーチ梁と柱。
-print("arcades...", flush=True)
+print("arcades...", flush=True); print("  [rss MB]", _rss(), flush=True)
 ARC_NAMES = ("表町商店街", "西大寺町商店街", "岡山駅前商店街", "奉還町商店街", "千日前商店街", "新西大寺町商店街")
 arc_roof, arc_frame, arc_uv = [], [], []
 def _bm_at(x, z):
     i = int((x - DX0) / 0.5); j = int((z - DZ0) / 0.5)
-    return 0 <= j < _fmask.shape[0] and 0 <= i < _fmask.shape[1] and bool(_fmask[j, i])
+    return 0 <= j < _fnz and 0 <= i < _fnx and bool((_FMB[j, i >> 3] >> (7 - (i & 7))) & 1)
 n_arc = 0
 for w in ways:
     t_ = w["tags"]
@@ -1776,7 +1880,7 @@ print("  arcades", n_arc, "roof tris", len(arc_roof) // 3, flush=True)
 # ================= v16: 街の小物（電柱と電線・自動販売機・袖看板） =================
 # 電柱: 幹線以外の道（tertiary・unclassified・residential・living_street）の片側の縁、約 32m おき（主要道路は無電柱化のため立てない）。
 # 自動販売機: 建物の前（道路の縁から 3m 以内に建物がある所）に確率的に。袖看板: 2 車線以上の道に面した建物の壁に。
-print("street details...", flush=True)
+print("street details...", flush=True); print("  [rss MB]", _rss(), flush=True)
 import random as _rnd
 _rng = _rnd.Random(2027)
 KND_ = R["KIND"]
@@ -1883,11 +1987,14 @@ P_ = _cat(vend_front)
 if len(P_): add_chunk("frn", P_, uv=np.array(vend_front_uv, float).reshape(-1, 2), mat="vend", file_key="detail")
 P_ = _cat(sign_face)
 if len(P_): add_chunk("frn", P_, uv=np.array(sign_face_uv, float).reshape(-1, 2), mat="signs", file_key="detail")
-bins["pwires"] = bytearray(np.asarray(pw_segs, np.float32).reshape(-1).tobytes()) if pw_segs else bytearray()
+# v30: cm の整数・差分・バイトの面（geo_io.pw_encode。以前は float32 のまま）
+import geo_io as _gio
+bins["pwires"] = bytearray(_gio.pw_encode(np.asarray(pw_segs, np.float32).reshape(-1))) if pw_segs else bytearray()
+manifest["pwires_enc"] = "sd"
 print("  utility poles", n_pole, "wire segs", len(pw_segs), "vending", n_vend, "signs", n_sign, flush=True)
 
 # ================= 9) 植生（軌道敷に掛かるものを除く） =================
-print("vegetation...", flush=True)
+print("vegetation...", flush=True); print("  [rss MB]", _rss(), flush=True)
 cr, trk, cv, pts = [], [], [], []
 for f in sorted(glob.glob("/home/claude/wx/out_veg/*.pkl")):
     d = pickle.load(open(f, "rb"))
@@ -2067,7 +2174,7 @@ for fk, buf in bins.items():
     b64 = base64.b64encode(comp)      # 公開先がバイナリ（.bin）を配信できないため base64 の .txt のまま
     fn = f"geo_{fk}.txt"
     open(os.path.join(OUT, fn), "wb").write(b64)
-    manifest.setdefault("files", {})[fk] = dict(file=fn, raw=len(raw))
+    manifest.setdefault("files", {})[fk] = dict(file=fn, raw=len(raw), size=len(b64))   # v30: size = 送る大きさ（読み込みの進み具合の表示用）
     tot += len(b64)
     print("wrote", fn, "raw", round(len(raw) / 1e6, 2), "MB -> txt", round(len(b64) / 1e6, 2), "MB")
 manifest["source"] = routes["note"]

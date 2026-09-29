@@ -85,3 +85,42 @@ def strip_closing(a):
     if len(a) > 1 and np.allclose(a[0], a[-1]):
         return a[:-1]
     return a
+
+# ---- v30: 道路のデータ（roads_*.pkl）の読み書き。0.5m の高さ・種類の格子（HR・KIND）は大きいので、別の .npy に置いて
+#      必要な所だけ読む（np.load の mmap）。v28 の形式（pickle の中に HR・KIND）もそのまま読める ----
+def save_roads(R, path):
+    import pickle as _pk
+    R = dict(R)
+    for k in ("HR", "KIND"):
+        a = R.pop(k)
+        fn = f"{path}.{k}.npy"
+        if isinstance(a, np.memmap) and os.path.abspath(getattr(a, "filename", "") or "") == os.path.abspath(fn):
+            a.flush()
+        else:
+            np.save(fn + ".tmp.npy", np.asarray(a)); os.replace(fn + ".tmp.npy", fn)
+        R[k + "_file"] = fn
+    _pk.dump(R, open(path + ".tmp", "wb")); os.replace(path + ".tmp", path)
+def load_roads(path, mode="r"):
+    """mode: 'r'（読むだけ）/ 'r+'（その場で書き換え）/ 'c'（書き換えてもファイルは変えない）/ None（全部メモリへ）"""
+    import pickle as _pk
+    R = _pk.load(open(path, "rb"))
+    for k in ("HR", "KIND"):
+        if k + "_file" in R: R[k] = np.load(R.pop(k + "_file"), mmap_mode=mode)
+    return R
+def road_parts(R, key):
+    """R["lanes"] / R["raised"] を多角形の部分のリストで返す（v30 は R["lanes_parts"] などのリスト、v28 は 1 つの和集合）"""
+    if key + "_parts" in R: return R[key + "_parts"]
+    g = R.get(key)
+    if g is None or g.is_empty: return []
+    return list(g.geoms) if hasattr(g, "geoms") else [g]
+class PartsIndex:
+    """多角形の部分のリストから、ある範囲の近くの部分だけを和集合にする"""
+    def __init__(self, parts):
+        from shapely.strtree import STRtree as _T
+        self.parts = [p for p in parts if p is not None and not p.is_empty]; self.tree = _T(self.parts)
+    def near(self, geom, pad=0.0):
+        from shapely.ops import unary_union as _uu
+        from shapely.geometry import Polygon as _P
+        if geom.is_empty: return _P()
+        idx = self.tree.query(geom.buffer(pad) if pad else geom)
+        return _uu([self.parts[i] for i in idx]) if len(idx) else _P()

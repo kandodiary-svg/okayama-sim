@@ -4,7 +4,8 @@ import json, base64, zlib, sys
 import numpy as np
 D = sys.argv[1] if len(sys.argv) > 1 else "/home/claude/okaden-x/data"
 sc = json.load(open(f"{D}/scene.json")); d = sc["drive"]
-raw = zlib.decompress(base64.b64decode(open(f"{D}/{sc['files']['drive']['file']}").read()))
+sys.path.insert(0, "/home/claude/pipeline-x"); import geo_io   # v30: 差分で持つ高さ（enc）も戻す
+geo_io.OUT = D; raw = geo_io.read_legacy("drive")
 n = d["nx"] * d["nz"]
 H = np.frombuffer(raw[:n * 2], np.int16).reshape(d["nz"], d["nx"]) / 100.0
 K = np.frombuffer(raw[n * 2:n * 3], np.uint8).reshape(d["nz"], d["nx"])

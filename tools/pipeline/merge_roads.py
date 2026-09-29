@@ -16,8 +16,9 @@ from common import CORE, load_track_line
 W = "/home/claude/wx"
 TRK = load_track_line(); shapely.prepare(TRK)
 t0 = time.time()
-OLD = pickle.load(open(f"{W}/roads_final_core.pkl", "rb"))
-NEW = pickle.load(open(f"{W}/roads_new.pkl", "rb"))
+from common import load_roads, save_roads
+OLD = load_roads(f"{W}/roads_final_core.pkl", None)
+NEW = load_roads(f"{W}/roads_new.pkl", "r")   # v30: 格子はファイルから必要な所だけ
 
 def tri_union(t):
     tt = t.reshape(-1, 3, 3)[:, :, [0, 2]]
@@ -87,25 +88,42 @@ def _clean(g):
     ps = [q for q in (g.geoms if hasattr(g, "geoms") else [g]) if q.geom_type == "Polygon" and q.area > 2.0 and not q.buffer(-0.3).is_empty]
     return unary_union(ps) if ps else shapely.Polygon()
 # 足した面（2D）は、残した新しい三角形から作る（新しい道路の面のうち、三角形を捨てた所を含めないように）
-def _tu(cats):
-    L = [tri_union(NEWT[c]) for c in cats if len(NEWT.get(c, []))]
-    L = [g for g in L if g is not None and not g.is_empty]
-    return unary_union(L) if L else shapely.Polygon()
-new_l = _clean(_tu(("lane", "xing", "rail")).difference(COVo)); new_r = _clean(_tu(("walk", "island", "green", "tramstop")).difference(COVo))
-lanes = unary_union([OLD["lanes"], new_l]) if not new_l.is_empty else OLD["lanes"]      # 足す物が無ければ v28 の形をそのまま（頂点の並びも同じ）
-raised = unary_union([OLD["raised"], new_r]) if not new_r.is_empty else OLD["raised"]
-NEWONLY = unary_union([new_l, new_r]).buffer(0.4); shapely.prepare(NEWONLY)
-print("  lanes/raised merged; new-only area m2", round(NEWONLY.area), "time", round(time.time() - t0), flush=True)
+# v30: 範囲全体の和集合は作らず、500m の升目ごとに作って部分のリストにする
+TS_ = 500.0
+def _tu_tiles(cats):
+    T = [np.asarray(NEWT[c], np.float64).reshape(-1, 3, 3) for c in cats if len(NEWT.get(c, []))]
+    if not T: return []
+    T = np.concatenate(T); cen = T.mean(1)
+    key = np.floor(cen[:, 0] / TS_).astype(np.int64) * 100000 + np.floor(cen[:, 2] / TS_).astype(np.int64)
+    out_ = []
+    for k in np.unique(key):
+        g = tri_union(T[key == k].reshape(-1, 3))
+        if g is None or g.is_empty: continue
+        g = _clean(g.difference(COVo))
+        out_ += [q for q in (g.geoms if hasattr(g, "geoms") else [g]) if not q.is_empty]
+    return out_
+new_l = _tu_tiles(("lane", "xing", "rail")); new_r = _tu_tiles(("walk", "island", "green", "tramstop"))
+from common import road_parts
+lanes_parts = road_parts(OLD, "lanes") + new_l; raised_parts = road_parts(OLD, "raised") + new_r
+_NT = shapely.STRtree(new_l + new_r) if (new_l or new_r) else None
+print("  lanes/raised parts: new", len(new_l), len(new_r), "area m2", round(sum(q.area for q in new_l + new_r)), "time", round(time.time() - t0), flush=True)
 # ---- 縁石 ----
 nc = NEW["curb"].reshape(-1, 12, 3)
 if len(nc):
     m = nc.mean(1)
-    nc = nc[shapely.contains_xy(NEWONLY, m[:, 0], m[:, 2]) & ~shapely.contains_xy(COVi, m[:, 0], m[:, 2])]
+    near_new = np.zeros(len(m), bool)
+    if _NT is not None:
+        _hit = _NT.query(shapely.points(m[:, 0], m[:, 2]), predicate="dwithin", distance=0.4)
+        near_new[np.unique(_hit[0])] = True
+    nc = nc[near_new & ~shapely.contains_xy(COVi, m[:, 0], m[:, 2])]
 curb = np.concatenate([OLD["curb"], nc.reshape(-1, 3)])
 print("  curb v28", len(OLD["curb"]) // 12, "+ new", len(nc), flush=True)
 # ---- ラスタ ----
 GX0, GZ0, RES = NEW["grid"]
-HR = np.full(NEW["HR"].shape, np.nan, np.float32); KIND = np.zeros(NEW["KIND"].shape, np.uint8); del NEW
+_shape = NEW["HR"].shape; del NEW
+HR = np.lib.format.open_memmap(f"{W}/roads_final.pkl.HR.npy", mode="w+", dtype=np.float32, shape=_shape)
+for _r in range(0, _shape[0], 2048): HR[_r:_r + 2048] = np.nan
+KIND = np.lib.format.open_memmap(f"{W}/roads_final.pkl.KIND.npy", mode="w+", dtype=np.uint8, shape=_shape)
 NX, NZ = HR.shape[1], HR.shape[0]
 def raster(tris, kind):
     """roads.py の raster と同じ（升目の中心が三角形に入れば、その高さ。車道は上書き、歩道は車道でない所だけ）"""
@@ -160,6 +178,6 @@ for cat in ("lane", "xing", "rail"):
 for cat in ("walk", "island", "green", "tramstop"):
     if cat in EDGE_FIX: raster(EDGE_FIX[cat], 2)
 print("  raster: v28 cells", int(fo.sum()), "total finite", int(np.isfinite(HR).sum()), flush=True)
-out = dict(tris=tris, curb=curb, lanes=lanes, raised=raised, HR=HR, KIND=KIND, grid=(GX0, GZ0, RES))
-pickle.dump(out, open(f"{W}/roads_final.pkl", "wb"))
+out = dict(tris=tris, curb=curb, lanes_parts=lanes_parts, raised_parts=raised_parts, HR=HR, KIND=KIND, grid=(GX0, GZ0, RES))
+save_roads(out, f"{W}/roads_final.pkl")
 print("wrote roads_final.pkl", {k: len(v) // 3 for k, v in tris.items()}, "time", round(time.time() - t0), flush=True)

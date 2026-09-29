@@ -11,7 +11,9 @@ import json, sys, os
 W = "/home/claude/wx"
 LAT0, LAT1, LON0, LON1 = 34.640, 34.676, 133.908, 133.956   # v28 の取得範囲（q.txt）
 
+BOX = [LAT0, LAT1, LON0, LON1]
 def touches_old(e):
+    LAT0, LAT1, LON0, LON1 = BOX
     if e["type"] == "node":
         return LAT0 <= e["lat"] <= LAT1 and LON0 <= e["lon"] <= LON1
     b = e.get("bounds")
@@ -25,7 +27,8 @@ def touches_old(e):
     if not pts: return b is not None
     return any(LAT0 <= g["lat"] <= LAT1 and LON0 <= g["lon"] <= LON1 for g in pts)
 
-def merge(old_fn, new_fn, out_fn):
+def merge(old_fn, new_fn, out_fn, box=None):
+    BOX[:] = box or [34.640, 34.676, 133.908, 133.956]
     old = json.load(open(old_fn)); new = json.load(open(new_fn))
     have = {(e["type"], e["id"]) for e in old["elements"]}
     add = []; skip_new_in_old = 0; dup = 0
@@ -45,5 +48,15 @@ def merge(old_fn, new_fn, out_fn):
 
 if __name__ == "__main__":
     a, b = sys.argv[1], sys.argv[2]
-    merge(f"{W}/osm_core/osm.json", f"{W}/osm_new/{a}", f"{W}/osm/osm.json")
-    merge(f"{W}/osm_core/extra.json", f"{W}/osm_new/{b}", f"{W}/osm/extra.json")
+    if len(sys.argv) > 3 and sys.argv[3] == "v30":
+        # v30: 3 段。v28 の範囲（2026-09-26）→ v29 の取得範囲（34.628〜34.697, 133.882〜133.968。2026-09-28）→ それより外（osm_new2。2026-09-29）
+        #      v29 の範囲の中は v29 と同じデータのまま
+        os.makedirs(f"{W}/osm_v29", exist_ok=True)
+        merge(f"{W}/osm_core/osm.json", f"{W}/osm_new/{a}", f"{W}/osm_v29/osm.json")
+        merge(f"{W}/osm_core/extra.json", f"{W}/osm_new/{b}", f"{W}/osm_v29/extra.json")
+        V29 = [34.628, 34.697, 133.882, 133.968]
+        merge(f"{W}/osm_v29/osm.json", f"{W}/osm_new2/{a}", f"{W}/osm/osm.json", V29)
+        merge(f"{W}/osm_v29/extra.json", f"{W}/osm_new2/{b}", f"{W}/osm/extra.json", V29)
+    else:
+        merge(f"{W}/osm_core/osm.json", f"{W}/osm_new/{a}", f"{W}/osm/osm.json")
+        merge(f"{W}/osm_core/extra.json", f"{W}/osm_new/{b}", f"{W}/osm/extra.json")

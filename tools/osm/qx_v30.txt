@@ -1,0 +1,10 @@
+[out:json][timeout:900][maxsize:1073741824];
+(
+  way["natural"="water"](34.620,133.870,34.713,134.005);
+  relation["natural"="water"](34.620,133.870,34.713,134.005);
+  way["waterway"~"^(river|canal)$"](34.620,133.870,34.713,134.005);
+  way["man_made"="bridge"](34.620,133.870,34.713,134.005);
+  node["place"](34.620,133.870,34.713,134.005);
+  relation["boundary"="administrative"]["admin_level"~"^(7|8|9|10)$"](34.620,133.870,34.713,134.005);
+);
+out body geom;

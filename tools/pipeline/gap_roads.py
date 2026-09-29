@@ -21,7 +21,8 @@ from common import proj, CORE, BX0, BZ0, BX1, BZ1
 from osm_load import load as osm_load
 
 SRC = "/home/claude/wx/roads_final.pkl"
-R = pickle.load(open(SRC, "rb"))
+from common import load_roads, save_roads, road_parts, PartsIndex
+R = load_roads(SRC, "r+")
 HR = R["HR"]; KIND = R["KIND"]; GX0, GZ0, RES = R["grid"]
 dem = np.load("/home/claude/wx/dem_grid.npz"); DX0, DZ0, DS = float(dem["x0"]), float(dem["z0"]), float(dem["step"]); DH = dem["H"].astype(np.float64)
 def dem_at(x, z):
@@ -132,7 +133,7 @@ print("gap segments", len(segs), "length km", round(sum(g.length for g, t in seg
 if not segs:
     print("nothing to add"); sys.exit(0)
 
-existing = unary_union([R["lanes"], R["raised"]]).buffer(0.05)
+EXIST = PartsIndex(road_parts(R, "lanes") + road_parts(R, "raised"))   # v30: 近くだけ和集合
 EX = json.load(open("/home/claude/wx/osm/extra.json"))
 _wp = []
 for e in EX["elements"]:
@@ -197,9 +198,17 @@ for g, t in segs:
     hw = t.get("highway", "").replace("_link", "")
     if hw in MAJ and t.get("embankment") != "yes" and t.get("bridge") != "yes":
         walk_polys.append(g.buffer(wd / 2 + 2.5, cap_style=2, join_style=2))
-LANE = unary_union(lane_polys).intersection(DATA).difference(COREB).difference(existing)
+def _minus_exist(G):
+    """G から、既存の道路面（近くの部分だけの和集合＋5cm）を除く"""
+    out_ = []
+    for q in (G.geoms if hasattr(G, "geoms") else [G]):
+        if q.is_empty: continue
+        e = EXIST.near(q, 0.1)
+        out_.append(q.difference(e.buffer(0.05)) if not e.is_empty else q)
+    return unary_union(out_) if out_ else Polygon()
+LANE = _minus_exist(unary_union(lane_polys).intersection(DATA).difference(COREB))
 LANE = unary_union([q for q in (LANE.geoms if hasattr(LANE, "geoms") else [LANE]) if isinstance(q, Polygon) and q.area > 2.0])
-WALK = (unary_union(walk_polys).intersection(DATA).difference(COREB).difference(unary_union(lane_polys)).difference(existing)
+WALK = (_minus_exist(unary_union(walk_polys).intersection(DATA).difference(COREB).difference(unary_union(lane_polys)))
         if walk_polys else Polygon())
 WALK = unary_union([q for q in (WALK.geoms if hasattr(WALK, "geoms") else [WALK]) if isinstance(q, Polygon) and q.area > 3.0 and q.buffer(-0.6).area > 0]) if not WALK.is_empty else Polygon()
 print("new lane area m2", round(LANE.area), "walk area m2", round(WALK.area), flush=True)
@@ -230,7 +239,9 @@ R["tris"]["lane"] = np.concatenate([R["tris"]["lane"], lt]) if len(lt) else R["t
 if len(wt): R["tris"]["walk"] = np.concatenate([R["tris"]["walk"], wt])
 cb = curb_faces(WALK, lambda x, z: top_at(x, z, 0.15)) if not WALK.is_empty else np.zeros((0, 3))
 if len(cb): R["curb"] = np.concatenate([R["curb"], cb])
-R["lanes"] = unary_union([R["lanes"], LANE]); R["raised"] = unary_union([R["raised"], WALK]) if not WALK.is_empty else R["raised"]
+R["lanes_parts"] = road_parts(R, "lanes") + [q for q in (LANE.geoms if hasattr(LANE, "geoms") else [LANE]) if not q.is_empty]
+R["raised_parts"] = road_parts(R, "raised") + ([q for q in (WALK.geoms if hasattr(WALK, "geoms") else [WALK]) if not q.is_empty] if not WALK.is_empty else [])
+R.pop("lanes", None); R.pop("raised", None)
 print("tris lane", len(lt) // 3, "walk", len(wt) // 3, "curb", len(cb) // 12, flush=True)
-pickle.dump(R, open(SRC, "wb"))
+save_roads(R, SRC)
 print("wrote", SRC)

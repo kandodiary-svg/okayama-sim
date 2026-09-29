@@ -242,14 +242,17 @@ for cat, L in lod3.items():
         elif cat in ("island", "green"): island_polys.append(g)
         else: lane_polys.append(g)
 
-lanes_all = unary_union(lane_polys)
-raised_all = unary_union(walk_polys + island_polys)
-lanes_prep = prep(lanes_all.buffer(0.05))
+# v30: 範囲全体の和集合は作らない（広い範囲では重い）。部分のリストのまま持ち、縁石は 500m の升目ごとに近くだけ和集合にする
+lane_parts = [g for g in lane_polys if g is not None and not g.is_empty]
+raised_parts = [g for g in walk_polys + island_polys if g is not None and not g.is_empty]
 
 # ---------------- 高さラスタ(0.5m) : 車道面の高さ ----------------
 RES = 0.5; GX0, GZ0 = BX0, BZ0; NX, NZ = int(round((BX1 - BX0) / RES)), int(round((BZ1 - BZ0) / RES))   # v29: bounds.json
-HR = np.full((NZ, NX), np.nan, np.float32)
-KIND = np.zeros((NZ, NX), np.uint8)  # 1=車道 2=歩道/島
+# v30: 格子はディスク上のファイル（.npy）に置く（範囲全体を一度にメモリに持たない）
+_ROUT = os.environ.get("ROADS_OUT", "/home/claude/wx/roads_final.pkl")
+HR = np.lib.format.open_memmap(_ROUT + ".HR.npy", mode="w+", dtype=np.float32, shape=(NZ, NX))
+for _r in range(0, NZ, 2048): HR[_r:_r + 2048] = np.nan
+KIND = np.lib.format.open_memmap(_ROUT + ".KIND.npy", mode="w+", dtype=np.uint8, shape=(NZ, NX))  # 1=車道 2=歩道/島
 def raster(tris, kind):
     t = tris.reshape(-1, 3, 3)
     for tt in t:
@@ -280,11 +283,25 @@ for cat in ("lane", "xing", "rail"):
     for t in out.get(cat, []): raster(t, 1)
 for cat in ("walk", "island", "green", "tramstop"):
     for t in out.get(cat, []): raster(t, 2)
-print("raster done", np.isfinite(HR).sum(), flush=True)
+print("raster done", sum(int(np.isfinite(HR[_r:_r + 2048]).sum()) for _r in range(0, NZ, 2048)), flush=True)
 
 # ---------------- 縁石(歩道・島の外周の立ち上がり) ----------------
 curb = []
-for g in poly_parts(raised_all):
+_RT = STRtree(raised_parts) if raised_parts else None; _LT = STRtree(lane_parts) if lane_parts else None
+CT = 500.0
+_tiles = sorted({(int(math.floor(x / CT)), int(math.floor(z / CT))) for g in raised_parts
+                 for x in (g.bounds[0], g.bounds[2]) for z in (g.bounds[1], g.bounds[3])} |
+                {(i, j) for g in raised_parts for i in range(int(math.floor(g.bounds[0] / CT)), int(math.floor(g.bounds[2] / CT)) + 1)
+                 for j in range(int(math.floor(g.bounds[1] / CT)), int(math.floor(g.bounds[3] / CT)) + 1)})
+for (ti, tj) in _tiles:
+  tx0, tz0 = ti * CT, tj * CT; TB_ = box(tx0 - 60, tz0 - 60, tx0 + CT + 60, tz0 + CT + 60)
+  ri = _RT.query(TB_)
+  if not len(ri): continue
+  raised_loc = unary_union([raised_parts[k] for k in ri])
+  li = _LT.query(TB_) if _LT is not None else []
+  lanes_prep = prep(unary_union([lane_parts[k] for k in li]).buffer(0.05)) if len(li) else prep(Polygon())
+  for g in poly_parts(raised_loc):
+    if not g.intersects(box(tx0, tz0, tx0 + CT, tz0 + CT)): continue
     gp = prep(g)
     for ring in [g.exterior] + list(g.interiors):
         c = np.array(ring.coords)
@@ -292,6 +309,7 @@ for g in poly_parts(raised_all):
             L = math.hypot(*(b - a))
             if L < 0.05: continue
             m = (a + b) / 2
+            if not (tx0 <= m[0] < tx0 + CT and tz0 <= m[1] < tz0 + CT): continue   # この升目の分だけ（重ならない）
             # 外側が車道のときだけ縁石を立てる
             nvec = np.array([-(b - a)[1], (b - a)[0]]) / L
             ok = False
@@ -314,6 +332,7 @@ curb = np.concatenate(curb) if curb else np.zeros((0, 3))
 print("curb tris", len(curb) // 3, flush=True)
 
 final = {k: np.concatenate(v) for k, v in out.items() if v}
-pickle.dump(dict(tris=final, curb=curb, lanes=lanes_all, raised=raised_all,
-                 HR=HR, KIND=KIND, grid=(GX0, GZ0, RES)), open(os.environ.get("ROADS_OUT", "/home/claude/wx/roads_final.pkl"), "wb"))   # v29: 範囲拡大では roads_new.pkl（merge_roads.py で v28 の道路と合わせる）
+from common import save_roads
+save_roads(dict(tris=final, curb=curb, lanes_parts=lane_parts, raised_parts=raised_parts,
+                HR=HR, KIND=KIND, grid=(GX0, GZ0, RES)), _ROUT)   # v29: 範囲拡大では roads_new.pkl（merge_roads.py で v28 の道路と合わせる）
 print({k: len(v) // 3 for k, v in final.items()})

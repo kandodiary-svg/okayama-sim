@@ -1,0 +1,17 @@
+[out:json][timeout:900][maxsize:1073741824];
+(
+  way["railway"~"tram|rail|light_rail|platform"](34.620,133.870,34.713,134.005);
+  node["railway"~"tram_stop|signal|switch|crossing|level_crossing|tram_crossing"](34.620,133.870,34.713,134.005);
+  way["public_transport"="platform"](34.620,133.870,34.713,134.005);
+  node["public_transport"~"stop_position|platform"](34.620,133.870,34.713,134.005);
+  way["highway"](34.620,133.870,34.713,134.005);
+  node["highway"~"traffic_signals|crossing|stop|give_way|street_lamp|bus_stop"](34.620,133.870,34.713,134.005);
+  node["crossing"](34.620,133.870,34.713,134.005);
+  way["area:highway"](34.620,133.870,34.713,134.005);
+  way["road_marking"](34.620,133.870,34.713,134.005);
+  node["power"~"catenary_mast|pole"](34.620,133.870,34.713,134.005);
+  way["bridge"](34.620,133.870,34.713,134.005);
+  way["barrier"](34.620,133.870,34.713,134.005);
+  node["barrier"](34.620,133.870,34.713,134.005);
+);
+out body geom;

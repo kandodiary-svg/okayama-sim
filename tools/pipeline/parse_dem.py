@@ -8,8 +8,11 @@ from common import proj_arr, latlon_bbox, BX0, BZ0, BX1, BZ1, CORE
 
 # v29: データ範囲（bounds.json）の 400m 外側まで（v28 は範囲の外側 約 400〜600m まで）
 LAT_MIN, LAT_MAX, LON_MIN, LON_MAX = latlon_bbox(400.0)
-# 2 次メッシュ 513377（北半分 50/55）・523307（南半分 00/05）の 4 つで、緯度 34.625〜34.708・経度 133.875〜134.0 を覆う
-assert LAT_MIN > 34.6250 and LAT_MAX < 34.7083 and LON_MIN > 133.875 and LON_MAX < 134.0, "DEM ファイルの範囲外"
+# 2 次メッシュ 513377（北半分 50/55）・523307（南半分 00/05）の 4 つで、緯度 34.625〜34.7083・経度 133.875〜134.0 を覆う
+# v30: 範囲を DEM のファイルの端のすぐ内側まで広げたので、外側の余白はファイルの範囲までにする（データ範囲そのものはファイルの中）
+_b = latlon_bbox(0.0)
+assert _b[0] > 34.6250 and _b[1] < 34.70834 and _b[2] > 133.875 and _b[3] < 134.0, "DEM ファイルの範囲外"
+LAT_MIN, LAT_MAX, LON_MIN, LON_MAX = max(LAT_MIN, 34.6250), min(LAT_MAX, 34.708334), max(LON_MIN, 133.875), min(LON_MAX, 134.0)
 files = ["/home/claude/wx/p25/udx/dem/513377_dem_6697_50_op.gml", "/home/claude/wx/p25/udx/dem/513377_dem_6697_55_op.gml", "/home/claude/wx/p25/udx/dem/523307_dem_6697_00_op.gml", "/home/claude/wx/p25/udx/dem/523307_dem_6697_05_op.gml"]
 
 pts = {}

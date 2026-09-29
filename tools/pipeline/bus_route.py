@@ -15,7 +15,7 @@ from common import proj
 OUT = "/home/claude/okaden-x/data"
 ways, nodes = osm_load()
 sc = json.load(open(f"{OUT}/scene.json")); dm = sc["drive"]
-import geo_io; raw = geo_io.read("drive")
+import geo_io; raw = geo_io.read_legacy("drive")
 n_ = dm["nx"] * dm["nz"]
 DH = np.frombuffer(raw[:n_ * 2], np.int16).reshape(dm["nz"], dm["nx"]) / 100.0
 def h_at(x, z):
@@ -227,7 +227,8 @@ stop_arc = [float(arc[i]) for i in stop_idx]
 # ④ ずれ量の列をならし（車線変更はおよそ 40m かけて）、中心線＋法線×ずれ量を経路にする。
 from scipy.ndimage import gaussian_filter1d, median_filter
 import pickle as _pk0
-_R0 = _pk0.load(open("/home/claude/wx/roads_final.pkl", "rb")); _K0 = _R0["KIND"]; _G0 = _R0["grid"]
+from common import load_roads as _lr0
+_R0 = _lr0("/home/claude/wx/roads_final.pkl", "r"); _K0 = _R0["KIND"]; _G0 = _R0["grid"]
 def _k0(x, z):
     i = int((x - _G0[0]) / _G0[2]); j = int((z - _G0[1]) / _G0[2])
     return _K0[j, i] if 0 <= j < _K0.shape[0] and 0 <= i < _K0.shape[1] else 0
@@ -310,7 +311,7 @@ for si, (nm, lat, lon, osm_nm, bay) in enumerate(STOPS):
     stops.append(dict(name=nm, arc=round(float(arc2[k]), 1), pole=[round(float(pole[0]), 2), round(float(pole[1]), 2)], bay=bay))
 # ---- 停留所: 標柱を「経路の左側の歩道の縁」に置き直し、バスを縁石へ寄せる（前扉が標柱の横、車体側面と縁石の間 0.4m） ----
 import pickle as _pk
-_R = _pk.load(open("/home/claude/wx/roads_final.pkl", "rb")); _K = _R["KIND"]; _G = _R["grid"]
+_R = _lr0("/home/claude/wx/roads_final.pkl", "r"); _K = _R["KIND"]; _G = _R["grid"]
 def _kind(x, z):
     i = int((x - _G[0]) / _G[2]); j = int((z - _G[1]) / _G[2])
     return _K[j, i] if 0 <= j < _K.shape[0] and 0 <= i < _K.shape[1] else 0

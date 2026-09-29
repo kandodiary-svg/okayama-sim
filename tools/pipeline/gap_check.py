@@ -6,7 +6,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from osm_load import load as osm_load
 from common import CORE, BX0, BZ0, BX1, BZ1
 fn = sys.argv[1] if len(sys.argv) > 1 else "/home/claude/wx/roads_final.pkl"
-R = pickle.load(open(fn, "rb")); HR = R["HR"]; GX0, GZ0, RES = R["grid"]
+from common import load_roads
+R = load_roads(fn, "r"); HR = R["HR"]; GX0, GZ0, RES = R["grid"]
 fin = np.isfinite(HR)
 from scipy import ndimage
 near = ndimage.binary_dilation(fin, iterations=6)   # 3m 以内に道路面

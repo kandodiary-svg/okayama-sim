@@ -1,9 +1,9 @@
 #!/bin/bash
-# v29 stage 2: 範囲拡大（bounds.json の範囲）で全部を作り直す。途中で止まっても、出来ている段はとばして続きから（DONE 印）
+# v30（v29 から）stage 2: 範囲拡大（bounds.json の範囲）で全部を作り直す。途中で止まっても、出来ている段はとばして続きから（DONE 印）
 set -e
 P=/home/claude/pipeline-x
 W=/home/claude/wx
-L=$W/logs/s2
+L=${LOGDIR:-$W/logs/s2}
 mkdir -p $L
 cd $P
 M="python3 $W/memrun.py python3"
@@ -14,9 +14,10 @@ step(){ # step 名前 コマンド...
   "$@" > $L/$name.log 2>&1
   touch $L/$name.DONE
   echo "$(date +%T) done $name $(tail -1 $L/$name.log)"
+  if [ "$name" == "${STOP_AFTER:-}" ]; then echo "stop after $name"; exit 0; fi
 }
 # 0) OSM（v28 の範囲の中は v28 のまま）
-step osm $M merge_osm.py osm_cur.json extra_cur.json
+step osm $M merge_osm.py osm_cur.json extra_cur.json v30
 # 1) 地形・土地利用・航空写真
 step dem $M parse_dem.py
 step luse $M parse_luse.py
@@ -24,7 +25,7 @@ step ortho $M fetch_ortho.py
 # 2) PLATEAU（全域）
 prep_dirs(){ rm -rf $W/out_bldg $W/out_tran $W/out_veg; mkdir -p $W/out_bldg $W/out_tran $W/out_veg; }
 step dirs prep_dirs
-step bldg env NPROC=2 BLDG_BUF=1e9 BLDG_BUS_BUF=1e9 $M parse_bldg.py
+step bldg env NPROC=2 BLDG_BUF=1e9 BLDG_BUS_BUF=1e9 FIX_FLAT_WALLS=1 $M parse_bldg.py
 step tran env NPROC=2 TRAN_BUF=1e9 $M parse_tran.py
 step veg env NPROC=2 VEG_BUF=1e9 $M parse_veg.py
 step trees env TREE_BUF=1e9 $M parse_trees.py
@@ -65,4 +66,6 @@ step places $M places.py
 step signals $M signals.py
 step peds $M peds.py
 step jr $M jr.py
+# v30: traffic.json の点列を別ファイル（バイナリ）に
+step compact $M compact_traffic.py
 echo "$(date +%T) ALL DONE"

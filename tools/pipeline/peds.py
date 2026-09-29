@@ -16,7 +16,7 @@ from common import BX0, BZ0, BX1, BZ1
 OUT = "/home/claude/okaden-x/data"
 sc = json.load(open(f"{OUT}/scene.json", encoding="utf-8"))
 m = sc["drive"]
-import geo_io; raw = geo_io.read("drive")
+import geo_io; raw = geo_io.read_legacy("drive")
 n = m["nx"] * m["nz"]
 KIND = np.frombuffer(raw[n * 2:n * 3], np.uint8).reshape(m["nz"], m["nx"])
 BM = np.unpackbits(np.frombuffer(raw[n * 3:n * 3 + m["brow"] * m["bnz"]], np.uint8).reshape(m["bnz"], m["brow"]), axis=1)[:, :m["bnx"]]

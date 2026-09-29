@@ -13,14 +13,15 @@ from osm_load import load as osm_load
 
 OUT = "/home/claude/okaden-x/data"
 ways, nodes = osm_load()
-R = pickle.load(open("/home/claude/wx/roads_final.pkl", "rb"))
+from common import load_roads
+R = load_roads("/home/claude/wx/roads_final.pkl", "r")
 KIND = R["KIND"]; GX0, GZ0, RES = R["grid"]
 sc = json.load(open(f"{OUT}/scene.json"))
 rt = json.load(open(f"{OUT}/routes.json"))
 ISECT = sc["isects"]
 # 走行面の高さ（アプリの車モードと同じ格子。駅前広場の嵩上げも含む）
 dm = sc["drive"]
-import geo_io; raw = geo_io.read("drive")
+import geo_io; raw = geo_io.read_legacy("drive")
 n_ = dm["nx"] * dm["nz"]
 DH = np.frombuffer(raw[:n_ * 2], np.int16).reshape(dm["nz"], dm["nx"]) / 100.0
 DK = np.frombuffer(raw[n_ * 2:n_ * 3], np.uint8).reshape(dm["nz"], dm["nx"])

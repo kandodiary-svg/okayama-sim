@@ -35,7 +35,7 @@ for x, y in jobs:
     if os.path.exists(fn):
         try: mos.paste(Image.open(fn).convert("RGB"), ((x - TX0) * 256, (y - TY0) * 256))
         except Exception: pass
-M = np.asarray(mos)
+M = np.asarray(mos); del mos   # v30: メモリ（範囲拡大でモザイクが 1.5GB）
 # ローカル格子 0.5m
 RES = 0.5
 GX0, GZ0 = BX0, BZ0
@@ -61,5 +61,5 @@ for r0 in range(0, NZ, 256):
     out[r0:r1] = np.clip(v, 0, 255).astype(np.uint8)
 out.flush()
 
-Image.fromarray(out).resize((NX // 8, NZ // 8)).save("/home/claude/wx/ortho/preview.jpg")
+Image.fromarray(np.ascontiguousarray(out[4::8, 4::8])).save("/home/claude/wx/ortho/preview.jpg")   # v30: 全体を読み込まずに（間引き）
 print("ortho", out.shape, "origin", GX0, GZ0, "res", RES)

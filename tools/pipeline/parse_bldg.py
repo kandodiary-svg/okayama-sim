@@ -85,6 +85,27 @@ def _img(path):
         except Exception: im = None
         _IMC[path] = im
     return im
+_ISZ = {}
+def _imsize(path):
+    if path not in _ISZ:
+        try:
+            with _Image.open(path) as im_: _ISZ[path] = im_.size
+        except Exception: _ISZ[path] = None
+    return _ISZ[path]
+_IMF = {}
+def _texel(path, u, v):
+    """元の解像度の画像の 1 画素の色（0〜1）"""
+    im = _IMF.get(path)
+    if im is None:
+        if len(_IMF) > 16: _IMF.clear()
+        im = np.asarray(_Image.open(path).convert("RGB"), np.float32) / 255.0; _IMF[path] = im
+    H, W = im.shape[:2]
+    return im[int(np.clip((1 - v) * H, 0, H - 1)), int(np.clip(u * W, 0, W - 1))]
+def uv_collapsed(uv, img):
+    """v30: 壁の UV が 1 点につぶれている（写真の 1.5 画素以内に収まる）か。PLATEAU では写真の無い壁がこうなっている"""
+    sz = _imsize(img)
+    if sz is None: return False
+    return float(np.ptp(uv[:, 0])) * sz[0] < 1.5 and float(np.ptp(uv[:, 1])) * sz[1] < 1.5
 def sample_tri(im, uv, n=40):
     """UV 三角形の内側の画素（最大 n 点、重心座標で一様に）"""
     H, W = im.shape[:2]
@@ -95,7 +116,7 @@ def sample_tri(im, uv, n=40):
 def facade_colors(faces):
     """写真テクスチャから外壁の地の色・ガラスの割合・屋根色を推定"""
     wall, roof, wa = [], [], []
-    for st, tri, uv, img in faces:
+    for st, tri, uv, img, *_ in faces:
         im = _img(img)
         if im is None: continue
         t = tri.reshape(-1, 3, 3); u = uv.reshape(-1, 3, 2)
@@ -235,6 +256,14 @@ def process(path):
                     if good:
                         uv = np.concatenate(uvs, axis=0)[idx.reshape(-1)]
                         img = os.path.join(base, tx[0])
+                        # v30: 壁で UV が 1 点につぶれている面は、写真ではなく推定外壁（窓割り）に。色は PLATEAU のその 1 画素の色
+                        #      （縮小したアトラスでは周りの黒い余白と混ざって黒っぽく見えていた）
+                        if st == "WallSurface" and os.environ.get("FIX_FLAT_WALLS") and uv_collapsed(uv, img):
+                            c_ = _texel(img, float(uv[:, 0].mean()), float(uv[:, 1].mean()))
+                            bfaces.append((st, tri.astype(np.float32), uv.astype(np.float32), img, "flat"))
+                            out_plain.append((tri.astype(np.float32), np.clip(c_, 0.05, 0.97).astype(np.float32), "wall", base_y, floor_h, variant))
+                            stats["flatwalls"] = stats.get("flatwalls", 0) + 1
+                            continue
                         out_tex.setdefault(img, []).append((tri.astype(np.float32), uv.astype(np.float32)))
                         bfaces.append((st, tri.astype(np.float32), uv.astype(np.float32), img))
                         stats["texfaces"] += 1
@@ -264,6 +293,7 @@ def process(path):
                 out_plain.append((tri.astype(np.float32), c.astype(np.float32), "roof" if flat else "wall", base_y, floor_h, variant))
         if bfaces:
             fc = facade_colors(bfaces)
+            bfaces = [f for f in bfaces if len(f) < 5]   # v30: 推定外壁にした壁は「くっきり表示」版にも入れない（重なりを作らない）
             wc = fc.get("wall", col); rc = fc.get("roof", col * 0.82)
             var2 = variant
             if fc.get("glass", 0) > 0.5 and (st_n or 0) >= 4 and variant in ("office", "shop", "apt"): var2 = "curtain"

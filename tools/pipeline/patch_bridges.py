@@ -8,8 +8,8 @@ import shapely, mapbox_earcut as earcut
 sys.path.insert(0, os.path.dirname(__file__))
 from common import proj
 SRC = "/home/claude/wx/roads_final.pkl"
-if not os.path.exists("/home/claude/wx/roads_final_v10.pkl"): shutil.copy(SRC, "/home/claude/wx/roads_final_v10.pkl")
-R = pickle.load(open("/home/claude/wx/roads_final_v10.pkl", "rb"))
+from common import load_roads, save_roads
+R = load_roads(SRC, "r+")   # v30: 格子はその場で書き換える（roads_final.pkl は merge_roads.py が毎回作り直す）
 HR = R["HR"]; KIND = R["KIND"]; GX0, GZ0, RES = R["grid"]
 dem = np.load("/home/claude/wx/dem_grid.npz"); DX0, DZ0, DS = float(dem["x0"]), float(dem["z0"]), float(dem["step"]); DH = dem["H"]
 def dem_at(x, z):
@@ -101,7 +101,7 @@ for e in d["elements"]:
             A0 = [a_[0], ya, a_[1]]; B0 = [b_[0], yb, b_[1]]; A1 = [a_[0], ya - 0.17, a_[1]]; B1 = [b_[0], yb - 0.17, b_[1]]
             cf += [A0, A1, B0, B0, A1, B1, A0, B0, A1, B0, B1, A1]
     if cf: R["curb"] = np.concatenate([R["curb"], np.array(cf)])
-    R["lanes"] = unary_union([R["lanes"], lane]); R["raised"] = unary_union([R["raised"], walk])
+    R["lanes_parts"] = R.get("lanes_parts", []) + [lane]; R["raised_parts"] = R.get("raised_parts", []) + ([walk] if not walk.is_empty else [])
     added.append((t.get("name"), round(L), round(W), round(hA, 2), round(hB, 2), round(float(cov), 2)))
 print("bridge decks added:", added)
-pickle.dump(R, open(SRC, "wb"))
+save_roads(R, SRC)

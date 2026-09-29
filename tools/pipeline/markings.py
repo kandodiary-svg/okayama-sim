@@ -17,7 +17,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from osm_load import load as osm_load
 from common import BX0, BZ0, BX1, BZ1
 
-R = pickle.load(open("/home/claude/wx/roads_final.pkl", "rb"))
+from common import load_roads
+R = load_roads("/home/claude/wx/roads_final.pkl", "r")
 T = pickle.load(open("/home/claude/wx/tracks.pkl", "rb"))
 HR = R["HR"]; GX0, GZ0, RES = R["grid"]
 O = np.load("/home/claude/wx/ortho/ortho_local.npy", mmap_mode="r")

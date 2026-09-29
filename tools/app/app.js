@@ -295,6 +295,61 @@ async function fetchPacked(fn){
   const ds = new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate"));
   return await new Response(ds).arrayBuffer();
 }
+/* v30: 高さの格子（ground・drive の enc=grad2）を戻す。2 次元の差分（左＋上−左上 との差）の下位・上位バイトの面 → int16 の高さ。
+   残り（区分・ビット列など）はそのまま後ろに付け、以前と同じ並びの ArrayBuffer を返す */
+function gradDecode(buf, nx, nz){
+  const n = nx * nz, src = new Uint8Array(buf), out = new ArrayBuffer(buf.byteLength), H = new Int16Array(out, 0, n);
+  for(let j = 0, k = 0; j < nz; j++) for(let i = 0; i < nx; i++, k++){
+    const e = ((src[k] | (src[n + k] << 8)) << 16) >> 16;
+    H[k] = e + (i ? H[k - 1] : 0) + (j ? H[k - nx] : 0) - (i && j ? H[k - nx - 1] : 0);
+  }
+  new Uint8Array(out, 2 * n).set(src.subarray(2 * n));
+  return out;
+}
+/* v30: 走行格子（drive, enc=gres）の高さ = 地面の格子（ground・4m 節点・cm）からの予測（双線形補間 − 12cm、重みは 1/4 単位の整数計算）＋差。
+   build_v5.ground_pred と同じ整数の計算。gH は戻した後の地面の高さ（Int16Array） */
+function gresDecode(buf, nx, nz, gH, gnx, gnz){
+  const n = nx * nz, src = new Uint8Array(buf), out = new ArrayBuffer(buf.byteLength), H = new Int16Array(out, 0, n);
+  const I0 = new Int32Array(nx), A = new Int32Array(nx);
+  for(let i = 0; i < nx; i++){ const f = 2 * i + 1, i0 = Math.min(f >> 2, gnx - 2); I0[i] = i0; A[i] = Math.min(f - 4 * i0, 4); }
+  for(let j = 0, k = 0; j < nz; j++){
+    const f = 2 * j + 1, j0 = Math.min(f >> 2, gnz - 2), b = Math.min(f - 4 * j0, 4), r0 = j0 * gnx, r1 = r0 + gnx;
+    for(let i = 0; i < nx; i++, k++){
+      const i0 = I0[i], a = A[i];
+      const P16 = (gH[r0 + i0] * (4 - a) + gH[r0 + i0 + 1] * a) * (4 - b) + (gH[r1 + i0] * (4 - a) + gH[r1 + i0 + 1] * a) * b;
+      H[k] = (((src[k] | (src[n + k] << 8)) << 16) >> 16) + Math.floor((P16 + 8) / 16) - 12;
+    }
+  }
+  new Uint8Array(out, 2 * n).set(src.subarray(2 * n));
+  return out;
+}
+/* v30: 電線の線分（pwires_enc=sd）: cm の整数、始点は前の線分の始点との差・終点は始点との差、バイトの面 → float32 の x,y,z ×2 */
+function pwDecode(buf){
+  const b = new Uint8Array(buf), M = b.length / 12, N = M / 2, out = new Float32Array(N * 6);
+  const val = (r, c) => b[(c * 4) * M + r] | (b[(c * 4 + 1) * M + r] << 8) | (b[(c * 4 + 2) * M + r] << 16) | (b[(c * 4 + 3) * M + r] << 24);
+  let x = 0, y = 0, z = 0;
+  for(let i = 0; i < N; i++){
+    x += val(i, 0); y += val(i, 1); z += val(i, 2);
+    out[i * 6] = x / 100; out[i * 6 + 1] = y / 100; out[i * 6 + 2] = z / 100;
+    out[i * 6 + 3] = (x + val(N + i, 0)) / 100; out[i * 6 + 4] = (y + val(N + i, 1)) / 100; out[i * 6 + 5] = (z + val(N + i, 2)) / 100;
+  }
+  return out;
+}
+/* v30: traffic.json の点列は別ファイル（int32 の cm・点列ごとの差分・バイトの面）。e.o から e.m 点 */
+async function loadTrafficPts(tj){
+  if(!tj || !tj.pts) return tj;
+  const b = new Uint8Array(await fetchPacked(tj.pts.file)), N = tj.pts.n, A = new Float64Array(N * 3);
+  for(let c = 0; c < 3; c++){ const o = c * 4 * N; for(let i = 0; i < N; i++) A[i * 3 + c] = b[o + i] | (b[o + N + i] << 8) | (b[o + 2 * N + i] << 16) | (b[o + 3 * N + i] << 24); }
+  for(const L of [tj.lanes, tj.conns]) for(const e of L) for(let k = e.o + 1; k < e.o + e.m; k++){ A[k * 3] += A[k * 3 - 3]; A[k * 3 + 1] += A[k * 3 - 2]; A[k * 3 + 2] += A[k * 3 - 1]; }
+  for(let i = 0; i < A.length; i++) A[i] /= 100;
+  tj.PTS = A; return tj;
+}
+function trafficPts(tj, e){
+  if(e.p) return e.p;
+  const A = tj.PTS, out = new Array(e.m);
+  for(let k = 0; k < e.m; k++){ const q = (e.o + k) * 3; out[k] = [A[q], A[q + 1], A[q + 2]]; }
+  return out;
+}
 function loadTex(fn){
   return new Promise(res=>new THREE.TextureLoader().load("data/"+fn, t=>{ t.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy()); loaded+=900e3; progress(); res(t); }, undefined, ()=>res(null)));
 }
@@ -408,15 +463,18 @@ async function loadAll(){
   S.scene=sc; S.routes=rt; S._atlas = S._atlas || [];   // v22: タイルの読み込み（Stream）が先に始まっても落ちないよう最初に用意
   // v29: 車・信号・歩行者・JR・バス・地名のデータは、地形・建物と並行して先に取り寄せる（範囲拡大で大きくなったため）
   const jget = n => fetch("data/"+n).then(r=>r.ok?r.json():null).catch(e=>{ console.warn(n, e); return null; });
-  const JP = { traffic: jget("traffic.json"), signals: jget("signals.json"), peds: jget("peds.json"), jr: jget("jr.json"), bus: jget("bus.json"), places: jget("places.json") };
+  const JP = { traffic: jget("traffic.json").then(loadTrafficPts).catch(e=>{ console.warn("traffic pts", e); return null; }), signals: jget("signals.json"), peds: jget("peds.json"), jr: jget("jr.json"), bus: jget("bus.json"), places: jget("places.json") };
   // v16: "@" の付いたファイル（建物・植生のタイル）は Stream が近くの分だけ読み込む。それ以外は最初に全部読む
   const core = Object.entries(sc.files).filter(([k])=>!k.includes("@"));
   const OVM = !!sc.ortho_ov;   // v29: 縮小写真＋近くのページだけ（範囲拡大版）
-  toLoad = core.reduce((a,[k,f])=>a+f.raw*0.9,0) + (OVM ? 12*900e3 + 4e6 : sc.ortho.length*900e3) + 6e7;
+  toLoad = core.reduce((a,[k,f])=>a+(f.size||f.raw*0.9),0) + (OVM ? 12*900e3 + 4e6 : sc.ortho.length*900e3) + 6e7;   // v30: size = 送る大きさ
   const bufs = {};
   const texP = OVM ? loadTex(sc.ortho_ov.file).then(t=>{ if(t){ t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy()); OrthoPages.setOverview(t, sc.ortho_ov); } return []; })
                    : Promise.all(sc.ortho.map(o=>loadTex(o.file)));
   await Promise.all(core.map(async ([k,f])=>{ bufs[k]=await fetchPacked(f.file); }));
+  for(const k of ["ground", "drive"]){ const m = sc[k]; if(m && m.enc === "grad2" && bufs[k]) bufs[k] = gradDecode(bufs[k], m.nx, m.nz); }   // v30
+  if(sc.drive && sc.drive.enc === "gres" && bufs.drive && bufs.ground)
+    bufs.drive = gresDecode(bufs.drive, sc.drive.nx, sc.drive.nz, new Int16Array(bufs.ground, 0, sc.ground.nx * sc.ground.nz), sc.ground.nx, sc.ground.nz);
   const ortho = await texP;
   S._bufs = bufs; S._ortho = ortho;
   if(OrthoPages.active){ await OrthoPages.prime({x:0, z:0}); buildGroundOV(sc.ground, bufs.ground); groundTick({x:0, y:0, z:0}, false, 0, 99); }
@@ -425,7 +483,7 @@ async function loadAll(){
   if(sc.hmax && bufs.hmax) Heli.setHmax(sc.hmax, bufs.hmax);
   if(sc.far && bufs.far){ Heli.setFar(sc.far, bufs.far); try { await buildFarTerrain(sc.far, bufs.far); } catch(e){ console.warn("far", e); } }
   buildChunks(sc.chunks.filter(c=>!c.file.includes("@")), bufs, S._atlas, ortho);
-  buildWires(sc.wires); if(bufs.pwires) buildPowerWires(new Float32Array(bufs.pwires));
+  buildWires(sc.wires); if(bufs.pwires) buildPowerWires(sc.pwires_enc === "sd" ? pwDecode(bufs.pwires) : new Float32Array(bufs.pwires));
   setVehicle(S.vehicle||"momo");
   // 出発地点（岡山駅前）の周りのタイルを先に読む
   $("start-label").textContent="周りの建物を読み込み中…";
@@ -438,7 +496,7 @@ async function loadAll(){
   try { const jj = await JP.jr; if(jj) JR.init(jj); } catch(e){ console.warn("jr", e); }
   try { const [bj, pj] = await Promise.all([JP.bus, JP.places]);
     Loc.init(pj, tj); if(bj) Bus.init(bj); } catch(e){ console.warn("bus/places", e); }
-  if(tj){ for(const l of tj.lanes) l.p=null; for(const c of tj.conns) c.p=null; }   // v29: 車線の形は Traffic・Loc の中に作り終えたので、元の JSON の点は捨てる（メモリ）
+  if(tj){ for(const l of tj.lanes) l.p=null; for(const c of tj.conns) c.p=null; tj.PTS=null; }   // v29: 車線の形は Traffic・Loc の中に作り終えたので、元の JSON の点は捨てる（メモリ）
   buildRoutePicker(); setupRoute(S.key, true);
   Prefs.restore();
   Trams.populate(S.key, S.cum[0]+40, S.vehicle);
@@ -701,7 +759,7 @@ function buildWater(g, buf){
    どちらも表示の時の計算だけで、写真のデータ（画質）は元のまま */
 const FACADE_U = { uSharp: { value: 0.6 }, uGrain: { value: 0.045 } };
 // v26: 近景（元の解像度の写真）を読み込んだ 200m の升目。遠景用のアトラスの建物は、その升目のものを描かない（頂点色に升目の番号）
-const HIMASK = (() => { const d = new Uint8Array(32 * 32 * 4); const t = new THREE.DataTexture(d, 32, 32, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return { d, t }; })();
+const HIMASK = (() => { const d = new Uint8Array(64 * 64 * 4); const t = new THREE.DataTexture(d, 64, 64, THREE.RGBAFormat); t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.needsUpdate = true; return { d, t }; })();
 function sharpFacade(m, far){
   m.customProgramCacheKey = () => "sharpFacade_" + (far ? 1 : 0);
   const prev = m.onBeforeCompile;
@@ -714,7 +772,7 @@ function sharpFacade(m, far){
       "float fNoise(vec3 p){ vec3 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);\n" +
       "  return mix(mix(mix(fHash(i), fHash(i+vec3(1,0,0)), f.x), mix(fHash(i+vec3(0,1,0)), fHash(i+vec3(1,1,0)), f.x), f.y),\n" +
       "             mix(mix(fHash(i+vec3(0,0,1)), fHash(i+vec3(1,0,1)), f.x), mix(fHash(i+vec3(0,1,1)), fHash(i+vec3(1,1,1)), f.x), f.y), f.z); }\n" +
-      sh.fragmentShader.replace("#include <map_fragment>", (far ? `if(vHC.z > 0.5 && texture2D(uHiMask, (floor(vHC.xy * 255.0 + 0.5) + 0.5) / 32.0).r > 0.5) discard;\n` : ``) + `#ifdef USE_MAP
+      sh.fragmentShader.replace("#include <map_fragment>", (far ? `if(vHC.z > 0.5 && texture2D(uHiMask, (floor(vHC.xy * 255.0 + 0.5) + 0.5) / 64.0).r > 0.5) discard;\n` : ``) + `#ifdef USE_MAP
         vec4 texelColor = texture2D( map, vUv );
         float dCam = length(vDW - cameraPosition);
         float kS = uSharp * clamp(1.0 - (dCam - 30.0) / 120.0, 0.0, 1.0);
@@ -744,7 +802,7 @@ const MATS = {};
 const HiStream = (() => {
   const loaded = new Map(), loading = new Set(); let lastT = 0, enabled = true; const R_IN = 140, R_OUT = 230;
   function dist(c, x, z){ const dx = Math.max(c.x0 - x, 0, x - (c.x0 + c.size)), dz = Math.max(c.z0 - z, 0, z - (c.z0 + c.size)); return Math.hypot(dx, dz); }
-  function setMask(key, on){ const [i, j] = key.split("_").map(Number); if(i < 0 || j < 0 || i >= 32 || j >= 32) return; HIMASK.d[(j * 32 + i) * 4] = on ? 255 : 0; HIMASK.t.needsUpdate = true; }
+  function setMask(key, on){ const [i, j] = key.split("_").map(Number); if(i < 0 || j < 0 || i >= 64 || j >= 64) return; HIMASK.d[(j * 64 + i) * 4] = on ? 255 : 0; HIMASK.t.needsUpdate = true; }
   const bufs = new Map();     // 形のファイル（800m のタイルごと）→ 読み込んだ中身
   async function load(key){
     const c = S.scene.hicells[key], f = S.scene.files[c.file]; if(!f) return;
@@ -1585,8 +1643,8 @@ const Traffic = (()=>{
   }
   function init(data){
     D=data; NL=D.lanes.length; segs=[];
-    D.lanes.forEach((l,i)=>{ const P=mkPath(l.p); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n}); });
-    D.conns.forEach((c,i)=>{ const P=mkPath(c.p); const s={i:NL+i, P, v:c.v, next:[c.b], node:c.node, lane:false, kind:c.k, from:c.a}; segs.push(s); segs[c.a].next.push(NL+i); });
+    D.lanes.forEach((l,i)=>{ const P=mkPath(trafficPts(D, l)); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n}); });
+    D.conns.forEach((c,i)=>{ const P=mkPath(trafficPts(D, c)); const s={i:NL+i, P, v:c.v, next:[c.b], node:c.node, lane:false, kind:c.k, from:c.a}; segs.push(s); segs[c.a].next.push(NL+i); });
     // v29: 出現させる車線を近くから選ぶための升目（250m）。範囲を広げると、全部の車線から無作為に選んでは近くに当たらない
     BK = new Map();
     for(let i=0;i<NL;i++){ const P=segs[i].P, seen=new Set();
@@ -2250,7 +2308,7 @@ const Loc = (() => {
     if(traffic){
       names = traffic.names || [];
       LG = new Map();
-      traffic.lanes.forEach((ln,i)=>{ const p=ln.p; for(let k=0;k<p.length;k+=2){ const key=Math.floor(p[k][0]/20)*100003+Math.floor(p[k][2]/20); let a=LG.get(key); if(!a){ a=[]; LG.set(key,a); } a.push([p[k][0],p[k][2],ln.nm,ln.v]); } });
+      traffic.lanes.forEach((ln,i)=>{ const p=trafficPts(traffic, ln); for(let k=0;k<p.length;k+=2){ const key=Math.floor(p[k][0]/20)*100003+Math.floor(p[k][2]/20); let a=LG.get(key); if(!a){ a=[]; LG.set(key,a); } a.push([p[k][0],p[k][2],ln.nm,ln.v]); } });
     }
   }
   function road(x, z){

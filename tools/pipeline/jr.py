@@ -17,7 +17,7 @@ from jr_lines import chains
 OUT = "/home/claude/okaden-x/data"
 sc = json.load(open(f"{OUT}/scene.json", encoding="utf-8"))
 d = sc["drive"]; n = d["nx"] * d["nz"]
-import geo_io; raw = geo_io.read("drive")
+import geo_io; raw = geo_io.read_legacy("drive")
 H = np.frombuffer(raw[:n * 2], np.int16).reshape(d["nz"], d["nx"]) / 100.0
 K = np.frombuffer(raw[n * 2:n * 3], np.uint8).reshape(d["nz"], d["nx"])
 BM = np.unpackbits(np.frombuffer(raw[n * 3:n * 3 + d["brow"] * d["bnz"]], np.uint8).reshape(d["bnz"], d["brow"]), axis=1)[:, :d["bnx"]]
