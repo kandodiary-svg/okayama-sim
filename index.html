@@ -584,6 +584,27 @@ const S = {
 /* ---------------- レンダラ ---------------- */
 const canvas = $("world");
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:"high-performance", logarithmicDepthBuffer:false});
+/* v31: 形の頂点の配列（位置・法線・UV）は GPU に送った後、JS 側の写しを捨てる（GPU の中の形は同じなので表示は変わらない。メモリだけ減る）。
+   WebGL が失われて戻った時は、元のデータから同じ計算で配列を作り直して送り直す（regen）。一度も表示していない形は写しを持ったまま */
+const GeoMem = (() => {
+  const live = new Set();
+  function drop(){ this.array = null; }
+  // geo: BufferGeometry, names: 捨てる属性の名前, regen(): {名前: 同じ値の配列}
+  function release(geo, names, regen){
+    if(!geo.boundingSphere) geo.computeBoundingSphere();
+    const e = { geo, names, regen }; live.add(e);
+    geo.addEventListener("dispose", () => live.delete(e));
+    for(const n of names){ const a = geo.attributes[n]; if(a) a.onUpload(drop); }
+  }
+  function restore(){
+    let n = 0;
+    for(const e of live){ let arrs = null;
+      for(const k of e.names){ const a = e.geo.attributes[k]; if(a && !a.array){ arrs = arrs || e.regen(); a.array = arrs[k]; n++; } } }
+    console.log("GeoMem restored", n);
+  }
+  canvas.addEventListener("webglcontextrestored", restore, false);
+  return { release, restore, get count(){ return live.size; } };
+})();
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 1.75));
 const scene = new THREE.Scene();
 const SKY_H = new THREE.Color(0x8fb4d6), SKY_L = new THREE.Color(0xdfe6e8);
@@ -1023,6 +1044,9 @@ const Env = (() => {
   return { patch, set, tick, cycle, st, apply, NIGHT_U };
 })();
 
+/* 試験用: window.__MEMLOG があれば、読み込みの段ごとに JS のメモリを記録する（普段は何もしない） */
+async function _memlog(name){ if(!window.__MEMLOG) return; if(typeof gc==="function"){ gc(); await new Promise(r=>setTimeout(r,50)); gc(); }
+  window.__MEMLOG.push([name, performance.memory ? Math.round(performance.memory.usedJSHeapSize/1e6) : -1, window.__cdpmem ? await window.__cdpmem() : null]); }
 async function loadAll(){
   const [sc, rt] = await Promise.all([fetch("data/scene.json").then(r=>r.json()), fetch("data/routes.json").then(r=>r.json())]);
   S.scene=sc; S.routes=rt; S._atlas = S._atlas || [];   // v22: タイルの読み込み（Stream）が先に始まっても落ちないよう最初に用意
@@ -1041,30 +1065,40 @@ async function loadAll(){
   if(sc.drive && sc.drive.enc === "gres" && bufs.drive && bufs.ground)
     bufs.drive = gresDecode(bufs.drive, sc.drive.nx, sc.drive.nz, new Int16Array(bufs.ground, 0, sc.ground.nx * sc.ground.nz), sc.ground.nx, sc.ground.nz);
   const ortho = await texP;
+  await _memlog("core");
   S._bufs = bufs; S._ortho = ortho;
   if(OrthoPages.active){ await OrthoPages.prime({x:0, z:0}); buildGroundOV(sc.ground, bufs.ground); groundTick({x:0, y:0, z:0}, false, 0, 99); }
   else buildGround(sc.ground, bufs.ground, ortho);
   if(sc.drive && bufs.drive) Car.setGrid(sc.drive, bufs.drive);
   if(sc.hmax && bufs.hmax) Heli.setHmax(sc.hmax, bufs.hmax);
+  await _memlog("ground");
   if(sc.far && bufs.far){ Heli.setFar(sc.far, bufs.far); try { await buildFarTerrain(sc.far, bufs.far); } catch(e){ console.warn("far", e); } }
   buildChunks(sc.chunks.filter(c=>!c.file.includes("@")), bufs, S._atlas, ortho);
+  await _memlog("chunks");
   buildWires(sc.wires); if(bufs.pwires) buildPowerWires(sc.pwires_enc === "sd" ? pwDecode(bufs.pwires) : new Float32Array(bufs.pwires));
   setVehicle(S.vehicle||"momo");
   // 出発地点（岡山駅前）の周りのタイルを先に読む
   $("start-label").textContent="周りの建物を読み込み中…";
   // v29: 最初は出発地点の近く（700m）だけ読み終わるのを待つ。その先は走り出してから順に読む（範囲拡大で数が多い）
   await Stream.update(0, 0, true, 700);
+  await _memlog("stream");
   let tj=null;
   try { Trams.init(rt); tj = await JP.traffic; if(tj) Traffic.init(tj); } catch(e){ console.warn("traffic", e); }
+  await _memlog("traffic");
   try { const sj = await JP.signals; buildSignals(sj, rt); } catch(e){ console.warn("signals", e); }
+  await _memlog("signals");
   try { const pj = await JP.peds; if(pj) Peds.init(pj); } catch(e){ console.warn("peds", e); }
+  await _memlog("peds");
   try { const jj = await JP.jr; if(jj) JR.init(jj); } catch(e){ console.warn("jr", e); }
+  await _memlog("jr");
   try { const [bj, pj] = await Promise.all([JP.bus, JP.places]);
     Loc.init(pj, tj); if(bj) Bus.init(bj); } catch(e){ console.warn("bus/places", e); }
   if(tj){ for(const l of tj.lanes) l.p=null; for(const c of tj.conns) c.p=null; tj.PTS=null; }   // v29: 車線の形は Traffic・Loc の中に作り終えたので、元の JSON の点は捨てる（メモリ）
   buildRoutePicker(); setupRoute(S.key, true);
+  await _memlog("bus_loc_free");
   Prefs.restore();
   Trams.populate(S.key, S.cum[0]+40, S.vehicle);
+  await _memlog("end");
   $("loadbar").style.width="100%"; $("start").disabled=false; $("start-label").textContent="運転を開始する";
 }
 
@@ -1200,7 +1234,8 @@ function buildGroundOV(g, buf){
   const h = (j,i)=>{ j=Math.min(nz-1,j); i=Math.min(nx-1,i); const k=j*nx+i; return H[k]/100 - (RD[k]?0.35:0.12) - (W[k]?0.25:0); };
   const pageOf=(cx,cz)=>{ for(let q=0;q<pages.length;q++){ const p=pages[q]; if(cx>=p.x0&&cx<p.x0+p.size&&cz>=p.z0&&cz<p.z0+p.size) return q; } return -1; };
   const TS=800, cellsPer=Math.round(TS/g.step);
-  const mk = (cells, U, V, st)=>{
+  // v31: 配列を作る所（arrs）と形を作る所（mk）を分けた。形は GPU に送った後に配列を捨て、WebGL が戻った時は arrs で作り直す
+  const arrs = (cells, U, V, st)=>{
     const n=cells.length/2; const pos=new Float32Array(n*18), uv=new Float32Array(n*12); let o=0,u=0;
     for(let c=0;c<cells.length;c+=2){
       const j=cells[c], i=cells[c+1];
@@ -1211,7 +1246,13 @@ function buildGroundOV(g, buf){
     }
     const geo=new THREE.BufferGeometry(); geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
     geo.setAttribute("uv",new THREE.BufferAttribute(uv,2));
-    geo.computeVertexNormals(); geo.computeBoundingSphere();
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const mk = (cells_, U, V, st)=>{
+    const cells = Int32Array.from(cells_);   // 作り直し用に小さく持つ
+    const geo = arrs(cells, U, V, st); geo.computeBoundingSphere();
+    GeoMem.release(geo, ["position", "uv", "normal"], ()=>{ const t = arrs(cells, U, V, st); return { position: t.attributes.position.array, uv: t.attributes.uv.array, normal: t.attributes.normal.array }; });
     return geo;
   };
   const ovMat = new THREE.MeshLambertMaterial({map:OrthoPages.ovTex});
@@ -1310,6 +1351,17 @@ function buildWater(g, buf){
       const geo=new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.BufferAttribute(pos,3));
       const uv=new Float32Array(n*12); for(let q=0;q<n*6;q++){ uv[q*2]=pos[q*3]/18; uv[q*2+1]=pos[q*3+2]/18; } geo.setAttribute("uv", new THREE.BufferAttribute(uv,2));
       geo.computeVertexNormals();
+      { // v31: GPU に送った後に配列を捨てる（WebGL が戻った時は同じ計算で作り直す）
+        const wc = Int32Array.from(cells);
+        const wgen = ()=>{ const n=wc.length/2, pos=new Float32Array(n*18); let o=0;
+          for(let c=0;c<wc.length;c+=2){ const j=wc[c], i=wc[c+1], y=WL[j*nx+i]/100;
+            const x0=g.x0+i*g.step, z0=g.z0+j*g.step, x1=x0+g.step, z1=z0+g.step;
+            pos.set([x0,lv(j,i,y),z0, x0,lv(j+1,i,y),z1, x1,lv(j,i+1,y),z0, x1,lv(j,i+1,y),z0, x0,lv(j+1,i,y),z1, x1,lv(j+1,i+1,y),z1], o); o+=18; }
+          const t=new THREE.BufferGeometry(); t.setAttribute("position", new THREE.BufferAttribute(pos,3));
+          const uv=new Float32Array(n*12); for(let q=0;q<n*6;q++){ uv[q*2]=pos[q*3]/18; uv[q*2+1]=pos[q*3+2]/18; } t.setAttribute("uv", new THREE.BufferAttribute(uv,2));
+          t.computeVertexNormals(); return { position: pos, uv, normal: t.attributes.normal.array }; };
+        GeoMem.release(geo, ["position", "uv", "normal"], wgen);
+      }
       const nrm=canvasTex(256,256,(gg,w,h)=>{ const im=gg.createImageData(w,h); for(let y=0;y<h;y++) for(let x=0;x<w;x++){ const a=Math.sin(x*0.19+Math.sin(y*0.07)*2.0)*0.5+Math.sin((x+y)*0.11)*0.3+Math.sin(y*0.23-x*0.05)*0.2;
           const b=Math.cos(y*0.17+Math.sin(x*0.09)*1.7)*0.5+Math.cos((x-y)*0.13)*0.3; const k=(y*w+x)*4; im.data[k]=128+a*40; im.data[k+1]=128+b*40; im.data[k+2]=255; im.data[k+3]=255; } gg.putImageData(im,0,0); });
       const wm=new THREE.MeshPhongMaterial({color:0x33545c, specular:0xb8c8d0, shininess:120, normalMap:nrm, normalScale:new THREE.Vector2(0.35,0.35), transparent:true, opacity:0.9, depthWrite:true});
@@ -1457,6 +1509,12 @@ function buildChunks(chunks, bufs, atlas, ortho){
     if(c.nrm!==undefined){ const ib=new THREE.InterleavedBuffer(new Int8Array(buf,c.nrm,c.count*4),4); geo.setAttribute("normal", new THREE.InterleavedBufferAttribute(ib,3,0,true)); }
     else geo.computeVertexNormals();
     geo.computeBoundingSphere();
+    // v31: ここで計算した配列（法線・路面の UV）は GPU に送った後に捨てる。位置などファイルの中を指す配列はそのまま（作り直しの元）
+    { const names = []; if(c.nrm===undefined) names.push("normal"); if(c.uvi===undefined && c.uv===undefined && tm) names.push("uv");
+      if(names.length) GeoMem.release(geo, names, ()=>{ const out = {};
+        if(names.includes("normal")){ const t = new THREE.BufferGeometry(); t.setAttribute("position", new THREE.BufferAttribute(q,3)); t.computeVertexNormals(); out.normal = t.attributes.normal.array; }
+        if(names.includes("uv")){ const uv=new Float32Array(c.count*2); for(let i=0;i<c.count;i++){ uv[i*2]=(c.origin[0]+q[i*3]*c.scale)/tm; uv[i*2+1]=(c.origin[2]+q[i*3+2]*c.scale)/tm; } out.uv = uv; }
+        return out; }); }
     const OPG = c.mat==="ortho" && OrthoPages.active;   // v29: 屋根の写真はページの読み込みに合わせて差し替える
     const mesh=new THREE.Mesh(geo, OPG ? OrthoPages.mat(c.page, "roof") : mat(c,atlas,ortho));
     if(OPG) OrthoPages.reg(mesh, c.page, "roof");
@@ -2872,17 +2930,22 @@ const Loc = (() => {
     if(places){ PL={ towns:prep(places.towns||[]), wards:prep(places.wards||[]), bridges:prep(places.bridges||[]) }; }
     if(traffic){
       names = traffic.names || [];
-      LG = new Map();
-      traffic.lanes.forEach((ln,i)=>{ const p=trafficPts(traffic, ln); for(let k=0;k<p.length;k+=2){ const key=Math.floor(p[k][0]/20)*100003+Math.floor(p[k][2]/20); let a=LG.get(key); if(!a){ a=[]; LG.set(key,a); } a.push([p[k][0],p[k][2],ln.nm,ln.v]); } });
+      // v31: 升目ごとの点を小さな配列の並びではなく、1 本の Float64Array（x, z, 名前の番号, 制限速度 の繰り返し）で持つ（値と順番は同じ。メモリだけ減る）
+      const cnt = new Map();
+      traffic.lanes.forEach((ln,i)=>{ const p=trafficPts(traffic, ln); for(let k=0;k<p.length;k+=2){ const key=Math.floor(p[k][0]/20)*100003+Math.floor(p[k][2]/20); cnt.set(key, (cnt.get(key)||0)+1); } });
+      LG = new Map(); const fill = new Map();
+      for(const [key, n] of cnt){ LG.set(key, new Float64Array(n*4)); fill.set(key, 0); }
+      traffic.lanes.forEach((ln,i)=>{ const p=trafficPts(traffic, ln); for(let k=0;k<p.length;k+=2){ const key=Math.floor(p[k][0]/20)*100003+Math.floor(p[k][2]/20); const a=LG.get(key), o=fill.get(key);
+        a[o]=p[k][0]; a[o+1]=p[k][2]; a[o+2]=ln.nm; a[o+3]=ln.v; fill.set(key, o+4); } });
     }
   }
   function road(x, z){
     if(!LG) return null;
-    let best=null, bd=144;
+    let best=null, bo=-1, bd=144;
     const ix=Math.floor(x/20), iz=Math.floor(z/20);
     for(let dx=-1;dx<=1;dx++) for(let dz=-1;dz<=1;dz++){ const a=LG.get((ix+dx)*100003+(iz+dz)); if(!a) continue;
-      for(const q of a){ const d=(q[0]-x)**2+(q[1]-z)**2; if(d<bd){ bd=d; best=q; } } }
-    return best ? { name: best[2]>=0 ? names[best[2]] : "", v: best[3] } : null;
+      for(let o=0;o<a.length;o+=4){ const d=(a[o]-x)**2+(a[o+1]-z)**2; if(d<bd){ bd=d; best=a; bo=o; } } }
+    return best ? { name: best[bo+2]>=0 ? names[best[bo+2]] : "", v: best[bo+3] } : null;
   }
   /* x,z の現在地。extra は先頭に付ける文字列（路線名など） */
   function update(dt, x, z, extra){
@@ -4596,7 +4659,9 @@ const JR = (() => {
   }
   /* ---- 線路・高架橋（データの範囲の中だけ） ---- */
   const _a = {x:0,y:0,z:0}, _b = {x:0,y:0,z:0};
-  function buildStatic(){
+  // v31: 線路・高架の頂点を作る所（genStatic）。buildStatic と、WebGL が戻った時の作り直しで同じものを作る
+  function buildStatic(){ const { G, poles } = genStatic(); buildStaticMeshes(G, poles); }
+  function genStatic(){
     const G = { deck: [], wall: [], slab: [], ballast: [], rail: [] }; const poles = [];
     const push = (A, ...v) => { for(const q of v) A.push(q[0], q[1], q[2]); };
     const quad = (A, a, b, c, d) => { push(A, a, b, c); push(A, a, c, d); };
@@ -4646,19 +4711,28 @@ const JR = (() => {
         }
       }
     }
-    const mk = (arr, mat) => { if(!arr.length) return; const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); g.computeVertexNormals();
+    return { G, poles };
+  }
+  function ballastUV(q){ const uv = []; for(let k = 0; k < q.length / 3; k += 6){ const a = k * 3, c = (k + 2) * 3; const L_ = Math.hypot(q[c] - q[a], q[c + 2] - q[a + 2]) / 2.4;
+        uv.push(0, 0, 1, 0, 1, L_, 0, 0, 1, L_, 0, L_); } return uv; }
+  function buildStaticMeshes(G, poles){
+    // v31: GPU に送った後に配列を捨てる。作り直しは genStatic をもう一度（同じ入力なので同じ頂点）
+    const regen = (key, withUV) => () => { const t = new THREE.BufferGeometry(); const arr = genStatic().G[key];
+      t.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); t.computeVertexNormals();
+      const out = { position: t.attributes.position.array, normal: t.attributes.normal.array }; if(withUV) out.uv = new THREE.Float32BufferAttribute(ballastUV(arr), 2).array; return out; };
+    const mk = (arr, mat, key) => { if(!arr.length) return; const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); g.computeVertexNormals();
+      GeoMem.release(g, ["position", "normal"], regen(key, false));
       const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; root.add(m); return m; };
-    mk(G.deck, new THREE.MeshLambertMaterial({ color: 0xaaa9a3, side: THREE.DoubleSide }));
-    mk(G.wall, new THREE.MeshLambertMaterial({ color: 0xc9c8c1, side: THREE.DoubleSide }));
-    mk(G.slab, new THREE.MeshLambertMaterial({ color: 0x8d8b86 }));
+    mk(G.deck, new THREE.MeshLambertMaterial({ color: 0xaaa9a3, side: THREE.DoubleSide }), "deck");
+    mk(G.wall, new THREE.MeshLambertMaterial({ color: 0xc9c8c1, side: THREE.DoubleSide }), "wall");
+    mk(G.slab, new THREE.MeshLambertMaterial({ color: 0x8d8b86 }), "slab");
     // バラスト＋枕木（手続き的テクスチャ。線路方向に 0.6m おきの枕木）
     const bt = canvasTex(64, 128, (g, w, h) => { noise(g, w, h, "#6d665d", 0.25, 2500); for(let y = 0; y < h; y += 32){ g.fillStyle = "#57534e"; g.fillRect(4, y + 4, w - 8, 12); g.fillStyle = "rgba(0,0,0,.25)"; g.fillRect(4, y + 15, w - 8, 2); } });
     if(G.ballast.length){ const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(G.ballast, 3)); g.computeVertexNormals();
       // UV: 横 = 0..1、縦 = 世界座標の長さ / 2.4m（4 本の枕木）
-      const uv = []; for(let k = 0; k < G.ballast.length / 3; k += 6){ const q = G.ballast; const a = k * 3, c = (k + 2) * 3; const L_ = Math.hypot(q[c] - q[a], q[c + 2] - q[a + 2]) / 2.4;
-        uv.push(0, 0, 1, 0, 1, L_, 0, 0, 1, L_, 0, L_); }
-      g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: bt })); m.receiveShadow = true; root.add(m); }
-    mk(G.rail, new THREE.MeshLambertMaterial({ color: 0x8b8781 }));
+      const uv = ballastUV(G.ballast);
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); GeoMem.release(g, ["position", "normal", "uv"], regen("ballast", true)); const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: bt })); m.receiveShadow = true; root.add(m); }
+    mk(G.rail, new THREE.MeshLambertMaterial({ color: 0x8b8781 }), "rail");
     // 橋脚
     if(D.piers && D.piers.length){
       const N = D.piers.length, g = new THREE.BoxGeometry(1.3, 1, 1.5); g.translate(0, 0.5, 0);
