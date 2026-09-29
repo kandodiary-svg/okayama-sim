@@ -120,7 +120,10 @@ curb = np.concatenate([OLD["curb"], nc.reshape(-1, 3)])
 print("  curb v28", len(OLD["curb"]) // 12, "+ new", len(nc), flush=True)
 # ---- ラスタ ----
 GX0, GZ0, RES = NEW["grid"]
-_shape = NEW["HR"].shape; del NEW
+_shape = NEW["HR"].shape
+_NHR = NEW["HR"]; _NKD = NEW["KIND"]   # v32: 橋が道路の上を通る所は、roads_new の格子（下の段）を使う
+_NEWB = NEW.get("bridge_parts"); _NEWU = NEW.get("upper"); _NGRID = NEW["grid"]
+del NEW
 HR = np.lib.format.open_memmap(f"{W}/roads_final.pkl.HR.npy", mode="w+", dtype=np.float32, shape=_shape)
 for _r in range(0, _shape[0], 2048): HR[_r:_r + 2048] = np.nan
 KIND = np.lib.format.open_memmap(f"{W}/roads_final.pkl.KIND.npy", mode="w+", dtype=np.uint8, shape=_shape)
@@ -163,6 +166,10 @@ for cat in ("lane", "xing", "rail"):
 for cat in ("walk", "island", "green", "tramstop"):
     if len(OLD["tris"].get(cat, [])): raster(_outside_old(OLD["tris"][cat]), 2)
     if len(NEWT.get(cat, [])): raster(NEWT[cat], 2)
+# v32: 上の段（橋）の升目は、下の段（地上の道路）の値に戻す（三角形を塗り直すと、橋と下の道路のどちらかが後から上書きしていた）
+if _NEWU is not None and len(_NEWU[0]):
+    _ui_ = np.asarray(_NEWU[0]); _jj = _ui_ // NX; _ii = _ui_ % NX
+    HR[_jj, _ii] = _NHR[_jj, _ii]; KIND[_jj, _ii] = _NKD[_jj, _ii]
 print("  new-only raster cells", int(np.isfinite(HR).sum()), "time", round(time.time() - t0), flush=True)
 OGX0, OGZ0, ORES = OLD["grid"]
 assert abs(ORES - RES) < 1e-9
@@ -178,6 +185,25 @@ for cat in ("lane", "xing", "rail"):
 for cat in ("walk", "island", "green", "tramstop"):
     if cat in EDGE_FIX: raster(EDGE_FIX[cat], 2)
 print("  raster: v28 cells", int(fo.sum()), "total finite", int(np.isfinite(HR).sum()), flush=True)
-out = dict(tris=tris, curb=curb, lanes_parts=lanes_parts, raised_parts=raised_parts, HR=HR, KIND=KIND, grid=(GX0, GZ0, RES))
+# v32: 橋・高架の面（2D）と、橋が道路の上を通る所の「上の段」（v28 の道路の範囲の外の分だけ）
+_bp = []
+for q in _NEWB or []:
+    if q is None or q.is_empty: continue
+    q2 = _clean(q.difference(COVo))
+    _bp += [g for g in (q2.geoms if hasattr(q2, "geoms") else [q2]) if not g.is_empty]
+_up = _NEWU
+if _up is not None and len(_up[0]):
+    _nx_ = _shape[1]; _ui = np.asarray(_up[0]); _uj = _ui // _nx_; _uii = _ui % _nx_
+    _gx0n, _gz0n, _resn = _NGRID
+    _ux = _gx0n + (_uii + 0.5) * _resn; _uz = _gz0n + (_uj + 0.5) * _resn
+    _keep = ~shapely.contains_xy(COVo, _ux, _uz)
+    # 新しい格子と最終の格子の原点が違う時は番号を付け直す
+    _fi = np.floor((_ux - GX0) / RES).astype(np.int64); _fj = np.floor((_uz - GZ0) / RES).astype(np.int64)
+    _keep &= (_fi >= 0) & (_fj >= 0) & (_fi < HR.shape[1]) & (_fj < HR.shape[0])
+    _upper = ((_fj * HR.shape[1] + _fi)[_keep], np.asarray(_up[1])[_keep], np.asarray(_up[2])[_keep])
+else:
+    _upper = (np.zeros(0, np.int64), np.zeros(0, np.float32), np.zeros(0, np.uint8))
+print("  bridge parts", len(_bp), "upper cells", len(_upper[0]), flush=True)
+out = dict(tris=tris, curb=curb, lanes_parts=lanes_parts, raised_parts=raised_parts, bridge_parts=_bp, upper=_upper, HR=HR, KIND=KIND, grid=(GX0, GZ0, RES))
 save_roads(out, f"{W}/roads_final.pkl")
 print("wrote roads_final.pkl", {k: len(v) // 3 for k, v in tris.items()}, "time", round(time.time() - t0), flush=True)

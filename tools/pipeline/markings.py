@@ -102,9 +102,19 @@ else:
     carr_p = prep(carriage.buffer(0.05)); xing_p = prep(xing.buffer(0.3)); tb_p = prep(TB)
     print("areas: lanes", round(lanes.area), "xing", round(xing.area), "TB", round(TB.area), flush=True)
 
+# v32: 橋・高架が道路の上を通る所は「上の段」。橋の区間の線（BR_LINES）を塗る間だけ上の段を使う
+_UPR = R.get("upper"); CUR_UP = [False]
+if _UPR is not None and len(_UPR[0]):
+    _uo = np.argsort(_UPR[0]); _UI = np.asarray(_UPR[0])[_uo]; _UV = np.asarray(_UPR[1])[_uo]
+else:
+    _UI = np.zeros(0, np.int64); _UV = np.zeros(0, np.float32)
+BR_LINES = set()
 def h_at(x, z):
     i = int((x - GX0) / RES); j = int((z - GZ0) / RES)
     if 0 <= j < HR.shape[0] and 0 <= i < HR.shape[1]:
+        if CUR_UP[0] and len(_UI):
+            k = j * HR.shape[1] + i; p_ = int(np.searchsorted(_UI, k))
+            if p_ < len(_UI) and _UI[p_] == k: return float(_UV[p_])
         v = HR[j, i]
         if np.isfinite(v): return float(v)
     return None
@@ -370,13 +380,17 @@ for w in road_ways:
             if len(run) < 3: continue
             pl = LineString(run)
             if pl.length < 4: continue
+            _isb = t.get("bridge") not in (None, "no")
             if key[0] == "div":
-                lane_lines_w.extend(dashed(pl, 5.0, 5.0))
+                _dl = dashed(pl, 5.0, 5.0); lane_lines_w.extend(_dl)
+                if _isb: BR_LINES.update(id(q) for q in _dl)
             elif key[0] == "center":
                 pts = np.array(pl.coords)
                 (lane_lines_y if yellowish(pts[::2]) else lane_lines_w).append(pl)
+                if _isb: BR_LINES.add(id(pl))
             else:
                 edge_cands.append(pl)
+                if _isb: BR_LINES.add(id(pl))
 print("lane dividers", len(lane_lines_w), "yellow center", len(lane_lines_y), "edge candidates", len(edge_cands), flush=True)
 
 # 外側線・軌道敷境界: 航空写真で確認できた区間のみ（10m 窓で判定）
@@ -396,17 +410,20 @@ for pl in edge_cands:
                 if r > best: best, best_o = r, o
             if best >= 0.5:
                 edge_ok.append(shapely.affinity.translate(seg, *(nv * best_o)))
+                if id(pl) in BR_LINES: BR_LINES.add(id(edge_ok[-1]))
         s += 10
 print("edge lines confirmed by ortho", len(edge_ok), "of", sum(int(math.ceil(p.length / 10)) for p in edge_cands), flush=True)
 
 def lines_to_strips(lines, width, color):
     for l in lines:
+        CUR_UP[0] = id(l) in BR_LINES
         g = strip(l, width); g = g.intersection(CARR.near(g).buffer(-0.05))
         g = g.difference(CWA.near(g)).difference(XING.near(g).buffer(0.5))
         if not g.is_empty: emit_poly(g, color)
 lines_to_strips(lane_lines_w, 0.15, "w")
 lines_to_strips(lane_lines_y, 0.15, "y")
 lines_to_strips(edge_ok, 0.15, "w")
+CUR_UP[0] = False
 
 out = dict(white=np.concatenate(WHITE) if WHITE else np.zeros((0, 3)),
            yellow=np.concatenate(YELLOW) if YELLOW else np.zeros((0, 3)))

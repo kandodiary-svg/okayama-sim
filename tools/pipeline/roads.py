@@ -113,18 +113,19 @@ n_grid = 0
 
 # ---------------- 読み込み ----------------
 lod3 = {}      # cat -> list of tris (実測高さ)
-lod1 = []      # (tris, bridge, code, pid)
+lod1 = []      # (tris, bridge, code, pid, sect)
 for f in sorted(glob.glob("/home/claude/wx/out_tran/*.pkl")):
     code = os.path.basename(f)[:-4]
     d = pickle.load(open(f, "rb"))
-    pids = d.pop("_pid", {})
+    pids = d.pop("_pid", {}); sects = d.pop("_sect", {})
     for key, tri in d.items():
         cat = key.replace("_bridge", ""); bridge = key.endswith("_bridge")
         if cat == "road1":
-            pid = pids[key]
+            pid = pids[key]; sc_ = sects.get(key)
             t = tri.reshape(-1, 3, 3)
             for p_ in np.unique(pid):
-                lod1.append((t[pid == p_], bridge, code, int(p_)))
+                m_ = pid == p_
+                lod1.append((t[m_], bridge, code, int(p_), int(sc_[m_][0]) if sc_ is not None else (3 if bridge else 1)))
         else:
             lod3.setdefault(cat, []).append((tri.astype(np.float64), bridge))
 print("lod3 cats", {k: sum(len(t) for t, b in v) // 3 for k, v in lod3.items()}, "lod1 polys", len(lod1), flush=True)
@@ -148,6 +149,42 @@ for w in ways:
 JUNC = unary_union([Point(*p_).buffer(11.0) for p_ in _junc_xy.values()]) if _junc_xy else Polygon()
 print("junctions", len(_junc_xy), flush=True)
 road_ways = [w for w in ways if w["tags"].get("highway") in MAJOR | MINOR and len(w["xy"]) >= 2]
+# v32: 道路の高さは OSM の中心線に沿った縦断から（road_profile.py）。橋・高架は両端をつなぎ、下を横切る道路・線路の上にすき間を取る
+import road_profile as RPF
+_rails = [w["xy"] for w in ways if w["tags"].get("railway") in ("rail", "light_rail", "narrow_gauge") and not RPF._yes(w["tags"].get("bridge"))
+          and not RPF._yes(w["tags"].get("tunnel")) and len(w["xy"]) >= 2]
+PROF = RPF.Profiles(ways, dem_at, _rails)
+PROFILE_ON = not os.environ.get("NO_PROFILE")
+_OWN = [None]   # v32: 今の面の中を通る道（隣の別の高さの道を拾わないように）
+def _prof_ground(x, z):
+    h, d = PROF.height_own(x, z, "ground", _OWN[0], 25.0)
+    return np.where(np.isfinite(h), h, dem_at(x, z))
+def _bridge_hfun(P2):
+    """橋・高架の面の高さ: 近くの OSM の橋の縦断。無ければ（OSM に橋が無い小さな橋など）、面の長い向きの両端の外側 3m の
+    地上の道路の高さを直線でつなぐ（川・水路の上で地形に沿って下がらないように）"""
+    xs = np.array(P2.exterior.coords)
+    hb, db = PROF.height(xs[:, 0], xs[:, 1], "bridge", 30.0)
+    if np.isfinite(hb).mean() > 0.6:
+        own_b = PROF.ways_in(P2, "bridge")
+        def hf(x, z):
+            h, d = PROF.height_own(x, z, "bridge", own_b, 40.0)
+            if (~np.isfinite(h)).any():
+                h2 = _span(x, z); h = np.where(np.isfinite(h), h, h2)
+            return h
+        return hf
+    return _span_fun(P2)
+def _span_fun(P2):
+    rr = np.array(P2.minimum_rotated_rectangle.exterior.coords)[:-1]
+    e1 = rr[1] - rr[0]; e2 = rr[2] - rr[1]
+    ax = (e1 if np.linalg.norm(e1) >= np.linalg.norm(e2) else e2).copy(); L = float(np.linalg.norm(ax)); ax /= max(L, 1e-6)
+    c = np.array(P2.centroid.coords[0]); A = c - ax * (L / 2 + 3.0); B = c + ax * (L / 2 + 3.0)
+    hA = float(_prof_ground(np.array([A[0]]), np.array([A[1]]))[0]); hB = float(_prof_ground(np.array([B[0]]), np.array([B[1]]))[0])
+    def hf(x, z):
+        s_ = np.clip(((np.stack([x, z], 1) - A) @ ax) / (L + 6.0), 0, 1)
+        return hA + (hB - hA) * s_
+    return hf
+_span_cur = [None]
+def _span(x, z): return _span_cur[0](x, z)
 road_lines = [LineString(w["xy"]) for w in road_ways]
 road_tree = STRtree(road_lines)
 
@@ -167,17 +204,36 @@ print("lod3 area km2", lod3_area.area / 1e6, flush=True)
 
 n_split = 0
 DATA_BOX = box(BX0 + 1.0, BZ0 + 1.0, BX1 - 1.0, BZ1 - 1.0)
-for t, bridge, code, pid in lod1:
+bridge_parts = []; bridge_walk = []; n_tunnel = 0; n_bridge_osm = 0
+outB = {"lane": [], "walk": []}
+for t, bridge, code, pid, sect in lod1:
+    if sect == 6 and PROFILE_ON: n_tunnel += 1; continue   # v32: トンネルの中の道路面は描かない（山の表面に出ていた）
+    bridge = sect in (2, 3) if PROFILE_ON else bridge          # v32: 高架橋（2）も橋として扱う（以前は地形に貼り付いていた）
     P = tris_to_polys(t)
     if P is None or P.is_empty: continue
     P = P.difference(lod3_area)  # LOD3 がある所は LOD3 を優先
     P = P.intersection(DATA_BOX)  # v29: データ範囲の外（地形の無い所）は作らない
     if P.area < 1.0: continue
-    if bridge:
-        deck = float(np.max(dem_at(t.reshape(-1, 3)[:, 0], t.reshape(-1, 3)[:, 2]))) + 0.05
-        hfun = lambda x, z, d=deck: np.full(len(x), d)
+    if PROFILE_ON and not bridge:
+        # v32: PLATEAU では通常・交差部の区間でも、中を通る OSM の道が主に橋なら橋として扱う（長い橋の河川敷の部分など）
+        _ll = PROF.level_lengths(P)
+        if _ll["bridge"] > 5.0 and _ll["bridge"] > 1.5 * _ll["ground"]: bridge = True; n_bridge_osm += 1
+    if not PROFILE_ON:
+        if bridge:
+            deck = float(np.max(dem_at(t.reshape(-1, 3)[:, 0], t.reshape(-1, 3)[:, 2]))) + 0.05
+            hfun = lambda x, z, d=deck: np.full(len(x), d)
+        else:
+            hfun = lambda x, z: dem_at(x, z) + 0.04
+    elif bridge:
+        _P2 = max(poly_parts(P), key=lambda q: q.area)
+        _OWN[0] = None
+        _span_cur[0] = _span_fun(_P2)
+        _hb = _bridge_hfun(_P2)
+        hfun = lambda x, z, f=_hb: f(np.asarray(x, np.float64), np.asarray(z, np.float64)) + 0.05
+        bridge_parts.append(P)
     else:
-        hfun = lambda x, z: dem_at(x, z) + 0.04
+        _own = PROF.ways_in(P, "ground")
+        hfun = lambda x, z, o=_own: (_OWN.__setitem__(0, o), _prof_ground(np.asarray(x, np.float64), np.asarray(z, np.float64)) + 0.04)[1]
     # この面を通る OSM 道路
     cand = road_tree.query(P)
     carriage = []
@@ -218,14 +274,17 @@ for t, bridge, code, pid in lod1:
     else:
         S = None; C = P if not carriage else C
     _tp = tri_polygon
-    if not bridge and relief(P) > RELIEF_GRID: _tp = tri_polygon_grid; n_grid += 1
+    if (bridge and PROFILE_ON) or (not bridge and relief(P) > RELIEF_GRID): _tp = tri_polygon_grid; n_grid += 1   # v32: 橋は縦断に沿うよう格子で切る
     lane_t = _tp(C, hfun)
-    if len(lane_t): out["lane"].append(lane_t); lane_polys.append(C)
+    OUT_ = outB if (bridge and PROFILE_ON) else out   # v32: 橋・高架の面は別に持つ（下を通る道路と重なる所の高さを分ける）
+    if len(lane_t): OUT_["lane"].append(lane_t); lane_polys.append(C)
     if S is not None:
         walk_t = _tp(S, lambda x, z: hfun(x, z) + CURB)
-        if len(walk_t): out["walk"].append(walk_t); walk_polys.append(S)
+        if len(walk_t): OUT_["walk"].append(walk_t); walk_polys.append(S)
+        if bridge and PROFILE_ON: bridge_walk.append(S)
         n_split += 1
-print("lod1 split into carriage/sidewalk:", n_split, "gridded (relief >", RELIEF_GRID, "m):", n_grid, flush=True)
+print("lod1 split into carriage/sidewalk:", n_split, "gridded (relief >", RELIEF_GRID, "m / bridges):", n_grid, "tunnel polys skipped", n_tunnel,
+      "bridge polys", len(bridge_parts), "(of which by OSM", n_bridge_osm, ")", flush=True)
 
 # ---------------- LOD3 区間 ----------------
 for cat, L in lod3.items():
@@ -283,11 +342,44 @@ for cat in ("lane", "xing", "rail"):
     for t in out.get(cat, []): raster(t, 1)
 for cat in ("walk", "island", "green", "tramstop"):
     for t in out.get(cat, []): raster(t, 2)
-print("raster done", sum(int(np.isfinite(HR[_r:_r + 2048]).sum()) for _r in range(0, NZ, 2048)), flush=True)
+# v32: 橋・高架の面。下に（地上の）道路が無い升目はそのまま（以前と同じ）、下に道路がある升目は「上の段」（UP）に分けて持つ
+UP = {}   # 升目の番号 j*NX+i -> (高さ, 区分)
+def raster_b(tris, kind):
+    t = tris.reshape(-1, 3, 3)
+    for tt in t:
+        x0 = max(0, int((tt[:, 0].min() - GX0) / RES)); x1 = min(NX, int((tt[:, 0].max() - GX0) / RES) + 1)
+        z0 = max(0, int((tt[:, 2].min() - GZ0) / RES)); z1 = min(NZ, int((tt[:, 2].max() - GZ0) / RES) + 1)
+        if x1 <= x0 or z1 <= z0: continue
+        gx = GX0 + (np.arange(x0, x1) + 0.5) * RES; gz = GZ0 + (np.arange(z0, z1) + 0.5) * RES
+        X, Z = np.meshgrid(gx, gz); A, B, C = tt[0], tt[1], tt[2]
+        v0 = C[[0, 2]] - A[[0, 2]]; v1 = B[[0, 2]] - A[[0, 2]]
+        d00 = v0 @ v0; d01 = v0 @ v1; d11 = v1 @ v1; den = d00 * d11 - d01 * d01
+        if abs(den) < 1e-12: continue
+        px = X - A[0]; pz = Z - A[2]; d02 = v0[0] * px + v0[1] * pz; d12 = v1[0] * px + v1[1] * pz
+        u = (d11 * d02 - d01 * d12) / den; v = (d00 * d12 - d01 * d02) / den
+        m = (u >= -1e-3) & (v >= -1e-3) & (u + v <= 1 + 1e-3)
+        if not m.any(): continue
+        y = A[1] + u * (C[1] - A[1]) + v * (B[1] - A[1])
+        sub = HR[z0:z1, x0:x1]; ks = KIND[z0:z1, x0:x1]
+        low = m & np.isfinite(sub) & (sub < y - 2.5)           # 下に道路（2.5m 以上低い）→ 上の段
+        own = m & ~low
+        if kind == 1:
+            sub[own] = y[own]; ks[own] = 1
+        else:
+            o2 = own & (ks != 1); sub[o2] = y[o2]; ks[o2] = 2
+        jj, ii = np.nonzero(low)
+        for j_, i_, y_ in zip((jj + z0).tolist(), (ii + x0).tolist(), y[low].tolist()):
+            k_ = (j_ * NX + i_); prev = UP.get(k_)
+            if kind == 1 or prev is None or prev[1] != 1: UP[k_] = (y_, kind)
+for t in outB["lane"]: raster_b(t, 1)
+for t in outB["walk"]: raster_b(t, 2)
+print("raster done", sum(int(np.isfinite(HR[_r:_r + 2048]).sum()) for _r in range(0, NZ, 2048)), "upper cells (bridge over road)", len(UP), flush=True)
+for k_ in ("lane", "walk"): out[k_] = out[k_] + outB[k_]
 
 # ---------------- 縁石(歩道・島の外周の立ち上がり) ----------------
 curb = []
 _RT = STRtree(raised_parts) if raised_parts else None; _LT = STRtree(lane_parts) if lane_parts else None
+_BT = STRtree([g for g in bridge_parts if not g.is_empty]) if bridge_parts else None
 CT = 500.0
 _tiles = sorted({(int(math.floor(x / CT)), int(math.floor(z / CT))) for g in raised_parts
                  for x in (g.bounds[0], g.bounds[2]) for z in (g.bounds[1], g.bounds[3])} |
@@ -303,6 +395,7 @@ for (ti, tj) in _tiles:
   for g in poly_parts(raised_loc):
     if not g.intersects(box(tx0, tz0, tx0 + CT, tz0 + CT)): continue
     gp = prep(g)
+    on_b = _BT is not None and len(_BT.query(g.representative_point())) > 0   # v32: 橋・高架の上の歩道
     for ring in [g.exterior] + list(g.interiors):
         c = np.array(ring.coords)
         for a, b in zip(c[:-1], c[1:]):
@@ -322,6 +415,7 @@ for (ti, tj) in _tiles:
             def h_at(p):
                 i = int((p[0] - GX0) / RES); j = int((p[1] - GZ0) / RES)
                 j = min(max(j, 0), NZ - 1); i = min(max(i, 0), NX - 1)
+                if on_b and (j * NX + i) in UP: return float(UP[j * NX + i][0])   # v32: 橋の上の縁石は上の段
                 v = HR[j, i]
                 return float(v) if np.isfinite(v) else float(dem_at(p[0], p[1])) + CURB
             ta = h_at(a); tb = h_at(b)
@@ -333,6 +427,7 @@ print("curb tris", len(curb) // 3, flush=True)
 
 final = {k: np.concatenate(v) for k, v in out.items() if v}
 from common import save_roads
-save_roads(dict(tris=final, curb=curb, lanes_parts=lane_parts, raised_parts=raised_parts,
-                HR=HR, KIND=KIND, grid=(GX0, GZ0, RES)), _ROUT)   # v29: 範囲拡大では roads_new.pkl（merge_roads.py で v28 の道路と合わせる）
+_ui = np.fromiter(UP.keys(), np.int64, len(UP)); _uv = np.array([UP[k][0] for k in _ui.tolist()], np.float32); _uk = np.array([UP[k][1] for k in _ui.tolist()], np.uint8)
+save_roads(dict(tris=final, curb=curb, lanes_parts=lane_parts, raised_parts=raised_parts, bridge_parts=bridge_parts,
+                upper=(_ui, _uv, _uk), HR=HR, KIND=KIND, grid=(GX0, GZ0, RES)), _ROUT)   # v29: 範囲拡大では roads_new.pkl（merge_roads.py で v28 の道路と合わせる）
 print({k: len(v) // 3 for k, v in final.items()})

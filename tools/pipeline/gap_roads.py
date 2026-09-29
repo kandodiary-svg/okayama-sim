@@ -147,6 +147,12 @@ for e in EX["elements"]:
         if ps: _wp.append(unary_union(ps))
 WATER = prep(unary_union(_wp).buffer(6.0)) if _wp else None
 
+# v32: 縦断の目標は道路の縦断（road_profile: 橋は両端をつないだ高さ、地上は中心線の DEM）
+import road_profile as RPF
+_rails = [w["xy"] for w in ways if w["tags"].get("railway") in ("rail", "light_rail", "narrow_gauge") and not RPF._yes(w["tags"].get("bridge"))
+          and not RPF._yes(w["tags"].get("tunnel")) and len(w["xy"]) >= 2]
+PROF = RPF.Profiles(ways, dem_at, _rails)
+_CUR_LV = ["ground"]
 # ---- 縦断（最小二乗） ----
 X = []; wdata = []; ydata = []; wanch = []; yanch = []; chains = []
 key_of = {}
@@ -155,6 +161,8 @@ def new_var(p):
     if k in key_of: return key_of[k]
     X.append(p); x, z = p
     d = float(dem_at(x, z)); inw = WATER is not None and WATER.contains(Point(x, z))
+    hp, dp = PROF.height(np.array([x]), np.array([z]), _CUR_LV[0], 6.0)
+    if np.isfinite(hp[0]): d = float(hp[0]); inw = False   # v32
     wdata.append(0.0 if inw else 1.0); ydata.append(d)
     i, j = cell(x, z)
     sub = HR[max(0, j - 2):j + 3, max(0, i - 2):i + 3]; kk = KIND[max(0, j - 2):j + 3, max(0, i - 2):i + 3]
@@ -165,6 +173,7 @@ def new_var(p):
     return len(X) - 1
 for g, t in segs:
     L = g.length; n = max(2, int(L // 1.0) + 1)
+    _CUR_LV[0] = RPF.level_of(t) if RPF.level_of(t) != "tunnel" else "ground"
     seq = [new_var(tuple(g.interpolate(L * k / (n - 1)).coords[0])) for k in range(n)]
     chains.append(seq)
 N = len(X); X = np.array(X)

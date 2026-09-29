@@ -25,11 +25,23 @@ import geo_io; raw = geo_io.read_legacy("drive")
 n_ = dm["nx"] * dm["nz"]
 DH = np.frombuffer(raw[:n_ * 2], np.int16).reshape(dm["nz"], dm["nx"]) / 100.0
 DK = np.frombuffer(raw[n_ * 2:n_ * 3], np.uint8).reshape(dm["nz"], dm["nx"])
-def h_at(x, z):
+# v32: 橋・高架が道路の上を通る所の上の段（build_v5 の drive の後ろ）
+UPH = {}
+if dm.get("up"):
+    _o = n_ * 3 + dm["brow"] * dm["bnz"]; _c = dm["up"]
+    _ui = np.frombuffer(raw[_o:_o + 4 * _c], np.int32); _uh = np.frombuffer(raw[_o + 4 * _c:_o + 6 * _c], np.int16)
+    UPH = dict(zip(_ui.tolist(), (_uh / 100.0).tolist()))
+print("upper cells", len(UPH))
+def h_at(x, z, up=False):
     fx = (x - dm["x0"]) / dm["step"] - 0.5; fz = (z - dm["z0"]) / dm["step"] - 0.5
     i = int(np.clip(math.floor(fx), 0, dm["nx"] - 2)); j = int(np.clip(math.floor(fz), 0, dm["nz"] - 2))
     tx = min(1, max(0, fx - i)); tz = min(1, max(0, fz - j))
-    return float((DH[j, i] * (1 - tx) + DH[j, i + 1] * tx) * (1 - tz) + (DH[j + 1, i] * (1 - tx) + DH[j + 1, i + 1] * tx) * tz)
+    def v(jj, ii):
+        if up:
+            u = UPH.get(jj * dm["nx"] + ii)
+            if u is not None: return u
+        return DH[jj, ii]
+    return float((v(j, i) * (1 - tx) + v(j, i + 1) * tx) * (1 - tz) + (v(j + 1, i) * (1 - tx) + v(j + 1, i + 1) * tx) * tz)
 def road(x, z):
     i = int((x - GX0) / RES); j = int((z - GZ0) / RES)
     if 0 <= i < KIND.shape[1] and 0 <= j < KIND.shape[0]: return KIND[j, i] == 1
@@ -67,6 +79,7 @@ for w in rw:
         if not all(inside(p) for p in xy): continue
         if TRK.distance(Point(*mid)) > float(os.environ.get("TRAFFIC_BUF", "1e9")): continue
         t = w["tags"]; ow = t.get("oneway"); rb = t.get("junction") == "roundabout"
+        if t.get("tunnel") not in (None, "no", "building_passage"): continue   # v32: トンネルの中は走らせない（山の上を走っていた）
         edges.append(dict(n0=ns[a], n1=ns[b], xy=xy, L=L, cls=cls_of(w), tags=t,
                           fwd=ow != "-1", bwd=not (ow in ("yes", "true", "1", "-1") or rb) or ow == "-1"))
 print("edges", len(edges))
@@ -335,8 +348,10 @@ for li, ln in enumerate(lanes):
 print("signal approaches", nsig, "skipped side approaches", globals().get("n_skip", 0))
 
 # ---- 路面電車の軌道に重なる車線は除く（交差点の横断を除く）----
-def to3(p):
-    return [[round(float(x), 2), round(h_at(x, z) + 0.02, 2), round(float(z), 2)] for x, z in p]
+def to3(p, up=False):
+    return [[round(float(x), 2), round(h_at(x, z, up) + 0.02, 2), round(float(z), 2)] for x, z in p]
+def _isb(e):   # v32: 橋・高架の区間の車線は上の段の高さ
+    t = edges[e]["tags"]; return t.get("bridge") not in (None, "no")
 def offroad(p, halfw=0.75):
     """点列の左右（車体幅）が車道（または軌道敷）から外れている割合"""
     if len(p) < 2: return 1.0
@@ -396,9 +411,9 @@ def nm_id(e):
     if n not in NAMES: NAMES.append(n)
     return NAMES.index(n)
 J = dict(
-    lanes=[dict(p=to3(ln["p"]), c=ln["cls"][0], v=SPEED[ln["cls"]], n=ln["n"], k=ln["k"], to=ln["tn"] and str(ln["tn"]),
+    lanes=[dict(p=to3(ln["p"], _isb(ln["e"])), c=ln["cls"][0], v=SPEED[ln["cls"]], n=ln["n"], k=ln["k"], to=ln["tn"] and str(ln["tn"]),
                 fr=str(ln["fn"]), nm=nm_id(ln["e"]), sig=ln.get("sig")) for ln in out_l],
-    conns=[dict(a=idmap[c["a"]], b=idmap[c["b"]], p=to3(c["p"]), k=c["k"], v=round(c["v"]), node=str(c["node"])) for c in out_c],
+    conns=[dict(a=idmap[c["a"]], b=idmap[c["b"]], p=to3(c["p"], _isb(out_l[idmap[c["a"]]]["e"]) and _isb(out_l[idmap[c["b"]]]["e"])), k=c["k"], v=round(c["v"]), node=str(c["node"])) for c in out_c],
     sig_nodes=[str(n) for n, g in node_sig.items() if g >= 0],
     names=NAMES,
 )

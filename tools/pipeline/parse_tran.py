@@ -1,6 +1,7 @@
 """道路GML(LOD1/LOD3) -> 用途別三角形 /home/claude/wx/out_tran/<code>.pkl
 cat: 'lane'(車道部) 'xing'(車道交差部) 'walk'(歩道部) 'island'(島・中央帯等) 'road1'(LOD1道路面, 高さは後でDEM)
 bridge フラグ(sectionType=3 橋梁)
+v32: 区間の種類（sectionType: 1 通常 2 高架橋 3 橋梁 4 交差部 5 アンダーパス 6 トンネル）を三角形ごとに _sect に残す
 """
 import sys, os, glob, pickle
 import numpy as np
@@ -37,7 +38,7 @@ def polys_of(el):
 def process(path):
     code = os.path.basename(path).split("_")[0]
     out = {}
-    pid = {}
+    pid = {}; sectd = {}
     n = 0
     for ev, r in etree.iterparse(path, events=("end",), tag=T + "Road", huge_tree=True):
         sect = None
@@ -82,6 +83,7 @@ def process(path):
             key = cat + ("_bridge" if bridge else "")
             out.setdefault(key, []).append(t.reshape(-1, 3))
             pid.setdefault(key, []).append(np.full(len(t), n, np.int32))
+            sectd.setdefault(key, []).append(np.full(len(t), int(sect) if (sect or "").isdigit() else 0, np.int8))
             n += 1
         r.clear()
         while r.getprevious() is not None:
@@ -89,6 +91,7 @@ def process(path):
     os.makedirs("/home/claude/wx/out_tran", exist_ok=True)
     out = {k: np.concatenate(v) for k, v in out.items()}
     out["_pid"] = {k: np.concatenate(v) for k, v in pid.items()}
+    out["_sect"] = {k: np.concatenate(v) for k, v in sectd.items()}
     pickle.dump(out, open(f"/home/claude/wx/out_tran/{code}.pkl", "wb"))
     return code, {k: len(v) // 3 for k, v in out.items() if k != '_pid'}
 

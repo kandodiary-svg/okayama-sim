@@ -44,7 +44,7 @@ if not os.environ.get("TRACK_ONLY"):
         os.remove(f)
 
 # v30: 道路の高さ・区分のラスタ（0.5m）はファイルのまま読む（範囲拡大で大きい。common.load_roads）
-from common import load_roads, road_parts
+from common import load_roads, road_parts, PartsIndex, BX1 as _BX1, BZ1 as _BZ1
 R = load_roads("/home/claude/wx/roads_final.pkl", "r")
 T = pickle.load(open("/home/claude/wx/tracks.pkl", "rb"))
 M = pickle.load(open("/home/claude/wx/markings_v13.pkl" if os.path.exists("/home/claude/wx/markings_v13.pkl") else "/home/claude/wx/markings.pkl", "rb"))
@@ -543,20 +543,37 @@ _rj = (np.round((DZ0 - GZ0) / RES).astype(int) + np.arange(nz) * fac); _ci = (np
 _okj = (_rj >= 0) & (_rj < HR.shape[0]); _oki = (_ci >= 0) & (_ci < HR.shape[1])
 _sub = np.full((nz, nx), np.inf, np.float32)
 # v30: 0.5m のラスタ全体を一度に持たず、節点の行 64 本ずつ（上下に窓の半分の余白）で求める（結果は全体で求めた時と同じ）
-_hw = fac // 2
+# v32: 窓を ±2m → ±4m（地面の 4m 格子の 1 升）に。地面の三角形のどの頂点も、その三角形に重なる道路の点の高さより下になる
+#      （斜面で地面の三角形が道路の縁にかぶり、縁がギザギザに埋もれていた）
+_hw = int(os.environ.get("HRMIN_HW", str(fac)))
 _jl = np.nonzero(_okj)[0]
 for _b0 in range(0, len(_jl), 64):
     _js = _jl[_b0:_b0 + 64]; _r0 = int(_rj[_js[0]]) - _hw; _r1 = int(_rj[_js[-1]]) + _hw + 1
     _blk = np.full((_r1 - _r0, HR.shape[1]), np.inf, np.float32)
     _a0, _a1 = max(0, _r0), min(HR.shape[0], _r1)
     _h = np.asarray(HR[_a0:_a1], np.float32); _blk[_a0 - _r0:_a1 - _r0] = np.where(np.isfinite(_h), _h, np.inf); del _h
-    _mf = ndimage.minimum_filter(_blk, size=fac + 1, mode="constant", cval=np.inf)
+    _mf = ndimage.minimum_filter(_blk, size=2 * _hw + 1, mode="constant", cval=np.inf)
     _sub[np.ix_(_js, np.nonzero(_oki)[0])] = _mf[np.ix_(_rj[_js] - _r0, _ci[_oki])]
     del _blk, _mf
+Hg_orig = Hg.copy()   # v32: 下げる前の地形（切土の法面の上端に使う）
 _fin = np.isfinite(_sub)
 HRMIN[_fin] = _sub[_fin].astype(np.float64)
 Hg[_fin] = np.minimum(Hg[_fin], HRMIN[_fin] - 0.08)
 del _sub, _fin
+# v32: 道路の外側 12m までの地面は、道路（一番近い道路の升目）から 1:1 の勾配より高くしない（切土の法面。
+#      structures.cut_faces が道路の縁から同じ勾配の面を描くので、その下に地面が隠れる。4m 格子のギザギザが見えない）
+CUT_S = 1.0; _MG = 26
+_cap = np.full((nz, nx), np.inf)
+for _b0 in range(0, len(_jl), 64):
+    _js = _jl[_b0:_b0 + 64]; _r0 = max(0, int(_rj[_js[0]]) - _MG); _r1 = min(HR.shape[0], int(_rj[_js[-1]]) + _MG + 1)
+    _h = np.asarray(HR[_r0:_r1], np.float32); _nr = ~np.isfinite(_h)
+    if _nr.all(): continue
+    _dd, (_ji, _ii) = ndimage.distance_transform_edt(_nr, return_indices=True)
+    _cols = np.nonzero(_oki)[0]; _rr = _rj[_js] - _r0; _cc = _ci[_oki]
+    _d = _dd[np.ix_(_rr, _cc)] * RES; _hn = _h[_ji[np.ix_(_rr, _cc)], _ii[np.ix_(_rr, _cc)]]
+    _cap[np.ix_(_js, _cols)] = np.where(_d <= 12.0, _hn - 0.08 + CUT_S * np.maximum(0.0, _d - 0.5), np.inf)
+    del _h, _nr, _dd, _ji, _ii, _d, _hn
+Hg = np.minimum(Hg, _cap); print("  cut-slope cap nodes", int((_cap < Hg_orig - 0.01).sum()), flush=True); del _cap
 _tb_img = Image.new("L", (nx, nz), 0); _d = ImageDraw.Draw(_tb_img)
 for _g in (TBpoly.buffer(4.5).geoms if hasattr(TBpoly.buffer(4.5), "geoms") else [TBpoly.buffer(4.5)]):
     _d.polygon([((x - DX0) / DSTEP, (z - DZ0) / DSTEP) for x, z in _g.exterior.coords], fill=255)
@@ -798,8 +815,8 @@ def _road_bridge3(P):
 for bname, bpoly in BRIDGES:
     if bpoly.area < 400 or not bpoly.intersects(corr): continue
     _bc = bpoly.centroid
-    if not (_CORE3[0] < _bc.x < _CORE3[2] and _CORE3[1] < _bc.y < _CORE3[3]) and not _road_bridge3(bpoly):
-        print("  skip bridge (not a road bridge, outside core)", bname, round(_bc.x), round(_bc.y), flush=True); continue
+    if not (_CORE3[0] < _bc.x < _CORE3[2] and _CORE3[1] < _bc.y < _CORE3[3]):
+        continue   # v32: core の外の橋の構造は、PLATEAU の橋・高架の面から作る（下の structures.bridge_structures）
     x0_, z0_, x1_, z1_ = bpoly.bounds
     i0_ = max(0, int((x0_ - GX0) / RES)); i1_ = min(HR.shape[1], int((x1_ - GX0) / RES) + 1)
     j0_ = max(0, int((z0_ - GZ0) / RES)); j1_ = min(HR.shape[0], int((z1_ - GZ0) / RES) + 1)
@@ -835,6 +852,33 @@ if bdeck:
 if bpier:
     g_ = _cat0(bpier); add_chunk("bridge", g_, col=tri_colors(len(g_) // 3, (0.64, 0.63, 0.60), 0.03, 11), mat="color", file_key="road")
 print("  bridge rail tris", len(brail) // 3, flush=True)
+# ---- v32: 地形の高低差のある所の構造物（structures.py）: 橋・高架の構造、道路の縁の擁壁、建物の基礎（建物の所で） ----
+import structures as STR
+_GR = STR.Ground(Hc, water, DX0, DZ0, DSTEP)
+_DK = STR.Deck(HR, (GX0, GZ0, RES), R.get("upper"))
+_bparts = [q for q in (R.get("bridge_parts") or []) if q is not None and not q.is_empty]
+_bunion = unary_union(_bparts) if _bparts else None
+if _bunion is not None: shapely.prepare(_bunion)
+print("  v32 bridge parts", len(_bparts), "upper cells", 0 if R.get("upper") is None else len(R["upper"][0]), flush=True)
+_blines = [LineString(w["xy"]) for w in ways if w["tags"].get("highway") and w["tags"].get("bridge") not in (None, "no") and len(w["xy"]) >= 2]
+_rlines = [LineString(w["xy"]) for w in ways if w["tags"].get("railway") in ("rail", "light_rail", "narrow_gauge", "tram") and len(w["xy"]) >= 2]
+if _bparts:
+    _BS = STR.bridge_structures(_bparts, _DK, dem_at, _blines, _DK.lower, _rlines, STR.grid_split, tri_poly, log=lambda *a: print(*a, flush=True))
+    for _k, _c, _j in (("under", (0.60, 0.60, 0.58), 0.0), ("sides", (0.66, 0.66, 0.63), 0.0), ("rails", (0.74, 0.74, 0.71), 0.02), ("piers", (0.64, 0.63, 0.60), 0.03)):
+        g_ = _BS[_k]
+        if len(g_): add_chunk("bridge", g_, col=tri_colors(len(g_) // 3, _c, _j, 13), mat="color", file_key="road")
+    del _BS
+# 道路の縁の擁壁（道路の縁が地面より 0.35m 以上高い所）
+_PI = PartsIndex(list(road_parts(R, "lanes")) + list(road_parts(R, "raised")))
+_tl = [(x_, z_, x_ + 500.0, z_ + 500.0) for x_ in np.arange(math.floor(_BX0 / 500) * 500, _BX1, 500.0) for z_ in np.arange(math.floor(_BZ0 / 500) * 500, _BZ1, 500.0)]
+_sk, _skc = STR.road_skirts(_PI, _tl, _bunion, _DK, _GR, 0.35, log=lambda *a: print(*a, flush=True))
+if len(_sk): add_chunk("skirt", _sk, col=_skc * np.random.default_rng(14).uniform(0.96, 1.04, (len(_skc) // 3, 1)).repeat(3, 0), mat="color", file_key="road")
+del _sk, _skc
+# 切土の法面（道路の縁から 1:1 で上がって地形に当たるまで）
+_GRo = STR.Ground(np.round(Hg_orig * 100).astype(np.int16), water, DX0, DZ0, DSTEP)
+_cf, _cfc = STR.cut_faces(_PI, _tl, _bunion, _DK, _GRo, CUT_S, 0.3, 12.0, log=lambda *a: print(*a, flush=True))
+if len(_cf): add_chunk("cutface", _cf, col=_cfc * np.random.default_rng(15).uniform(0.95, 1.05, (len(_cfc) // 3, 1)).repeat(3, 0), mat="color", file_key="road")
+del _cf, _cfc, _GRo, _PI
 
 # ================= 4) 軌道（軌道敷・レール） =================
 print("track...", flush=True); print("  [rss MB]", _rss(), flush=True)
@@ -1352,12 +1396,16 @@ elif os.path.exists("/home/claude/wx/tex_old_centroids.json"):
     _pk = lambda s_: s_.split("/p25/", 1)[-1]
     TEX_OLD = {k_: np.array(v_, np.float64) for k_, v_ in json.load(open("/home/claude/wx/tex_old_centroids.json")).items()}
     print("  v28 facade images (json)", len(TEX_OLD), "now", len(tex_groups), flush=True)
+_plinth = []   # v32: 建物の基礎（壁の下端が地面より高い所）
 for (p, c, kind, base_y, floor_h, variant), d in _plain_items():
     if True:
         t = _skylift(p).reshape(-1, 3, 3).astype(np.float64)
         _k = ~_cleared(t) & (~_stn_fast(t) if d is not None else np.ones(len(t), bool)) & ~_gard(t)
         if not _k.any(): continue
         t = t[_k]
+        if kind == "wall" and d is not None and np.array_equal(np.asarray(p, np.float64).reshape(-1, 3, 3)[_k], t):   # 持ち上げた連絡通路・駅舎は除く
+            _pp = STR.building_plinths([(t.reshape(-1, 3), c, kind, base_y, floor_h, variant)], _GR, 0.05, log=lambda *a: None)
+            if len(_pp[0]): _plinth.append(_pp)
         n = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0]); ln_ = np.linalg.norm(n, axis=1) + 1e-12
         vert = np.abs(n[:, 1]) / ln_ < 0.35
         if (~vert).any():
@@ -1384,6 +1432,12 @@ add_chunk("bldg", np.array(_sky_under), col=tri_colors(len(_sky_under) // 3, (0.
 for variant, (P_, U_, C_) in wall.items():
     add_chunk("bldg", np.concatenate(P_), uv=np.concatenate(U_), col=np.concatenate(C_), mat="facade_" + variant, file_key="bldg_plain", uv_int=True)
 WALL_COUNT = {k: sum(len(x) for x in v[0]) // 3 for k, v in wall.items()}; del wall   # v29: メモリ
+if _plinth:
+    _pp = np.concatenate([q[0] for q in _plinth]); _pc = np.concatenate([q[1] for q in _plinth])
+    add_chunk("bldg", _pp, col=_pc, mat="color", file_key="bldg_plain")
+    print("  v32 building plinths: tris", len(_pp) // 3, "walls", len(_plinth), flush=True)
+    del _pp, _pc
+del _plinth
 # ---- v11: 写真テクスチャの建物を「くっきり表示」で描く版（外壁=推定色＋窓割りの外壁、屋根=航空写真） ----
 wallP = {}; roofP_pos = []
 def _proc_items():
@@ -1692,9 +1746,24 @@ _DHi = np.round(DH_ * 100).astype(np.int16)
 np.save("/home/claude/wx/drive_H.npy", _DHi)
 # v30: 高さは地面の格子（ground）からの予測との差（gres。地面の所はほぼ 0）。原点が同じで升目が半分の時だけ
 assert DG * 2 == DSTEP and dnx == 2 * nx and dnz == 2 * nz
-bins["drive"] = bytearray(gres_encode(_DHi, Hc) + DC_.tobytes() + _bbits.tobytes())
+# v32: 橋・高架が道路の上を通る所の「上の段」（走行格子の升目の番号 int32・高さ cm int16・区分 uint8）。app.js は車・人の今の高さに近い段を使う
+_UPD = b""; _nup = 0
+_up = R.get("upper")
+if _up is not None and len(_up[0]):
+    _ui = np.asarray(_up[0], np.int64); _uj = _ui // HR.shape[1]; _uii = _ui % HR.shape[1]
+    _ux = GX0 + (_uii + 0.5) * RES; _uz = GZ0 + (_uj + 0.5) * RES
+    _di = np.floor((_ux - DX0) / DG).astype(np.int64); _dj = np.floor((_uz - DZ0) / DG).astype(np.int64)
+    _ok = (_di >= 0) & (_dj >= 0) & (_di < dnx) & (_dj < dnz)
+    # 走行格子の升目の中心が指す 0.5m の升目だけ（DH_ と同じ取り方）
+    _si = ((DX0 + (_di + 0.5) * DG - GX0) / RES).astype(np.int64); _sj = ((DZ0 + (_dj + 0.5) * DG - GZ0) / RES).astype(np.int64)
+    _ok &= (_si == _uii) & (_sj == _uj)
+    _cid = (_dj * dnx + _di)[_ok].astype(np.int32); _ch = np.round(np.asarray(_up[1])[_ok] * 100).astype(np.int16); _ck = np.asarray(_up[2])[_ok].astype(np.uint8)
+    _o = np.argsort(_cid); _cid, _ch, _ck = _cid[_o], _ch[_o], _ck[_o]
+    _UPD = _cid.tobytes() + _ch.tobytes() + _ck.tobytes(); _nup = len(_cid)
+print("  drive upper cells (bridge over road)", _nup, flush=True)
+bins["drive"] = bytearray(gres_encode(_DHi, Hc) + DC_.tobytes() + _bbits.tobytes() + _UPD)
 manifest["drive"] = dict(file="drive", nx=int(dnx), nz=int(dnz), x0=float(DX0), z0=float(DZ0), step=DG,
-                         bnx=int(_bnx), bnz=int(_bnz), bstep=1.0, brow=int(_bbits.shape[1]), enc="gres")
+                         bnx=int(_bnx), bnz=int(_bnz), bstep=1.0, brow=int(_bbits.shape[1]), enc="gres", up=int(_nup))
 del _DHi
 print("  building mask 1m", _bnx, _bnz, "cells", int(_b1.sum()), flush=True)
 # v17: ヘリ用の屋上の高さ（4m 格子・1m 単位の絶対高さ。0 = 建物なし）。低い屋根から順に塗り、高い屋根で上書き

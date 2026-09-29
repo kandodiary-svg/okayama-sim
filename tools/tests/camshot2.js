@@ -15,7 +15,8 @@ const { chromium } = require('playwright');
        return [c.x-c.dx*back+(-c.dz)*side, c.y+2.2, c.z-c.dz*back+c.dx*side, c.x+c.dx*10, c.y+1.0, c.z+c.dz*10]; }, sh); }
     else if (sh.length===2) { sh = await p.evaluate(([k,back])=>{ const P=__Peds; const L=P.peds.filter(o=>o.on&&P.E[o.e].k===k&&o.v>0.5); const o=L[Math.floor(L.length/2)]; if(!o) return [0,20,0,10,0,10]; const y=__Car.hAt(o.x,o.z);
        return [o.x-o.fx*back+(-o.fz)*1.5, y+1.7, o.z-o.fz*back+o.fx*1.5, o.x+o.fx*8, y+1.2, o.z+o.fz*8]; }, sh); }
-    const [px,py,pz,lx,ly,lz]=sh;
+    let [px,py,pz,lx,ly,lz]=sh;
+    if (process.env.REL) { const g = await p.evaluate(([a,b,c,d])=>[__Car.hAt(a,b), __Car.hAt(c,d)], [px,pz,lx,lz]); py += g[0]; ly += g[1]; }   // 高さは地面からの高さ
     await p.evaluate(([px,py,pz,lx,ly,lz])=>{ const H=__Heli.H; Object.assign(H,{x:lx,z:lz,y:60,vF:0,vS:0,vY:0}); window.__camfix={pos:[px,py,pz],look:[lx,ly,lz]}; }, [px,py,pz,lx,ly,lz]);
     for (let k=0;k<Number(process.env.WAIT||36);k++){ await p.evaluate(()=>{ const H=__Heli.H; const s={x:H.x,y:H.y,z:H.z}; __Heli.tick(0.05); Object.assign(H,s,{vF:0,vS:0,vY:0}); }); await p.waitForTimeout(250); }
     if (process.env.EVAL) console.log(await p.evaluate(process.env.EVAL));

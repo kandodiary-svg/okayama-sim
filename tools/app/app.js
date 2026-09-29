@@ -2970,6 +2970,17 @@ const Car = (() => {
     const n = meta.nx * meta.nz;
     G = { ...meta, H: new Int16Array(buf, 0, n), K: new Uint8Array(buf, n * 2, n) };
     if (meta.bnx && buf.byteLength >= n * 3 + meta.brow * meta.bnz) G.B = new Uint8Array(buf, n * 3, meta.brow * meta.bnz);
+    // v32: 橋・高架が道路の上を通る所の「上の段」（升目の番号・高さ cm・区分）。今の高さに近い段を使う
+    G.UM = null;
+    if (meta.up) { const o = n * 3 + meta.brow * meta.bnz, c = meta.up;
+      const ui = new Int32Array(buf.slice(o, o + 4 * c)), uh = new Int16Array(buf.slice(o + 4 * c, o + 6 * c)), uk = new Uint8Array(buf.slice(o + 6 * c, o + 7 * c));
+      G.UM = new Map(); for (let i = 0; i < c; i++) G.UM.set(ui[i], i); G.UH = uh; G.UK = uk; }
+  }
+  // v32: 升目 k の高さ（cm）。yref（m）があり上の段がある時は、yref に近い方の段
+  function hk(k, yref) {
+    const h = G.H[k]; if (!G.UM || yref === undefined) return h;
+    const u = G.UM.get(k); if (u === undefined) return h;
+    const hu = G.UH[u]; return Math.abs(yref * 100 - hu) < Math.abs(yref * 100 - h) ? hu : h;
   }
   // v14: 建物に入っているか（1m のビット列。無ければ 2m 格子の種類）
   function blocked(x, z) {
@@ -2979,14 +2990,17 @@ const Car = (() => {
     return kindAt(x, z) === 9;
   }
   function cell(x, z) { const i = Math.floor((x - G.x0) / G.step), j = Math.floor((z - G.z0) / G.step); return (i < 0 || j < 0 || i >= G.nx || j >= G.nz) ? -1 : j * G.nx + i; }
-  function hAt(x, z) {
+  function hAt(x, z, yref) {
     if (!G) return 0;
     const fx = (x - G.x0) / G.step - 0.5, fz = (z - G.z0) / G.step - 0.5;
     const i = Math.max(0, Math.min(G.nx - 2, Math.floor(fx))), j = Math.max(0, Math.min(G.nz - 2, Math.floor(fz)));
     const tx = Math.min(1, Math.max(0, fx - i)), tz = Math.min(1, Math.max(0, fz - j)), k = j * G.nx + i;
-    return ((G.H[k] * (1 - tx) + G.H[k + 1] * tx) * (1 - tz) + (G.H[k + G.nx] * (1 - tx) + G.H[k + G.nx + 1] * tx) * tz) / 100;
+    if (!G.UM || yref === undefined) return ((G.H[k] * (1 - tx) + G.H[k + 1] * tx) * (1 - tz) + (G.H[k + G.nx] * (1 - tx) + G.H[k + G.nx + 1] * tx) * tz) / 100;
+    return ((hk(k, yref) * (1 - tx) + hk(k + 1, yref) * tx) * (1 - tz) + (hk(k + G.nx, yref) * (1 - tx) + hk(k + G.nx + 1, yref) * tx) * tz) / 100;
   }
-  function kindAt(x, z) { const k = cell(x, z); return k < 0 ? 9 : G.K[k]; }
+  function kindAt(x, z, yref) { const k = cell(x, z); if (k < 0) return 9;
+    if (G.UM && yref !== undefined) { const u = G.UM.get(k); if (u !== undefined && Math.abs(yref * 100 - G.UH[u]) < Math.abs(yref * 100 - G.H[k])) return G.UK[u]; }
+    return G.K[k]; }
   // v23: 橋脚などを衝突判定（1m のビット列）に加える
   function addBlock(x, z, r) { if (!G || !G.B) return; for (let dz = -r; dz <= r; dz += 1) for (let dx = -r; dx <= r; dx += 1) { const i = Math.floor((x + dx - G.x0) / G.bstep), j = Math.floor((z + dz - G.z0) / G.bstep); if (i < 0 || j < 0 || i >= G.bnx || j >= G.bnz) continue; G.B[j * G.brow + (i >> 3)] |= (1 << (7 - (i & 7))); } }
 
@@ -3094,7 +3108,7 @@ const Car = (() => {
     // 勾配
     const fx = Math.sin(C.yaw), fz = Math.cos(C.yaw);
     const hl = P.L / 2;
-    const hf = hAt(C.x + fx * hl, C.z + fz * hl), hb = hAt(C.x - fx * hl, C.z - fz * hl);
+    const hf = hAt(C.x + fx * hl, C.z + fz * hl, C.h), hb = hAt(C.x - fx * hl, C.z - fz * hl, C.h);
     const grade = (hf - hb) / P.L;
     a -= 9.8 * grade;
     let v = C.v + a * dt;
@@ -3129,7 +3143,7 @@ const Car = (() => {
     else { C.odo += Math.abs(C.v) * dt; C.x = nx; C.z = nz; }
     C.hitT = Math.max(0, C.hitT - dt);
     // 高さ・姿勢（ピッチ: 勾配＋加減速、ロール: 横加速度）
-    const lz = hAt(C.x + sx * P.wid * 0.45, C.z + sz * P.wid * 0.45), rz = hAt(C.x - sx * P.wid * 0.45, C.z - sz * P.wid * 0.45);
+    const lz = hAt(C.x + sx * P.wid * 0.45, C.z + sz * P.wid * 0.45, C.h), rz = hAt(C.x - sx * P.wid * 0.45, C.z - sz * P.wid * 0.45, C.h);
     C.h = (hf + hb + lz + rz) / 4;
     const pitchT = Math.atan(grade) - (a - Math.sign(C.v) * brakeA) * (P === PROFILES.bus ? 0.006 : 0.004), rollT = Math.atan((lz - rz) / (P.wid * 0.9)) + Math.sign(C.v) * yawRate * Math.abs(C.v) * (P === PROFILES.bus ? 0.012 : 0.006);
     C.pitch += (pitchT - C.pitch) * Math.min(1, dt * 6); C.roll += (rollT - C.roll) * Math.min(1, dt * 6);
@@ -3161,7 +3175,7 @@ const Car = (() => {
       const want = new THREE.Vector3(C.x - fx * P.cam.back, C.h + P.cam.up, C.z - fz * P.cam.back);
       if (camPos.lengthSq() === 0 || camPos.distanceTo(want) > 40) camPos.copy(want);
       camPos.lerp(want, Math.min(1, dt * 4));
-      const gh = hAt(camPos.x, camPos.z) + 0.6; if (camPos.y < gh) camPos.y = gh;
+      const gh = hAt(camPos.x, camPos.z, camPos.y) + 0.6; if (camPos.y < gh) camPos.y = gh;
       if (C.camCeil) { const cy = C.camCeil(camPos.x, camPos.z); if (camPos.y > cy) camPos.y = Math.max(gh, cy); }
       camLook.set(C.x + fx * P.cam.look, C.h + (isBus ? 2.0 : 1.0), C.z + fz * P.cam.look);
       camera.position.copy(camPos); camera.lookAt(camLook);
@@ -3174,7 +3188,7 @@ const Car = (() => {
     $("car-rpm").style.width = Math.min(100, C.rpm / 65) + "%";
     $("car-wheel").style.transform = `rotate(${-C.wheel}rad)`;
     C.msgT = Math.max(0, (C.msgT || 0) - 0.016);
-    $("car-msg").textContent = C.hitT > 0 ? "衝突しました（" + (C.hitWhat || "建物") + "）" : C.msgT > 0 ? C.msg : C.gear === "R" ? "後退中 — ↓ で下がる・↑ で止まる（後方に注意）" : (kindAt(C.x, C.z) === 2 ? "歩道・交通島の上です" : "");
+    $("car-msg").textContent = C.hitT > 0 ? "衝突しました（" + (C.hitWhat || "建物") + "）" : C.msgT > 0 ? C.msg : C.gear === "R" ? "後退中 — ↓ で下がる・↑ で止まる（後方に注意）" : (kindAt(C.x, C.z, C.h) === 2 ? "歩道・交通島の上です" : "");
     $("car-place").textContent = "走行距離 " + (C.odo / 1000).toFixed(2) + " km";
   }
   function start() {
@@ -3431,7 +3445,7 @@ const Heli = (() => {
     if(i < 0 || j < 0 || i >= W.nx || j >= W.nz) return -1e9;
     const v = W.A[j * W.nx + i]; return v === -32768 ? -1e9 : v / 100;
   }
-  function groundAt(x, z){ return inData(x, z) ? Car.hAt(x, z) : farH(x, z); }
+  function groundAt(x, z, yref){ return inData(x, z) ? Car.hAt(x, z, yref === undefined ? H.y : yref) : farH(x, z); }   // v32: 橋・高架は今の高さに近い段
   function roofAt(x, z){
     if(!HM) return -1e9;
     const i = Math.floor((x - HM.x0) / HM.step), j = Math.floor((z - HM.z0) / HM.step);
@@ -3724,7 +3738,7 @@ const Stuck=(()=>{ let t=0, hits=0, lastHit=0, off=0;
     const C=Car.C;
     if(C.hitT>1.1 && performance.now()-lastHit>900){ lastHit=performance.now(); hits++; }
     if(Math.abs(C.v)<0.4 && (C.thr||0)>0.3) t+=dt; else t=Math.max(0,t-dt*0.5);
-    const k=Car.kindAt ? Car.kindAt(C.x,C.z) : 1; if(k!==1 && !(S.mode==="bus" && Bus.active && Bus.onRoute())) off+=dt; else off=0;
+    const k=Car.kindAt ? Car.kindAt(C.x,C.z,C.h) : 1; if(k!==1 && !(S.mode==="bus" && Bus.active && Bus.onRoute())) off+=dt; else off=0;
     const stuck = t>2.5 || hits>=3 || off>5;
     $("rescue-btn").classList.toggle("hint", stuck);
     if(stuck && !C._stuckMsg){ C._stuckMsg=true; C.msg="動けないときは「道路に戻る」（T キー）で近くの道路へ戻れます"; C.msgT=5; }
@@ -3996,7 +4010,7 @@ const Peds = (() => {
       if(vis) for(const o of L){
         if(!o.on) continue;
         const dx = o.x - camera.position.x, dz = o.z - camera.position.z; if(dx * dx + dz * dz > 260 * 260) continue;
-        const y = Car.hAt(o.x, o.z);
+        const y = Car.hAt(o.x, o.z, o._y); o._y = y;   // v32: 橋の上を歩く人は橋の上（今の高さに近い段）
         const yaw = o.stand > 0 ? o.face : Math.atan2(o.fx, o.fz);
         _q.setFromAxisAngle(_up, yaw); _v.set(o.x, y, o.z); _s.set(o.sc, o.sc, o.sc); _m.compose(_v, _q, _s); mesh.setMatrixAt(n, _m);
         an.setXY(n, o.ph, o.v > 0.05 ? Math.min(1, o.v / (o.bike ? 2.5 : 1.0)) : 0);
