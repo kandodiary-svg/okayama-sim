@@ -91,10 +91,7 @@ class Deck:
         kd = cKDTree(np.stack([cx[ok][keep], cz[ok][keep]], 1)); hv = hh[keep]
         def f(x, z):
             x = np.atleast_1d(np.asarray(x, np.float64)); z = np.atleast_1d(np.asarray(z, np.float64))
-            d, i = kd.query(np.stack([x, z], 1), k=min(4, len(hv)))
-            v = hv[i].reshape(len(x), -1)
-            spread = v.max(1) - v.min(1)
-            return np.where(spread > 1.5, v[:, 0], v.mean(1))   # 近い升目の高さが 1.5m 以上ばらつく所（段が切り替わる所）は平均せず一番近い升目の高さ
+            d, i = kd.query(np.stack([x, z], 1), k=min(4, len(hv))); return hv[i].reshape(len(x), -1).mean(1)
         return f
     def upper(self, x, z):
         """上の段があればその高さ、無ければ HR（橋の上の点に使う）"""
@@ -128,19 +125,6 @@ def _ring_segments(g, step=2.0):
     return np.concatenate([a for a, b in out]), np.concatenate([b for a, b in out])
 
 
-
-def _run_smooth(A, B, v, k=5):
-    """つながった外周に沿って値 v を移動平均する（区間が切れる所で分ける）"""
-    from scipy.ndimage import uniform_filter1d
-    n = len(A)
-    if n < 2: return v
-    brk = np.r_[True, np.hypot(A[1:, 0] - B[:-1, 0], A[1:, 1] - B[:-1, 1]) > 0.05]
-    st = np.flatnonzero(brk); en = np.r_[st[1:], n]
-    out = np.array(v, np.float64)
-    for s_, e_ in zip(st, en):
-        if e_ - s_ >= 2: out[s_:e_] = uniform_filter1d(out[s_:e_], k, mode="nearest")
-    return out
-
 def road_skirts(parts_index, tiles, bridge_union, deck, ground, min_gap=0.35, log=print):
     """道路（橋以外）の外周で、道路の縁が地面より min_gap 以上高い所に、縁から地面までの面。
     高さ 1.5m までは 1:1 の土の法面（外へ下がる斜面・土の色）、それより高い所は垂直の擁壁（コンクリートの色）。戻り値: 三角形, 色"""
@@ -171,11 +155,10 @@ def road_skirts(parts_index, tiles, bridge_union, deck, ground, min_gap=0.35, lo
             ga = ground(A[:, 0], A[:, 1]); gb = ground(B[:, 0], B[:, 1])
             fin = np.isfinite(ta) & np.isfinite(tb)
             gap = np.maximum(ta - ga, tb - gb)
-            gapS = _run_smooth(A, B, np.where(fin, gap, 0.0), 5)     # 土の斜面か擁壁かは、外周に沿ってならした高さで決める（4m ごとに入れ替わってブロック状になっていた）
             need = fin & (gap > min_gap)
             if not need.any(): continue
-            A, B, ta, tb, ga, gb, nl, gap, gapS = A[need], B[need], ta[need], tb[need], ga[need], gb[need], nl[need], gap[need], gapS[need]
-            slope = gapS <= 1.5
+            A, B, ta, tb, ga, gb, nl, gap = A[need], B[need], ta[need], tb[need], ga[need], gb[need], nl[need], gap[need]
+            slope = gap <= 1.5
             off = np.where(slope, np.clip(gap, 0, 1.5), 0.0)[:, None]
             Ao = A - nl * off; Bo = B - nl * off
             ba = np.minimum(ground(Ao[:, 0], Ao[:, 1]), ta - 0.05) - 0.15; bb = np.minimum(ground(Bo[:, 0], Bo[:, 1]), tb - 0.05) - 0.15
@@ -303,9 +286,6 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
         top = lambda x, z, df=df: df(x, z)
         if g.area > 30:
             for piece in grid_split(g, 4.0):
-                bx0, bz0, bx1, bz1 = piece.bounds
-                cy = top(np.array([bx0, bx1, bx0, bx1, (bx0 + bx1) / 2]), np.array([bz0, bz0, bz1, bz1, (bz0 + bz1) / 2]))
-                if not np.isfinite(cy).all() or cy.max() - cy.min() > 1.5: continue   # 段が切り替わる升は下面を作らない
                 t = tri_poly(piece, lambda x, z, top=top: float(top(x, z)[0]) - TH)
                 if len(t): under.append(t.reshape(-1, 3, 3)[:, ::-1].reshape(-1, 3))
         A, B = _ring_segments(g, 2.0)
@@ -314,7 +294,7 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
         nl = np.stack([-d[:, 1], d[:, 0]], 1) / L[:, None]
         ai = A + nl * 0.3; bi = B + nl * 0.3
         ta = top(ai[:, 0], ai[:, 1]); tb = top(bi[:, 0], bi[:, 1])
-        fin = np.isfinite(ta) & np.isfinite(tb) & (np.abs(ta - tb) < 1.2)   # 2m で 1.2m 以上の高さの差（段が切り替わる所）には側面・高欄を付けない
+        fin = np.isfinite(ta) & np.isfinite(tb)
         A, B, ta, tb, nl = A[fin], B[fin], ta[fin], tb[fin], nl[fin]
         if not len(A): continue
         # 隣の区間と同じ高さで接する辺（継ぎ目）は付けない

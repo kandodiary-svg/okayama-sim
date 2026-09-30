@@ -48,20 +48,9 @@ class Deck:
         return j, i
     def lower(self, x, z):
         j, i = self.cells(x, z); return np.asarray(self.HR[j, i], np.float64)
-    def upper_h(self, x, z):
-        """上の段の高さ（無ければ nan）"""
-        j, i = self.cells(x, z); k = j * self.HR.shape[1] + i
-        h = np.full(np.shape(k), np.nan)
-        if len(self.ui):
-            p = np.clip(np.searchsorted(self.ui, k), 0, len(self.ui) - 1); hit = self.ui[p] == k
-            h = np.where(hit, self.uv[p], np.nan)
-        return h
     def deck_fn(self, g):
-        """橋の面 g（1 つの区間）の床版の高さを、近い 4 升の平均で返す関数（面の縁・升目の無い点でも値が出る）。
-        v33: 升目ごとに「下の段 HR」「上の段 UP」のうち、面の中の高さの中央値に近い方を使い、中央値から離れた升（別の段の橋・下の道路）は使わない
-        （橋の上に橋が重なる所で、下の橋の縁に上の橋の高さが入って三角の突起になっていた）"""
+        """橋の面 g の中の床版の高さ（上の段を優先）を、近い 4 升の平均で返す関数（面の縁・升目の無い点でも値が出る）"""
         from scipy.spatial import cKDTree
-        from scipy.ndimage import maximum_filter
         x0, z0, x1, z1 = g.bounds
         i0 = max(0, int((x0 - 1 - self.GX0) / self.RES)); i1 = min(self.HR.shape[1], int((x1 + 1 - self.GX0) / self.RES) + 1)
         j0 = max(0, int((z0 - 1 - self.GZ0) / self.RES)); j1 = min(self.HR.shape[0], int((z1 + 1 - self.GZ0) / self.RES) + 1)
@@ -70,31 +59,21 @@ class Deck:
         cx = self.GX0 + (ii + 0.5) * self.RES; cz = self.GZ0 + (jj + 0.5) * self.RES
         inside = shapely.contains_xy(g.buffer(0.3), cx, cz)
         if not inside.any(): return None
-        jj, ii, cx, cz = jj[inside], ii[inside], cx[inside], cz[inside]
-        hL = np.asarray(self.HR[jj, ii], np.float64); hU = self.upper_h(cx, cz)
-        fu = np.isfinite(hU)
-        base = np.where(fu, hU, hL) if fu.sum() > 0.5 * len(cx) else hL
-        base = base[np.isfinite(base)]
-        if len(base) < 3: return None
-        ref = float(np.median(base)); tol = float(min(6.0, max(1.2, 0.07 * max(x1 - x0, z1 - z0))))
-        cL = np.where(np.isfinite(hL), np.abs(hL - ref), np.inf); cU = np.where(fu, np.abs(hU - ref), np.inf)
-        h = np.where(cU < cL, hU, hL); dev = np.minimum(cL, cU)
-        ok = np.isfinite(h) & (dev <= tol)
+        cx, cz = cx[inside], cz[inside]; h = self.upper(cx, cz); ok = np.isfinite(h)
         if ok.sum() < 3: return None
-        # 近くの最大より 1m 以上低い升目は使わない
+        # 近くの最大より 1m 以上低い升目（橋の下を通る地上の道路・ランプの升目が面の中に混ざったもの）は床版の高さに使わない
+        from scipy.ndimage import maximum_filter
         Hm = np.full((j1 - j0, i1 - i0), -np.inf, np.float32)
-        jc = jj[ok] - j0; ic = ii[ok] - i0; hh = h[ok]
+        jc = jj[inside][ok] - j0; ic = ii[inside][ok] - i0; hh = h[ok]
         Hm[jc, ic] = hh
         mx = maximum_filter(Hm, size=13, mode="nearest")
         keep = hh >= mx[jc, ic] - 1.0
-        if keep.sum() < 3: keep = np.ones(len(hh), bool)
-        kd = cKDTree(np.stack([cx[ok][keep], cz[ok][keep]], 1)); hv = hh[keep]
+        if keep.sum() >= 3:
+            cx = cx[ok][keep]; cz = cz[ok][keep]; h = hh[keep]; ok = np.ones(len(h), bool)
+        kd = cKDTree(np.stack([cx[ok], cz[ok]], 1)); hv = h[ok]
         def f(x, z):
             x = np.atleast_1d(np.asarray(x, np.float64)); z = np.atleast_1d(np.asarray(z, np.float64))
-            d, i = kd.query(np.stack([x, z], 1), k=min(4, len(hv)))
-            v = hv[i].reshape(len(x), -1)
-            spread = v.max(1) - v.min(1)
-            return np.where(spread > 1.5, v[:, 0], v.mean(1))   # 近い升目の高さが 1.5m 以上ばらつく所（段が切り替わる所）は平均せず一番近い升目の高さ
+            d, i = kd.query(np.stack([x, z], 1), k=min(4, len(hv))); return hv[i].reshape(len(x), -1).mean(1)
         return f
     def upper(self, x, z):
         """上の段があればその高さ、無ければ HR（橋の上の点に使う）"""
@@ -128,19 +107,6 @@ def _ring_segments(g, step=2.0):
     return np.concatenate([a for a, b in out]), np.concatenate([b for a, b in out])
 
 
-
-def _run_smooth(A, B, v, k=5):
-    """つながった外周に沿って値 v を移動平均する（区間が切れる所で分ける）"""
-    from scipy.ndimage import uniform_filter1d
-    n = len(A)
-    if n < 2: return v
-    brk = np.r_[True, np.hypot(A[1:, 0] - B[:-1, 0], A[1:, 1] - B[:-1, 1]) > 0.05]
-    st = np.flatnonzero(brk); en = np.r_[st[1:], n]
-    out = np.array(v, np.float64)
-    for s_, e_ in zip(st, en):
-        if e_ - s_ >= 2: out[s_:e_] = uniform_filter1d(out[s_:e_], k, mode="nearest")
-    return out
-
 def road_skirts(parts_index, tiles, bridge_union, deck, ground, min_gap=0.35, log=print):
     """道路（橋以外）の外周で、道路の縁が地面より min_gap 以上高い所に、縁から地面までの面。
     高さ 1.5m までは 1:1 の土の法面（外へ下がる斜面・土の色）、それより高い所は垂直の擁壁（コンクリートの色）。戻り値: 三角形, 色"""
@@ -171,11 +137,10 @@ def road_skirts(parts_index, tiles, bridge_union, deck, ground, min_gap=0.35, lo
             ga = ground(A[:, 0], A[:, 1]); gb = ground(B[:, 0], B[:, 1])
             fin = np.isfinite(ta) & np.isfinite(tb)
             gap = np.maximum(ta - ga, tb - gb)
-            gapS = _run_smooth(A, B, np.where(fin, gap, 0.0), 5)     # 土の斜面か擁壁かは、外周に沿ってならした高さで決める（4m ごとに入れ替わってブロック状になっていた）
             need = fin & (gap > min_gap)
             if not need.any(): continue
-            A, B, ta, tb, ga, gb, nl, gap, gapS = A[need], B[need], ta[need], tb[need], ga[need], gb[need], nl[need], gap[need], gapS[need]
-            slope = gapS <= 1.5
+            A, B, ta, tb, ga, gb, nl, gap = A[need], B[need], ta[need], tb[need], ga[need], gb[need], nl[need], gap[need]
+            slope = gap <= 1.5
             off = np.where(slope, np.clip(gap, 0, 1.5), 0.0)[:, None]
             Ao = A - nl * off; Bo = B - nl * off
             ba = np.minimum(ground(Ao[:, 0], Ao[:, 1]), ta - 0.05) - 0.15; bb = np.minimum(ground(Bo[:, 0], Bo[:, 1]), tb - 0.05) - 0.15
@@ -277,67 +242,37 @@ def cut_faces(parts_index, tiles, bridge_union, deck, ground_orig, S=1.0, min_h=
 
 
 def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_lines, grid_split, tri_poly, log=print):
-    """橋・高架の床版の下面（上面の 1.2m 下）・側面・高欄（地上の道路とつながる端を除く外周）・橋脚（約 30m おき）
-    v33: 区間（PLATEAU の面）ごとに作る。区間どうしが同じ高さで接する辺（床版の中の継ぎ目）には側面・高欄を付けない。
-    橋の上に橋が重なる所は、それぞれの段の高さで作る（以前は和集合で 1 つにして段が混ざっていた）"""
-    parts = []
-    for p in bparts:
-        if p is None or p.is_empty: continue
-        for g in (p.geoms if hasattr(p, "geoms") else [p]):
-            if g.geom_type == "Polygon" and g.area > 3: parts.append(g)
-    tree = STRtree(parts)
-    DF = {}
-    def dfn(i):
-        if i not in DF: DF[i] = deck.deck_fn(parts[i])
-        return DF[i]
-    U = unary_union(parts)
+    """橋・高架の床版の下面（上面の 1.2m 下）・側面・高欄（地上の道路とつながる端を除く外周）・橋脚（約 30m おき）"""
+    U = unary_union([p for p in bparts if p is not None and not p.is_empty])
     polys = [g for g in (U.geoms if hasattr(U, "geoms") else [U]) if g.geom_type == "Polygon" and g.area > 30]
     under, sides, rails_, piers = [], [], [], []
     rtree = STRtree(rail_lines) if rail_lines else None
     bl_tree = STRtree(bridge_lines) if bridge_lines else None
     TH = 1.2
-    n_int = 0
-    for pi_, g in enumerate(parts):
-        df = dfn(pi_)
+    for g in polys:
+        # 床版の高さ: 橋の中の升目の高さ（上の段を優先）の近い 4 升の平均
+        df = deck.deck_fn(g)
         if df is None: continue
-        top = lambda x, z, df=df: df(x, z)
-        if g.area > 30:
-            for piece in grid_split(g, 4.0):
-                bx0, bz0, bx1, bz1 = piece.bounds
-                cy = top(np.array([bx0, bx1, bx0, bx1, (bx0 + bx1) / 2]), np.array([bz0, bz0, bz1, bz1, (bz0 + bz1) / 2]))
-                if not np.isfinite(cy).all() or cy.max() - cy.min() > 1.5: continue   # 段が切り替わる升は下面を作らない
-                t = tri_poly(piece, lambda x, z, top=top: float(top(x, z)[0]) - TH)
-                if len(t): under.append(t.reshape(-1, 3, 3)[:, ::-1].reshape(-1, 3))
+        def top(x, z, df=df):
+            if np.isscalar(x): return float(df(x, z)[0])
+            return df(x, z)
+        # 下面（4m の格子に切ってから。長い三角形で縦断からずれないように）
+        for piece in grid_split(g, 4.0):
+            t = tri_poly(piece, lambda x, z: float(top(x, z)) - TH)
+            if len(t): under.append(t.reshape(-1, 3, 3)[:, ::-1].reshape(-1, 3))
         A, B = _ring_segments(g, 2.0)
         if not len(A): continue
         d = B - A; L = np.hypot(d[:, 0], d[:, 1]); ok = L > 0.05; A, B, d, L = A[ok], B[ok], d[ok], L[ok]
         nl = np.stack([-d[:, 1], d[:, 0]], 1) / L[:, None]
         ai = A + nl * 0.3; bi = B + nl * 0.3
         ta = top(ai[:, 0], ai[:, 1]); tb = top(bi[:, 0], bi[:, 1])
-        fin = np.isfinite(ta) & np.isfinite(tb) & (np.abs(ta - tb) < 1.2)   # 2m で 1.2m 以上の高さの差（段が切り替わる所）には側面・高欄を付けない
+        fin = np.isfinite(ta) & np.isfinite(tb)
         A, B, ta, tb, nl = A[fin], B[fin], ta[fin], tb[fin], nl[fin]
         if not len(A): continue
-        # 隣の区間と同じ高さで接する辺（継ぎ目）は付けない
-        M = (A + B) / 2; po = M - nl * 0.6
-        seam = np.zeros(len(A), bool)
-        pr, tr = tree.query(shapely.points(po[:, 0], po[:, 1]), predicate="intersects")
-        if len(pr):
-            m = tr != pi_; pr, tr = pr[m], tr[m]
-            for oi in np.unique(tr):
-                dfo = dfn(int(oi))
-                if dfo is None: continue
-                sel = pr[tr == oi]
-                ho = dfo(po[sel, 0], po[sel, 1])
-                same = np.isfinite(ho) & (np.abs(ho - (ta[sel] + tb[sel]) / 2) < 1.5)
-                seam[sel[same]] = True
-        n_int += int(seam.sum())
-        keep = ~seam
-        if not keep.any(): continue
-        A, B, ta, tb, nl, M, po = A[keep], B[keep], ta[keep], tb[keep], nl[keep], M[keep], po[keep]
         sides.append(_quads(A, B, ta - 0.04, tb - 0.04, ta - TH, tb - TH, -nl))
         # 高欄: 外が地上の道路（橋の端）でない所
-        po5 = M - nl * 0.5
-        lr = lower_road_at(po5[:, 0], po5[:, 1])
+        M = (A + B) / 2; po = M - nl * 0.5
+        lr = lower_road_at(po[:, 0], po[:, 1])
         endj = np.isfinite(lr) & (np.abs(lr - (ta + tb) / 2) < 1.5)   # 外が同じ高さの道路 = 橋の端（つながっている）
         k = ~endj
         if k.any():
@@ -349,18 +284,8 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
             T2 = np.stack([np.stack([A2[:, 0], ta2 + 1.0, A2[:, 1]], 1), np.stack([Bi[:, 0], tb2 + 1.0, Bi[:, 1]], 1), np.stack([Ai[:, 0], ta2 + 1.0, Ai[:, 1]], 1)], 1)
             T = np.concatenate([T1, T2]); nrm = np.cross(T[:, 1] - T[:, 0], T[:, 2] - T[:, 0]); T[nrm[:, 1] < 0] = T[nrm[:, 1] < 0][:, [0, 2, 1]]
             rails_.append(T.reshape(-1, 3))
-    # 橋脚: 橋の中の OSM の橋の中心線に沿って約 30m おき（つながった橋ごと。高さはその点を含む区間のうち一番低い段）
-    def pier_top(p0):
-        idx = tree.query(Point(*p0), predicate="intersects")
-        tops = []
-        for oi in np.atleast_1d(idx):
-            f = dfn(int(oi))
-            if f is not None:
-                v = float(f(p0[0], p0[1])[0])
-                if np.isfinite(v): tops.append(v)
-        return min(tops) if tops else float("nan")
-    for g in polys:
-        if bl_tree is None: break
+        # 橋脚: 橋の中の OSM の橋の中心線に沿って約 30m おき
+        if bl_tree is None: continue
         for li in bl_tree.query(g):
             seg = bridge_lines[li].intersection(g)
             for s in (seg.geoms if hasattr(seg, "geoms") else [seg]):
@@ -369,7 +294,7 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
                 for q in range(1, n + 1):
                     sp = s.length * q / (n + 1); p0 = np.array(s.interpolate(sp).coords[0]); p1 = np.array(s.interpolate(min(s.length, sp + 1.0)).coords[0])
                     tv = p1 - p0; tv /= (np.linalg.norm(tv) + 1e-9); nv = np.array([-tv[1], tv[0]])
-                    tp = pier_top(p0); bot = float(dem_at(np.array([p0[0]]), np.array([p0[1]]))[0]) - 0.8
+                    tp = float(top(p0[0], p0[1])); bot = float(dem_at(np.array([p0[0]]), np.array([p0[1]]))[0]) - 0.8
                     if not np.isfinite(tp) or tp - TH - bot < 2.5: continue
                     lr_ = lower_road_at(np.array([p0[0]]), np.array([p0[1]]))[0]
                     if np.isfinite(lr_) and lr_ < tp - 2.5: continue          # 下に道路 → 置かない
@@ -390,7 +315,7 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
         a = np.concatenate(L).reshape(-1, 3, 3); a = a[np.isfinite(a).all(axis=(1, 2))]   # 念のため: 高さの無い三角形は捨てる
         return a.reshape(-1, 3)
     res = dict(under=cat(under), sides=cat(sides), rails=cat(rails_), piers=cat(piers))
-    log("  bridge structures: parts", len(parts), "seam edges skipped", n_int, {k: len(v) // 3 for k, v in res.items()})
+    log("  bridge structures: polys", len(polys), {k: len(v) // 3 for k, v in res.items()})
     return res
 
 

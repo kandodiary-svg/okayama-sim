@@ -117,7 +117,7 @@ def slope_filter(t):
     polys = shapely.polygons(np.stack([K[:, :, 0], K[:, :, 2]], 2))
     polys = polys[shapely.area(polys) > 1e-6]
     if not len(polys): return np.zeros((0, 3)), Polygon()
-    U = shapely.union_all(shapely.buffer(polys, 0.02)).buffer(-0.02).simplify(0.3)
+    U = shapely.union_all(shapely.buffer(polys, 0.02)).buffer(-0.02).simplify(0.05)
     return K.reshape(-1, 3), U
 def relief(p):
     """多角形の外接矩形の中の DEM の節点に平面を当てはめた時の、平面からの最大のずれ（平らでない＝格子で切る必要がある）"""
@@ -301,11 +301,7 @@ for t, bridge, code, pid, sect in lod1:
     if PROFILE_ON and _tp is tri_polygon_grid:
         lane_t, _Cn = slope_filter(lane_t)
         if _Cn is not None:
-            # 急な三角形があった面は、1.5m の格子で切り直してからもう一度（4m の階段状の縁にならないように）
-            _bdrop = True
-            lane_t = tri_polygon_grid(C, hfun, 1.5)
-            lane_t, _Cn = slope_filter(lane_t)
-            if _Cn is not None: C = _Cn.intersection(C) if not _Cn.is_empty else _Cn
+            C = _Cn.intersection(C) if not _Cn.is_empty else _Cn; _bdrop = True
     OUT_ = outB if (bridge and PROFILE_ON) else out   # v32: 橋・高架の面は別に持つ（下を通る道路と重なる所の高さを分ける）
     if len(lane_t): OUT_["lane"].append(lane_t); lane_polys.append(C)
     if S is not None:
@@ -313,10 +309,7 @@ for t, bridge, code, pid, sect in lod1:
         if PROFILE_ON and _tp is tri_polygon_grid:
             walk_t, _Sn = slope_filter(walk_t)
             if _Sn is not None:
-                _bdrop = True
-                walk_t = tri_polygon_grid(S, lambda x, z: hfun(x, z) + CURB, 1.5)
-                walk_t, _Sn = slope_filter(walk_t)
-                if _Sn is not None: S = _Sn.intersection(S) if not _Sn.is_empty else _Sn
+                S = _Sn.intersection(S) if not _Sn.is_empty else _Sn; _bdrop = True
         if len(walk_t): OUT_["walk"].append(walk_t); walk_polys.append(S)
         if bridge and PROFILE_ON: bridge_walk.append(S)
         n_split += 1

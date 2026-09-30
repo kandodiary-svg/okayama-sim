@@ -100,7 +100,7 @@ def tri_polygon_grid(p, hfun, step=4.0):
     return np.stack([xz[:, 0], y, xz[:, 1]], 1)
 
 SLOPE_MAX = float(os.environ.get("ROAD_SLOPE_MAX", "0.35"))   # v33: 道路面（LOD1 を格子で切った面）で、これより急な三角形は捨てる（堤防・切土の斜面を舗装していた。斜面は地形のまま）
-n_slope_drop = [0, 0]; n_bridge_drop = [0]
+n_slope_drop = [0, 0]
 def slope_filter(t):
     """t: (n*3,3)（x,y,z）。戻り値: (残した三角形, 多角形（残した所の和）または None（捨てていない））"""
     if not len(t): return t, None
@@ -117,7 +117,7 @@ def slope_filter(t):
     polys = shapely.polygons(np.stack([K[:, :, 0], K[:, :, 2]], 2))
     polys = polys[shapely.area(polys) > 1e-6]
     if not len(polys): return np.zeros((0, 3)), Polygon()
-    U = shapely.union_all(shapely.buffer(polys, 0.02)).buffer(-0.02).simplify(0.3)
+    U = shapely.union_all(shapely.buffer(polys, 0.02)).buffer(-0.02).simplify(0.05)
     return K.reshape(-1, 3), U
 def relief(p):
     """多角形の外接矩形の中の DEM の節点に平面を当てはめた時の、平面からの最大のずれ（平らでない＝格子で切る必要がある）"""
@@ -251,7 +251,7 @@ for t, bridge, code, pid, sect in lod1:
         _span_cur[0] = _span_fun(_P2)
         _hb = _bridge_hfun(_P2)
         hfun = lambda x, z, f=_hb: f(np.asarray(x, np.float64), np.asarray(z, np.float64)) + 0.05
-        bridge_parts.append(P); _bp_i = len(bridge_parts) - 1
+        bridge_parts.append(P)
     else:
         _own = PROF.ways_in(P, "ground")
         hfun = lambda x, z, o=_own: (_OWN.__setitem__(0, o), _prof_ground(np.asarray(x, np.float64), np.asarray(z, np.float64)) + 0.04)[1]
@@ -297,33 +297,20 @@ for t, bridge, code, pid, sect in lod1:
     _tp = tri_polygon
     if (bridge and PROFILE_ON) or (not bridge and relief(P) > RELIEF_GRID): _tp = tri_polygon_grid; n_grid += 1   # v32: 橋は縦断に沿うよう格子で切る
     lane_t = _tp(C, hfun)
-    _bdrop = False
-    if PROFILE_ON and _tp is tri_polygon_grid:
+    if PROFILE_ON and not bridge and _tp is tri_polygon_grid:
         lane_t, _Cn = slope_filter(lane_t)
-        if _Cn is not None:
-            # 急な三角形があった面は、1.5m の格子で切り直してからもう一度（4m の階段状の縁にならないように）
-            _bdrop = True
-            lane_t = tri_polygon_grid(C, hfun, 1.5)
-            lane_t, _Cn = slope_filter(lane_t)
-            if _Cn is not None: C = _Cn.intersection(C) if not _Cn.is_empty else _Cn
+        if _Cn is not None: C = _Cn.intersection(C) if not _Cn.is_empty else _Cn
     OUT_ = outB if (bridge and PROFILE_ON) else out   # v32: 橋・高架の面は別に持つ（下を通る道路と重なる所の高さを分ける）
     if len(lane_t): OUT_["lane"].append(lane_t); lane_polys.append(C)
     if S is not None:
         walk_t = _tp(S, lambda x, z: hfun(x, z) + CURB)
-        if PROFILE_ON and _tp is tri_polygon_grid:
+        if PROFILE_ON and not bridge and _tp is tri_polygon_grid:
             walk_t, _Sn = slope_filter(walk_t)
-            if _Sn is not None:
-                _bdrop = True
-                walk_t = tri_polygon_grid(S, lambda x, z: hfun(x, z) + CURB, 1.5)
-                walk_t, _Sn = slope_filter(walk_t)
-                if _Sn is not None: S = _Sn.intersection(S) if not _Sn.is_empty else _Sn
+            if _Sn is not None: S = _Sn.intersection(S) if not _Sn.is_empty else _Sn
         if len(walk_t): OUT_["walk"].append(walk_t); walk_polys.append(S)
         if bridge and PROFILE_ON: bridge_walk.append(S)
         n_split += 1
-    if bridge and PROFILE_ON and _bdrop:
-        _kp = unary_union([q for q in (C, S) if q is not None and not q.is_empty])
-        bridge_parts[_bp_i] = _kp; n_bridge_drop[0] += 1
-print("v33 slope-dropped tris", n_slope_drop[0], "of", n_slope_drop[1], "bridge polys trimmed", n_bridge_drop[0], flush=True)
+print("v33 slope-dropped tris", n_slope_drop[0], "of", n_slope_drop[1], flush=True)
 print("lod1 split into carriage/sidewalk:", n_split, "gridded (relief >", RELIEF_GRID, "m / bridges):", n_grid, "tunnel polys skipped", n_tunnel,
       "bridge polys", len(bridge_parts), "(of which by OSM", n_bridge_osm, ")", flush=True)
 
