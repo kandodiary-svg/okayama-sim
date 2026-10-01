@@ -1,0 +1,13 @@
+[out:json][timeout:180];
+(way["highway"~"^(motorway|motorway_link)$"](34.30,133.20,35.05,134.60););
+out geom;
+[out:json][timeout:180];
+(
+ node["highway"="motorway_junction"](34.30,133.20,35.05,134.60);
+ node["barrier"="toll_booth"](34.30,133.20,35.05,134.60);
+ node["highway"="toll_gantry"](34.30,133.20,35.05,134.60);
+ way["highway"~"^(services|rest_area)$"](34.30,133.20,35.05,134.60);
+ node["highway"~"^(services|rest_area)$"](34.30,133.20,35.05,134.60);
+ way["barrier"="toll_booth"](34.30,133.20,35.05,134.60);
+);
+out geom;

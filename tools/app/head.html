@@ -151,6 +151,8 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 #heli-auto{ width:auto; padding:0 10px; white-space:nowrap; }
 #heli-auto.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
 .hstarts .hstart-opt{ flex:1; padding:9px 6px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:13px; cursor:pointer; }
+.hstarts .cstart-opt{ flex:1; padding:9px 6px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:13px; cursor:pointer; }
+.hstarts .cstart-opt.on, .cstart-dir.on{ border-color:var(--amber) !important; background:#26200f !important; color:var(--amber) !important; }
 .hstarts .hstart-opt.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
 @media (max-width:640px){ .hmeter{ gap:8px; padding:6px 8px; bottom:calc(142px + env(safe-area-inset-bottom,0px)); } .hmeter b{ font-size:18px; } .hmeter > div{ min-width:40px; } }
 .sechead{ display:flex; justify-content:space-between; align-items:baseline; margin:18px 0 8px; }
@@ -254,6 +256,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .chead .k{ font-size:10px; color:var(--brass); letter-spacing:.1em; }
 .chead strong{ font-size:16px; color:var(--amber); }
 .notchbar{ display:flex; gap:3px; height:26px; align-items:flex-end; }
+.notchbar.wide{ gap:1px; }
 .notchbar i{ flex:1; background:rgba(255,255,255,.12); border-radius:1px; }
 .notchbar i.on.brake{ background:var(--red); }
 .notchbar i.on.power{ background:var(--leaf); }
@@ -319,7 +322,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <div class="routes" id="jr-routes"></div>
     <div class="sechead"><span>車両</span><small>路線に合う形式</small></div>
     <div class="vehs" id="jr-vehs"></div>
-    <p class="foot" id="jr-foot">線形は OpenStreetMap の本線、駅の位置は OSM の停車位置（railway=stop）。新幹線は高架橋（レール面は地面＋10.5m と仮定）、在来線の橋・高架は地面＋6.5m と仮定。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h、岡山駅構内や駅の前後の減速）とカーブの制限（曲率から算出）は仮定で、実際の線区の速度表ではありません。加速・減速の数値は各形式の公表値に近い簡略モデルです。<br>操作は路面電車と同じ: マスコン（力行 1〜4）・ブレーキ弁（B1〜B5・非常）・D でドア。停止位置に車両の先頭を合わせて停め、ドアを開けると到着。新幹線は 285km/h からの制動に約 4km 要るので、画面の「ブレーキ目安」より速度が高ければブレーキを。</p></div>
+    <p class="foot" id="jr-foot">線形は OpenStreetMap の本線、駅の位置は OSM の停車位置（railway=stop）。新幹線は高架橋（レール面は地面＋10.5m と仮定）、在来線の橋・高架は地面＋6.5m と仮定。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h、岡山駅構内や駅の前後の減速）とカーブの制限（曲率から算出）は仮定で、実際の線区の速度表ではありません。加速・減速の数値は各形式の公表値に近い簡略モデルです。<br>操作は路面電車と同じ: マスコン（在来線は力行 1〜4・新幹線は P1〜P13）・ブレーキ弁（在来線は B1〜B5・新幹線は B1〜B7、どちらも非常あり）・D でドア。停止位置に車両の先頭を合わせて停め、ドアを開けると到着。新幹線は 285km/h からの制動に約 4km 要るので、画面の「ブレーキ目安」より速度が高ければブレーキを。</p></div>
     <div id="bus-note" style="display:none">
       <div class="route-opt on" style="cursor:default"><div class="rcode" style="background:#1d3f86;color:#fff">両</div><div><strong>両備バス 西大寺線（314系統）</strong><div class="dir">岡山駅東口 13番のりば<i>→</i>天満屋<i>→</i>県庁前<i>→</i>古京<i>→</i>東山（11停留所・約4.4km）</div></div></div>
       <p class="foot">道路・一方通行は OpenStreetMap、停留所の順序と位置は晴れバスナビ（岡山の時刻表検索）の経路ページと OSM の標柱による。天満屋バスステーションは県庁通りから西側の構内へ入り、駅舎の南を回って東側 4番のりばへ（両備バスは 2〜6番。4番は推定）。<br>操作: ↑/W アクセル　↓/S ブレーキ　←→/A D ハンドル　F 扉の開閉　V 視点（運転席／後ろ）　H 警笛。前扉を停留所の標柱に合わせ、歩道に寄せて止めてから扉を開けます。降車ボタンが押されたり、待っている人がいる停留所は必ず停車。</p>
@@ -334,7 +337,37 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
       </div>
       <p class="foot">小型ヘリコプターで街の上を自由に飛びます。高く上がるほど遠くの建物まで読み込み、地図の外は国土地理院の標高と空中写真による遠景（建物なし）が約 20km 四方に広がります。建物の屋上や地面には着地でき、建物の横から突っ込むと止まります。<br>操作: W/↑ 前進　S/↓ 後退　A/← D/→ 旋回　Q/E 横移動　R・Space 上昇　F・C 下降　Shift 速く　V 視点（後ろ／操縦席／真下）　O 自動で街を周回　マウスのドラッグで見回し・ホイールで距離。画面のボタンでも操作できます。</p>
     </div>
-    <p class="foot" id="car-note" style="display:none">岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点　Space サイドブレーキ。画面のハンドルは指で回せます。</p>
+    <div id="car-start-wrap" style="display:none">
+      <div class="sechead"><span>出発地</span><small>山陽自動車道は県内を端から端まで走れます</small></div>
+      <div class="modes opts hstarts" id="cstart-btns">
+        <button type="button" class="cstart-opt on" data-cs="city">岡山駅前（市街地）</button>
+        <button type="button" class="cstart-opt" data-cs="mw">山陽自動車道</button>
+      </div>
+      <div id="mw-start-sel" style="display:none;margin-top:6px">
+        <select id="mw-place" style="width:62%;padding:8px 6px;background:var(--panel-2);border:1px solid var(--line);color:var(--cream);font-family:inherit;font-size:13px;border-radius:2px">
+          <option value="-47500,16850">福山東IC（県境・西端）</option>
+          <option value="-37783,14421">笠岡IC</option>
+          <option value="-29674,12527">鴨方IC</option>
+          <option value="-25280,10840">道口PA</option>
+          <option value="-20981,8730">玉島IC</option>
+          <option value="-14110,4356">倉敷IC</option>
+          <option value="-11976,4363">倉敷JCT</option>
+          <option value="-8922,-1468">岡山JCT</option>
+          <option value="-4544,-2878" selected>吉備SA</option>
+          <option value="-3267,-3780">岡山IC</option>
+          <option value="9826,-8748">山陽IC</option>
+          <option value="14443,-11455">瀬戸PA</option>
+          <option value="22396,-13504">和気IC</option>
+          <option value="30979,-12885">備前IC</option>
+          <option value="35491,-12786">福石PA</option>
+          <option value="41877,-12051">赤穂IC（県境・東寄り）</option>
+          <option value="51000,-17800">兵庫県境付近（播磨JCT方面）</option>
+        </select>
+        <button type="button" class="cstart-dir on" data-dir="up" style="padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);color:var(--cream);font-family:inherit;font-size:13px;border-radius:2px;cursor:pointer">上り（東へ）</button>
+        <button type="button" class="cstart-dir" data-dir="down" style="padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);color:var(--cream);font-family:inherit;font-size:13px;border-radius:2px;cursor:pointer">下り（西へ）</button>
+      </div>
+    </div>
+    <p class="foot" id="car-note" style="display:none">出発地で「山陽自動車道」を選ぶと、県内の山陽道（福山東〜兵庫県境の約 100km）を走れます（上り・下り、IC・SA/PA から出発）。線形・IC・橋・トンネルは OpenStreetMap、道路面の高さは国土地理院の標高から推定した縦断です（実際の設計値ではありません）。他の車は走行車線を守り、前の車に追いつくと減速します。<br>岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点　Space サイドブレーキ。画面のハンドルは指で回せます。</p>
 
     <div class="sechead"><span>表示</span><small>PC の性能に合わせて</small></div>
     <div class="modes opts">
@@ -396,7 +429,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 
   <div class="minimap"><canvas id="mini-map" width="112" height="140"></canvas></div>
 
-  <div class="cabhint">左のマスコン・右のブレーキハンドルを左右にドラッグして回せます（キー: マスコン W/S、ブレーキ ↓/↑）</div>
+  <div class="cabhint" id="cabhint">左のマスコン・右のブレーキハンドルを左右にドラッグして回せます（キー: マスコン W/S、ブレーキ ↓/↑）</div>
   <div class="cabspeed"><b id="cabspd">0</b> km/h</div>
   <section class="subtitle"><span id="subtitle">停車中です。ドアを閉めて、力行ノッチを入れてください。</span></section>
 
@@ -532,6 +565,8 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
         <li>周りの車の台数・車種の割合、歩行者・自転車の人数と歩く速さ: 仮定</li>
         <li>JR の列車の本数（昼間の平均的な値）・車両の形と色・新幹線の高架の高さ（地面＋10.5m）・在来線のホーム（上屋の範囲から推定）: 仮定・簡略</li>
         <li>JR 運転モード: 駅は OSM の railway=stop（停車位置）。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h と、岡山駅・各駅の前後の減速）、カーブの制限（曲率から算出）、加速・減速の数値は各形式の公表値に近い簡略モデルによる仮定（実際の線区の速度表・運転曲線ではない）。踏切は再現していない（周りの車は走行中の列車の手前で止まる）</li>
+        <li>山陽自動車道（福山東〜兵庫県境）: 線形・IC/JCT・SA/PA・料金所の位置・橋とトンネルの区間は OpenStreetMap（2026年10月1日時点）。道路面の高さ（縦断）は国土地理院の標高から推定した値で、勾配 3.2% 以下・橋とトンネルは OSM の区分による（実際の設計縦断ではない）。車線数・幅・路肩・中央帯・ガードレール・照明・視線誘導標・本線の制限速度 100km/h は標準的な断面からの推定。山陽道沿いの掘割・盛土と地形は、国土地理院の標高（10m 格子。遠景は 80m 格子）と空中写真による。山陽道の他の車の台数・速度は仮定。SA/PA・料金所・標識・立体交差の細部は未再現（行き止まりは OSM の道路が途切れる所）</li>
+        <li>新幹線の運転: 力行 P1〜P13・ブレーキ B1〜B7 の段数、加速 2.6km/h/s（起動）と 270km/h までの所要時間は公表値に近い簡略モデル（実機の運転曲線ではない）。モーター・風切り・ATC の音は合成で、実車の録音ではありません。福山〜相生の線形は OSM</li>
         <li>天満屋バスステーションの両備バスののりば（4番）: 推定</li>
         <li>路面電車・車・バスの加減速: 一般的な性能値による</li>
         <li>中心部の外の建物の外壁（色・窓割り）: PLATEAU の用途・構造・建築年・階数から推定（写真ではありません）</li>
