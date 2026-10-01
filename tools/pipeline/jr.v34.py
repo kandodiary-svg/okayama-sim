@@ -115,40 +115,8 @@ for T in all_tracks:
         piers_all.append([round(float(px), 2), round(float(pz), 2), round(float(T["g"][k]), 2), round(float(T["y"][k] - 0.35 - 1.7), 2),
                           round(float(math.atan2(tg[k, 0], tg[k, 1])), 3)])
         last = s
-# v35: 運転用の駅（OSM の railway=stop・JR 西日本。貨物ターミナルは除く）と、再現範囲の中の区間
-from osm_load import load as _osm_load
-_ways, _nodes = _osm_load()
-_stops = [n for n in _nodes if n["tags"].get("railway") == "stop" and n["tags"].get("train") == "yes" and "貨物" not in (n["tags"].get("operator") or "") and n["tags"].get("name")]
-_plat = [w for w in _ways if w["tags"].get("railway") == "platform" or w["tags"].get("public_transport") == "platform"]
-def _arc_of(T, p):
-    d = np.hypot(*(T["Q"] - p).T); k = int(np.argmin(d)); return k * 2.0, float(d[k])
 for T in all_tracks:
-    inside = [k for k in range(len(T["Q"])) if inData(*T["Q"][k])]
-    T["i0"], T["i1"] = (inside[0], inside[-1]) if inside else (0, len(T["Q"]) - 1)
-    # 近い（36m 以内）停車位置を駅ごとにまとめる（上下ホームの重複は、線に近い方を採る）
-    best = {}
-    for n in _stops:
-        s_, d_ = _arc_of(T, np.array([n["x"], n["z"]]))
-        nm = n["tags"]["name"]
-        if d_ > 36.0 or not (T["i0"] * 2.0 + 10 < s_ < T["i1"] * 2.0 - 10): continue
-        if T["key"] == "shinkansen" and nm != "岡山": continue     # 並走する在来線の駅は新幹線は止まらない
-        # 同じ駅名の複数の停車位置は、近い順の中央値（ホームの途中）
-        best.setdefault(nm, []).append((d_, s_))
-    T["stops"] = []
-    for nm, L_ in best.items():
-        L_.sort(); near = [s for d, s in L_ if d <= L_[0][0] + 8.0]; s_ = float(np.median(near))
-        # ホームの長さ: 線から 14m 以内の platform の点が、駅の前後 350m に広がる長さ（取れなければ 0）
-        pts = []
-        for w in _plat:
-            for q in np.asarray(w["xy"]):
-                ss, dd = _arc_of(T, q)
-                if dd < 14.0 and abs(ss - s_) < 350: pts.append(ss)
-        plat = float(max(pts) - min(pts)) if len(pts) > 2 else 0.0
-        T["stops"].append(dict(name=nm, s=round(s_, 1), plat=round(plat, 0)))
-    if not any(q["name"] == "岡山" for q in T["stops"]): T["stops"].append(dict(name="岡山", s=round(T["stop"], 1), plat=0.0))
-    T["stops"].sort(key=lambda q: q["s"])
-for T in all_tracks:
-    J["lines"].append(dict(key=T["key"], ti=T["ti"], stop=round(T["stop"], 1), L=round(T["L"], 1), i0=int(T["i0"]), i1=int(T["i1"]), stops=T["stops"],
+    J["lines"].append(dict(key=T["key"], ti=T["ti"], stop=round(T["stop"], 1), L=round(T["L"], 1),
                            p=[round(float(v), 2) for q, y in zip(T["Q"], T["y"]) for v in (q[0], y, q[1])],
                            el=T["el"].tolist(), inner=[round(float(v), 2) for v in T["inner"]], mate=[int(v) for v in T["mate_side"]]))
 J["piers"] = piers_all

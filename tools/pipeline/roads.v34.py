@@ -129,47 +129,6 @@ def relief(p):
     A = np.stack([I.ravel(), J.ravel(), np.ones(b.size)], 1)
     c, *_ = np.linalg.lstsq(A, b.ravel(), rcond=None)
     return float(np.abs(A @ c - b.ravel()).max())
-
-EDGE_SMOOTH = float(os.environ.get("EDGE_SMOOTH", "2.5"))
-def _gsmooth_ring(ring, bound, sigma, step=0.5):
-    """輪郭を 0.5m おきにして、弧長に沿ってガウス平滑（階段が元の線の平均の曲線になる）。元の面の外周（bound）に近い点は動かさない（隣の面とのつなぎ目を保つ）"""
-    from scipy.ndimage import gaussian_filter1d
-    c = np.asarray(shapely.segmentize(ring, step).coords)[:-1]
-    if len(c) < 12: return None
-    s_ = sigma / step
-    sm = np.stack([gaussian_filter1d(c[:, 0], s_, mode="wrap"), gaussian_filter1d(c[:, 1], s_, mode="wrap")], 1)
-    d = shapely.distance(shapely.points(c[:, 0], c[:, 1]), bound)
-    w = np.clip((d - 0.1) / sigma, 0.0, 1.0)[:, None]
-    return np.asarray(c * (1 - w) + sm * w)
-def smooth_cut(base, kept):
-    """v35: 急な三角形を捨てた後の面 kept（元の面 base の一部）の縁は 1.5m の格子の階段状になる（擁壁・高欄・法面がギザギザになる）。
-    捨てた所 D = base − kept の輪郭をなめらかにして（ガウス平滑 + 単純化。base の外周に近い所は動かさない）から base から引く。
-    壊れた・面積が大きく変わる時は kept のまま"""
-    try:
-        D = base.difference(kept)
-        if D.is_empty: return base
-        bound = base.boundary
-        out = []
-        for q in poly_parts(D):
-            ext = _gsmooth_ring(q.exterior, bound, EDGE_SMOOTH)
-            if ext is None: out.append(q); continue
-            holes = []
-            for r in q.interiors:
-                h = _gsmooth_ring(r, bound, EDGE_SMOOTH)
-                if h is not None: holes.append(h)
-            p2 = Polygon(ext, holes)
-            if not p2.is_valid: p2 = shapely.make_valid(p2)
-            out.extend(poly_parts(p2.simplify(0.15)) if not p2.is_empty else [])
-        D2 = unary_union(out) if out else Polygon()
-        Rg = base.difference(D2)
-        if not Rg.is_valid: Rg = shapely.make_valid(Rg)
-        parts = [q for q in poly_parts(Rg) if q.area > 0.5]
-        if not parts: return kept
-        Rg = unary_union(parts)
-        if abs(Rg.area - kept.area) > 0.3 * max(kept.area, 1.0) + 4.0: return kept
-        return Rg
-    except Exception:
-        return kept
 RELIEF_GRID = float(os.environ.get("RELIEF_GRID", "1e9"))   # v29: この起伏（m）を超える LOD1 の道路面は格子で切る（範囲拡大では 0.5）
 n_grid = 0
 
@@ -344,14 +303,9 @@ for t, bridge, code, pid, sect in lod1:
         if _Cn is not None:
             # 急な三角形があった面は、1.5m の格子で切り直してからもう一度（4m の階段状の縁にならないように）
             _bdrop = True
-            base_C = C
             lane_t = tri_polygon_grid(C, hfun, 1.5)
             lane_t, _Cn = slope_filter(lane_t)
-            if _Cn is not None:
-                C = _Cn.intersection(C) if not _Cn.is_empty else _Cn
-                if not C.is_empty:
-                    _C1 = smooth_cut(base_C, C)         # v35: 階段状の縁をなめらかに引き直して、面も作り直す
-                    if _C1 is not C: lane_t = tri_polygon_grid(_C1, hfun, 1.5); C = _C1
+            if _Cn is not None: C = _Cn.intersection(C) if not _Cn.is_empty else _Cn
     OUT_ = outB if (bridge and PROFILE_ON) else out   # v32: 橋・高架の面は別に持つ（下を通る道路と重なる所の高さを分ける）
     if len(lane_t): OUT_["lane"].append(lane_t); lane_polys.append(C)
     if S is not None:
@@ -360,14 +314,9 @@ for t, bridge, code, pid, sect in lod1:
             walk_t, _Sn = slope_filter(walk_t)
             if _Sn is not None:
                 _bdrop = True
-                base_S = S
                 walk_t = tri_polygon_grid(S, lambda x, z: hfun(x, z) + CURB, 1.5)
                 walk_t, _Sn = slope_filter(walk_t)
-                if _Sn is not None:
-                    S = _Sn.intersection(S) if not _Sn.is_empty else _Sn
-                    if not S.is_empty:
-                        _S1 = smooth_cut(base_S, S)
-                        if _S1 is not S: walk_t = tri_polygon_grid(_S1, lambda x, z: hfun(x, z) + CURB, 1.5); S = _S1
+                if _Sn is not None: S = _Sn.intersection(S) if not _Sn.is_empty else _Sn
         if len(walk_t): OUT_["walk"].append(walk_t); walk_polys.append(S)
         if bridge and PROFILE_ON: bridge_walk.append(S)
         n_split += 1

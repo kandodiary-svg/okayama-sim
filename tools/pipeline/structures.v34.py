@@ -129,51 +129,6 @@ def _ring_segments(g, step=2.0):
 
 
 
-
-SIMP_TOL = 0.45   # v35: 道路の外周の 1.5m 周期の細かいギザギザ（三角形の和集合の縁）を、壁・法面の位置には写さない（折れ線の単純化）
-
-def _simp(g, tol=None):
-    """多角形の外周を単純化（隅は残り、1.5m 周期・振れ幅 0.3m 程度のギザギザは直線になる）。壊れたら元のまま"""
-    try:
-        q = g.simplify(SIMP_TOL if tol is None else tol, preserve_topology=True)
-        if q.is_empty or q.geom_type != "Polygon": return g
-        return q
-    except Exception:
-        return g
-
-def _contig(A, B):
-    """区間 i が前の区間 i-1 とつながっている（始点が前の終点）か"""
-    n = len(A); c = np.zeros(n, bool)
-    if n > 1: c[1:] = np.hypot(A[1:, 0] - B[:-1, 0], A[1:, 1] - B[:-1, 1]) < 0.05
-    return c
-
-def _vertex_smooth(A, B, Va, Vb, k=5):
-    """区間の両端の値 (Va, Vb) を、つながった外周に沿って移動平均（端点で共有する値は 1 つ）。→ Va', Vb'"""
-    from scipy.ndimage import uniform_filter1d
-    n = len(A)
-    if n < 2: return Va, Vb
-    brk = ~_contig(A, B); st = np.flatnonzero(brk); en = np.r_[st[1:], n]
-    Va = Va.copy(); Vb = Vb.copy()
-    for s_, e_ in zip(st, en):
-        if e_ - s_ < 2: continue
-        V = np.r_[Va[s_], 0.5 * (Vb[s_:e_ - 1] + Va[s_ + 1:e_]), Vb[e_ - 1]]
-        Vs = uniform_filter1d(V, k, mode="nearest")
-        Va[s_:e_] = Vs[:-1]; Vb[s_:e_] = Vs[1:]
-    return Va, Vb
-
-def _miter_normals(A, B, nl, min_dot=0.5, limit=1.5):
-    """各区間の両端の向き（外側 = -nl 方向のずらしに使う単位ベクトル）。つながった区間どうしで折れが緩やかなら端点で共通の向き（ミター）にして、ずらした線に割れ目を作らない"""
-    n = len(A); NA = nl.copy(); NB = nl.copy()
-    c = _contig(A, B)
-    for i in range(1, n):
-        if not c[i]: continue
-        d = float(nl[i - 1] @ nl[i])
-        if d < min_dot: continue
-        m = nl[i - 1] + nl[i]; m /= (np.linalg.norm(m) + 1e-12)
-        sc = 1.0 / max(1.0 / limit, float(m @ nl[i]))
-        NA[i] = m * sc; NB[i - 1] = m * sc
-    return NA, NB
-
 def _run_smooth(A, B, v, k=5):
     """つながった外周に沿って値 v を移動平均する（区間が切れる所で分ける）"""
     from scipy.ndimage import uniform_filter1d
@@ -186,16 +141,9 @@ def _run_smooth(A, B, v, k=5):
         if e_ - s_ >= 2: out[s_:e_] = uniform_filter1d(out[s_:e_], k, mode="nearest")
     return out
 
-def _off_of_gap(g):
-    """壁の下端を外へずらす量。高さ 1.5m までは 1:1 の土の法面（ずらす量 = 高さ）、1.5〜2.5m で垂直に近づけ、それより高い所は垂直の擁壁
-    （v35: 以前は区間ごとに「法面なら高さ、擁壁なら 0」で、4m ごとに下端が最大 1.5m 出入りしてギザギザになり、区間のつなぎ目に割れ目ができていた）"""
-    g = np.maximum(g, 0.0)
-    return np.where(g <= 1.5, g, 1.5 * np.clip(2.5 - g, 0.0, 1.0))
-
 def road_skirts(parts_index, tiles, bridge_union, deck, ground, min_gap=0.35, log=print):
     """道路（橋以外）の外周で、道路の縁が地面より min_gap 以上高い所に、縁から地面までの面。
-    高さ 1.5m までは 1:1 の土の法面（外へ下がる斜面・土の色）、それより高い所は垂直の擁壁（コンクリートの色）。戻り値: 三角形, 色
-    v35: 外周は単純化（細かいギザギザを写さない）、高さ・ずらす量・色は端点ごとに外周に沿ってならして、つながった区間で共有する"""
+    高さ 1.5m までは 1:1 の土の法面（外へ下がる斜面・土の色）、それより高い所は垂直の擁壁（コンクリートの色）。戻り値: 三角形, 色"""
     out = []; cols = []; n_seg = 0
     bprep = bridge_union if bridge_union is not None else None
     EARTH = np.array([0.47, 0.46, 0.37]); CONC = np.array([0.60, 0.59, 0.55])
@@ -204,49 +152,43 @@ def road_skirts(parts_index, tiles, bridge_union, deck, ground, min_gap=0.35, lo
         if loc.is_empty: continue
         for g in (loc.geoms if hasattr(loc, "geoms") else [loc]):
             if g.geom_type != "Polygon" or g.is_empty: continue
-            A, B = _ring_segments(_simp(g), 4.0)
+            A, B = _ring_segments(g, 4.0)
             if not len(A): continue
             M = (A + B) / 2
             own = (M[:, 0] >= x0) & (M[:, 0] < x1) & (M[:, 1] >= z0) & (M[:, 1] < z1)
             if not own.any(): continue
-            # 自分のタイルの区間だけにすると、つながりが切れてならせないので、まず全部の区間で量を出してから選ぶ
+            A = A[own]; B = B[own]; M = M[own]
             d = B - A; L = np.hypot(d[:, 0], d[:, 1]); ok = L > 0.05
-            A, B, M, d, L, own = A[ok], B[ok], M[ok], d[ok], L[ok], own[ok]
+            A, B, M, d, L = A[ok], B[ok], M[ok], d[ok], L[ok]
             nl = np.stack([-d[:, 1], d[:, 0]], 1) / L[:, None]   # 左 = 道路の内側
-            keep = np.ones(len(A), bool)
             if bprep is not None:
                 pout = M - nl * 0.6
-                keep &= ~shapely.intersects_xy(bprep, pout[:, 0], pout[:, 1]) & ~shapely.intersects_xy(bprep, M[:, 0], M[:, 1])
-            A, B, M, nl, own, keep = A[keep], B[keep], M[keep], nl[keep], own[keep], keep[keep]
+                nb = ~shapely.intersects_xy(bprep, pout[:, 0], pout[:, 1]) & ~shapely.intersects_xy(bprep, M[:, 0], M[:, 1])
+                A, B, M, nl = A[nb], B[nb], M[nb], nl[nb]
             if not len(A): continue
             ai = A + nl * 0.3; bi = B + nl * 0.3
             ta = deck.lower(ai[:, 0], ai[:, 1]); tb = deck.lower(bi[:, 0], bi[:, 1])
             ga = ground(A[:, 0], A[:, 1]); gb = ground(B[:, 0], B[:, 1])
             fin = np.isfinite(ta) & np.isfinite(tb)
-            ta = np.where(fin, ta, 0.0); tb = np.where(fin, tb, 0.0)
-            gA = np.where(fin, ta - ga, 0.0); gB = np.where(fin, tb - gb, 0.0)
-            gAs, gBs = _vertex_smooth(A, B, gA, gB, 5)
-            need = fin & own & (np.maximum(gA, gB) > min_gap)
+            gap = np.maximum(ta - ga, tb - gb)
+            gapS = _run_smooth(A, B, np.where(fin, gap, 0.0), 5)     # 土の斜面か擁壁かは、外周に沿ってならした高さで決める（4m ごとに入れ替わってブロック状になっていた）
+            need = fin & (gap > min_gap)
             if not need.any(): continue
-            NA, NB = _miter_normals(A, B, nl)
-            offA = _off_of_gap(gAs)[:, None]; offB = _off_of_gap(gBs)[:, None]
-            Ao = A - NA * offA; Bo = B - NB * offB
+            A, B, ta, tb, ga, gb, nl, gap, gapS = A[need], B[need], ta[need], tb[need], ga[need], gb[need], nl[need], gap[need], gapS[need]
+            slope = gapS <= 1.5
+            off = np.where(slope, np.clip(gap, 0, 1.5), 0.0)[:, None]
+            Ao = A - nl * off; Bo = B - nl * off
             ba = np.minimum(ground(Ao[:, 0], Ao[:, 1]), ta - 0.05) - 0.15; bb = np.minimum(ground(Bo[:, 0], Bo[:, 1]), tb - 0.05) - 0.15
+            # 斜面は上端（道路の縁）と下端（外）で位置が違う四角形
             At = np.stack([A[:, 0], ta - 0.02, A[:, 1]], 1); Bt = np.stack([B[:, 0], tb - 0.02, B[:, 1]], 1)
             Ab = np.stack([Ao[:, 0], ba, Ao[:, 1]], 1); Bb = np.stack([Bo[:, 0], bb, Bo[:, 1]], 1)
-            # 色: 高さ 1.5m 以下は土、2.5m 以上はコンクリート、間は混ぜる（端点ごと）
-            wa = np.clip((gAs - 1.5) / 1.0, 0, 1)[:, None]; wb = np.clip((gBs - 1.5) / 1.0, 0, 1)[:, None]
-            ca = EARTH * (1 - wa) + CONC * wa; cb = EARTH * (1 - wb) + CONC * wb
-            sel = need
-            At, Bt, Ab, Bb, ca, cb, nl_ = At[sel], Bt[sel], Ab[sel], Bb[sel], ca[sel], cb[sel], nl[sel]
             T1 = np.stack([At, Ab, Bb], 1); T2 = np.stack([At, Bb, Bt], 1)
-            C1 = np.stack([ca, ca, cb], 1); C2 = np.stack([ca, cb, cb], 1)
             nrm = np.cross(T1[:, 1] - T1[:, 0], T1[:, 2] - T1[:, 0])
-            flip = (nrm[:, 0] * -nl_[:, 0] + nrm[:, 2] * -nl_[:, 1]) < 0
+            flip = (nrm[:, 0] * -nl[:, 0] + nrm[:, 2] * -nl[:, 1]) < 0
             T1[flip] = T1[flip][:, [0, 2, 1]]; T2[flip] = T2[flip][:, [0, 2, 1]]
-            C1[flip] = C1[flip][:, [0, 2, 1]]; C2[flip] = C2[flip][:, [0, 2, 1]]
-            out.append(np.concatenate([T1, T2], 1).reshape(-1, 3)); cols.append(np.concatenate([C1, C2], 1).reshape(-1, 3))
-            n_seg += int(sel.sum())
+            out.append(np.concatenate([T1, T2], 1).reshape(-1, 3))
+            c = np.where(slope[:, None], EARTH, CONC); cols.append(np.repeat(c, 6, 0))
+            n_seg += len(A)
     log("  road skirts: segments", n_seg)
     if not out: return np.zeros((0, 3)), np.zeros((0, 3))
     a = np.concatenate(out).reshape(-1, 3, 3); c = np.concatenate(cols).reshape(-1, 3, 3)
@@ -281,27 +223,28 @@ def cut_faces(parts_index, tiles, bridge_union, deck, ground_orig, S=1.0, min_h=
         if loc.is_empty: continue
         for g in (loc.geoms if hasattr(loc, "geoms") else [loc]):
             if g.geom_type != "Polygon" or g.is_empty: continue
-            A, B = _ring_segments(_simp(g), 3.0)     # v35: 外周は単純化（細かいギザギザを写さない）
+            A, B = _ring_segments(g, 3.0)
             if not len(A): continue
             M = (A + B) / 2
             own = (M[:, 0] >= x0) & (M[:, 0] < x1) & (M[:, 1] >= z0) & (M[:, 1] < z1)
             if not own.any(): continue
+            A = A[own]; B = B[own]; M = M[own]
             d = B - A; L = np.hypot(d[:, 0], d[:, 1]); ok = L > 0.05
-            A, B, M, d, L, own = A[ok], B[ok], M[ok], d[ok], L[ok], own[ok]
+            A, B, M, d, L = A[ok], B[ok], M[ok], d[ok], L[ok]
             nl = np.stack([-d[:, 1], d[:, 0]], 1) / L[:, None]
             if bridge_union is not None:
                 pout = M - nl * 0.6
                 nb = ~shapely.intersects_xy(bridge_union, pout[:, 0], pout[:, 1]) & ~shapely.intersects_xy(bridge_union, M[:, 0], M[:, 1])
-                A, B, M, nl, own = A[nb], B[nb], M[nb], nl[nb], own[nb]
+                A, B, M, nl = A[nb], B[nb], M[nb], nl[nb]
             if not len(A): continue
             # 外側が道路なら（別の道路の面とのすき間）作らない
             po = M - nl * 0.8
             other = np.isfinite(deck.lower(po[:, 0], po[:, 1]))
-            A, B, M, nl, own = A[~other], B[~other], M[~other], nl[~other], own[~other]
+            A, B, M, nl = A[~other], B[~other], M[~other], nl[~other]
             if not len(A): continue
             ta = deck.lower((A + nl * 0.3)[:, 0], (A + nl * 0.3)[:, 1]); tb = deck.lower((B + nl * 0.3)[:, 0], (B + nl * 0.3)[:, 1])
             fin = np.isfinite(ta) & np.isfinite(tb)
-            A, B, nl, ta, tb, own = A[fin], B[fin], nl[fin], ta[fin], tb[fin], own[fin]
+            A, B, nl, ta, tb = A[fin], B[fin], nl[fin], ta[fin], tb[fin]
             if not len(A): continue
             def reach(P0, t0):
                 # 外へ DS の距離ごとに、法面 t0 + S*d と下げる前の地形を比べ、最初に地形より上になる所
@@ -313,11 +256,10 @@ def cut_faces(parts_index, tiles, bridge_union, deck, ground_orig, S=1.0, min_h=
                 D = DS[k]; return D, t0 + S * D
             Da, ha = reach(A, ta); Db, hb = reach(B, tb)
             Da, Db = _smooth_reach(A, B, Da, Db); ha = ta + S * Da; hb = tb + S * Db
-            need = (np.maximum(ha - ta, hb - tb) > min_h) & own
+            need = np.maximum(ha - ta, hb - tb) > min_h
             if not need.any(): continue
-            NA, NB = _miter_normals(A, B, nl)       # v35: 折れが緩やかな所は端点の向きを共通に（法面の外縁に割れ目を作らない）
-            Ao = A - NA * Da[:, None]; Bo = B - NB * Db[:, None]
-            A, B, nl, ta, tb, Da, Db, ha, hb, Ao, Bo = A[need], B[need], nl[need], ta[need], tb[need], Da[need], Db[need], ha[need], hb[need], Ao[need], Bo[need]
+            A, B, nl, ta, tb, Da, Db, ha, hb = A[need], B[need], nl[need], ta[need], tb[need], Da[need], Db[need], ha[need], hb[need]
+            Ao = A - nl * Da[:, None]; Bo = B - nl * Db[:, None]
             At = np.stack([A[:, 0], ta - 0.03, A[:, 1]], 1); Bt = np.stack([B[:, 0], tb - 0.03, B[:, 1]], 1)
             Ah = np.stack([Ao[:, 0], ha, Ao[:, 1]], 1); Bh = np.stack([Bo[:, 0], hb, Bo[:, 1]], 1)
             T1 = np.stack([At, Ah, Bh], 1); T2 = np.stack([At, Bh, Bt], 1)

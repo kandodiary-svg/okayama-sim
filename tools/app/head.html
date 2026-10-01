@@ -305,8 +305,8 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <h1>実測データの街を、<br><em>運転する。</em></h1>
     <p class="lead">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。</p>
 
-    <div class="sechead"><span>モード</span><small>路面電車／両備バス／車／ヘリコプター</small></div>
-    <div class="modes"><button type="button" class="mode-opt on" data-mode="tram">路面電車を運転</button><button type="button" class="mode-opt" data-mode="bus">バスを運転</button><button type="button" class="mode-opt" data-mode="car">車で自由に走る</button><button type="button" class="mode-opt" data-mode="heli">ヘリで空から</button></div>
+    <div class="sechead"><span>モード</span><small>路面電車／JR・新幹線／両備バス／車／ヘリコプター</small></div>
+    <div class="modes"><button type="button" class="mode-opt on" data-mode="tram">路面電車を運転</button><button type="button" class="mode-opt" data-mode="jr">JR・新幹線を運転</button><button type="button" class="mode-opt" data-mode="bus">バスを運転</button><button type="button" class="mode-opt" data-mode="car">車で自由に走る</button><button type="button" class="mode-opt" data-mode="heli">ヘリで空から</button></div>
     <div id="routes-wrap"><div class="sechead"><span>運転する路線</span><small>往復とも選べます</small></div>
     <div class="routes" id="routes"></div>
     <div class="sechead"><span>車両</span><small>形式を選べます</small></div>
@@ -315,6 +315,11 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
       <button type="button" class="veh-opt" data-veh="t3005"><i class="sw" style="background:linear-gradient(#a9cfb4 58%,#e2772e 58%)"></i><b>3000形 3005号</b><small>東武日光軌道線 復元塗装・12m 単車</small></button>
       <button type="button" class="veh-opt" data-veh="t3007"><i class="sw" style="background:linear-gradient(#141414 57%,#c9a54a 57%,#c9a54a 61%,#141414 61%)"></i><b>3000形 3007号 KURO</b><small>黒に金帯・赤いパンタ・12m 単車</small></button>
     </div></div>
+    <div id="jr-wrap" style="display:none"><div class="sechead"><span>運転する路線</span><small>再現範囲（約 11×9km）の中を走ります</small></div>
+    <div class="routes" id="jr-routes"></div>
+    <div class="sechead"><span>車両</span><small>路線に合う形式</small></div>
+    <div class="vehs" id="jr-vehs"></div>
+    <p class="foot" id="jr-foot">線形は OpenStreetMap の本線、駅の位置は OSM の停車位置（railway=stop）。新幹線は高架橋（レール面は地面＋10.5m と仮定）、在来線の橋・高架は地面＋6.5m と仮定。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h、岡山駅構内や駅の前後の減速）とカーブの制限（曲率から算出）は仮定で、実際の線区の速度表ではありません。加速・減速の数値は各形式の公表値に近い簡略モデルです。<br>操作は路面電車と同じ: マスコン（力行 1〜4）・ブレーキ弁（B1〜B5・非常）・D でドア。停止位置に車両の先頭を合わせて停め、ドアを開けると到着。新幹線は 285km/h からの制動に約 4km 要るので、画面の「ブレーキ目安」より速度が高ければブレーキを。</p></div>
     <div id="bus-note" style="display:none">
       <div class="route-opt on" style="cursor:default"><div class="rcode" style="background:#1d3f86;color:#fff">両</div><div><strong>両備バス 西大寺線（314系統）</strong><div class="dir">岡山駅東口 13番のりば<i>→</i>天満屋<i>→</i>県庁前<i>→</i>古京<i>→</i>東山（11停留所・約4.4km）</div></div></div>
       <p class="foot">道路・一方通行は OpenStreetMap、停留所の順序と位置は晴れバスナビ（岡山の時刻表検索）の経路ページと OSM の標柱による。天満屋バスステーションは県庁通りから西側の構内へ入り、駅舎の南を回って東側 4番のりばへ（両備バスは 2〜6番。4番は推定）。<br>操作: ↑/W アクセル　↓/S ブレーキ　←→/A D ハンドル　F 扉の開閉　V 視点（運転席／後ろ）　H 警笛。前扉を停留所の標柱に合わせ、歩道に寄せて止めてから扉を開けます。降車ボタンが押されたり、待っている人がいる停留所は必ず停車。</p>
@@ -526,6 +531,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
         <li>信号機・歩行者用信号・電柱・電線の位置と向き: 日本の標準的な配置から推定</li>
         <li>周りの車の台数・車種の割合、歩行者・自転車の人数と歩く速さ: 仮定</li>
         <li>JR の列車の本数（昼間の平均的な値）・車両の形と色・新幹線の高架の高さ（地面＋10.5m）・在来線のホーム（上屋の範囲から推定）: 仮定・簡略</li>
+        <li>JR 運転モード: 駅は OSM の railway=stop（停車位置）。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h と、岡山駅・各駅の前後の減速）、カーブの制限（曲率から算出）、加速・減速の数値は各形式の公表値に近い簡略モデルによる仮定（実際の線区の速度表・運転曲線ではない）。踏切は再現していない（周りの車は走行中の列車の手前で止まる）</li>
         <li>天満屋バスステーションの両備バスののりば（4番）: 推定</li>
         <li>路面電車・車・バスの加減速: 一般的な性能値による</li>
         <li>中心部の外の建物の外壁（色・窓割り）: PLATEAU の用途・構造・建築年・階数から推定（写真ではありません）</li>
@@ -545,6 +551,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
       <div><b>3</b><span><strong>停留場に合わせる</strong><small>マスコンを S で切に戻し、ブレーキを ↓ で強める（↑ で緩める）。制限速度と信号を確認しながら減速</small></span></div>
       <div><b>4</b><span><strong>ドアを開ける</strong><small>車両の先頭をホーム先端（白い停止目標線・標識）に合わせて止め、「ドア」または D キー（±3.5m 以内）。運転席視点では、左のマスコンと右のブレーキハンドルをドラッグして回せます。</small></span></div>
     </div>
+    <p class="foot" style="margin:8px 0 0">JR・新幹線: 高速からは止まるまでに長い距離が要ります（新幹線 300km/h からは約 4.5km）。画面の「ブレーキ目安」より速度が高いときは、早めにブレーキを。制限速度の先の低い値は「160→140」のように表示されます。</p>
     <div class="shortcuts"><span>マスコン W/S</span><span>ブレーキ ↓/↑</span><span>両方戻す C</span><span>警笛 H</span><span>音 右上の「音」</span><span>非常 Space</span><span>視点 V</span></div>
   </div>
 </div>

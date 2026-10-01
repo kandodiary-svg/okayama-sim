@@ -61,12 +61,9 @@ class TileGeo:
     """v29: 三角形（道路面）を 50m 升目ごとにまとめた面。Local と同じ near() と、点が入るかの contains()。
     升目の面は、その升目に掛かる三角形の和集合を升目で切ったもの（必要になった時に作って覚えておく）"""
     def __init__(self, tris, tile=50.0, minus=None):
-        if isinstance(tris, TileGeo):      # v35: 同じ三角形から作る 2 つ目は、多角形と索引を共有（4.2M 個の多角形を 2 度作るとメモリが 6GB を超える）
-            self.polys = tris.polys; self.tree = tris.tree
-        else:
-            t = np.asarray(tris, np.float64).reshape(-1, 3, 3)[:, :, [0, 2]]
-            polys = shapely.polygons(np.concatenate([t, t[:, :1]], 1)); del t
-            self.polys = polys[shapely.area(polys) > 1e-4]; self.tree = STRtree(self.polys); del polys
+        t = np.asarray(tris, np.float64).reshape(-1, 3, 3)[:, :, [0, 2]]
+        polys = shapely.polygons(np.concatenate([t, t[:, :1]], 1))
+        self.polys = polys[shapely.area(polys) > 1e-4]; self.tree = STRtree(self.polys)
         self.T = tile; self.cache = {}; self.pcache = {}; self.minus = minus
     def tg(self, i, j):
         k = (i, j)
@@ -96,7 +93,7 @@ class _Prep:
     def contains(self, p): return self.tg.contains(p, self.buf)
 if TILEGEO:
     _lt = [R["tris"][c] for c in ("lane", "xing", "rail") if c in R["tris"] and len(R["tris"][c])]
-    LANES = TileGeo(np.concatenate(_lt)); del _lt; CARR = TileGeo(LANES, minus=TB)
+    LANES = TileGeo(np.concatenate(_lt)); CARR = TileGeo(np.concatenate(_lt), minus=TB)
     XING = TileGeo(R["tris"]["xing"]) if "xing" in R["tris"] else TileGeo(np.zeros((0, 3)))
     carr_p = _Prep(CARR, 0.05); xing_p = _Prep(XING, 0.3); tb_p = prep(TB)
     print("tile geo: lane tris", len(LANES.polys), "xing tris", len(XING.polys), "TB", round(TB.area), flush=True)
