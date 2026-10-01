@@ -182,6 +182,51 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .startbtn:active{ transform:translateY(1px); }
 .foot{ margin-top:14px; font-size:11px; color:#8a8067; line-height:1.7; }
 
+
+/* ---------- MENU（PC 向け・横長） ---------- */
+#menu{ padding:20px 28px; }
+.card.mcard{ width:min(1240px,100%); height:min(780px,100%); max-height:100%; padding:0; display:flex; flex-direction:column; overflow:hidden; }
+.mhead{ display:flex; align-items:center; gap:24px; padding:12px 26px 10px; border-bottom:1px solid var(--line); }
+.mhead .mtitle{ flex:0 0 auto; }
+.mhead .brandline{ margin-bottom:6px; }
+.mhead h1{ margin:0; font-size:26px; line-height:1.25; white-space:nowrap; }
+.mlead{ flex:1; margin:0; font-size:13px; color:#b9af97; line-height:1.7; }
+.mlink{ flex:0 0 auto; background:var(--panel-2); color:#e9dfc6; border:1px solid var(--line); border-radius:2px; padding:9px 14px; font-family:inherit; font-size:13px; cursor:pointer; white-space:nowrap; }
+.mlink:hover{ border-color:var(--amber); color:var(--amber); }
+.mbody{ flex:1; min-height:0; display:grid; grid-template-columns:320px 1fr; }
+.mside{ padding:14px 20px 14px 26px; border-right:1px solid var(--line); overflow-y:auto; }
+.mmain{ padding:14px 26px; overflow-y:auto; min-width:0; }
+.mside-h{ font-size:13px; letter-spacing:.08em; color:var(--brass); margin:0 0 10px; font-weight:700; }
+.mmain .sechead{ margin:16px 0 8px; } .mmain .sechead:first-of-type{ margin-top:0; }
+.mlist{ flex-direction:column; flex-wrap:nowrap; gap:7px; }
+.mlist .mode-opt{ flex:none; display:flex; align-items:center; gap:12px; text-align:left; padding:8px 14px; font-size:15px; }
+.mlist .mode-opt .mi{ font-style:normal; font-size:24px; width:32px; text-align:center; filter:grayscale(.35); }
+.mlist .mode-opt.on .mi{ filter:none; }
+.mlist .mode-opt b{ display:block; font-size:15.5px; }
+.mlist .mode-opt small{ display:block; margin-top:2px; font-size:11.5px; color:#a99f88; font-weight:400; }
+.mlist .mode-opt.on small{ color:#d9b26a; }
+.mlist .mode-opt:hover{ border-color:#6b5b34; }
+.mmain .routes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:8px; }
+.mmain .vehs{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:8px; }
+.mmain .veh-opt{ flex:none; }
+.mmain .foot{ max-width:860px; }
+.mmain .modes.opts button{ flex:0 1 150px; }
+#mw-start-sel{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+#mw-place{ width:auto !important; min-width:260px; }
+.msettings{ display:flex; gap:32px; align-items:flex-end; padding:8px 26px 10px; border-top:1px solid var(--line); background:rgba(0,0,0,.18); }
+.mset-h{ display:flex; gap:10px; align-items:baseline; margin-bottom:6px; } .mset-h span{ font-size:12.5px; letter-spacing:.06em; color:var(--brass); } .mset-h small{ font-size:11px; color:#8a8067; }
+.msettings .modes.opts button{ flex:0 0 auto; padding:7px 14px; }
+.mfoot{ display:flex; align-items:center; gap:24px; padding:10px 26px 12px; border-top:1px solid var(--line); }
+.mfoot-l{ flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; position:relative; }
+.mfoot-l .loadbar{ flex:1 1 100%; margin-top:2px; }
+.mfoot-l .foot{ margin:0; font-size:11.5px; }
+.mfoot .startbtn{ width:360px; margin:0; padding:14px 20px; font-size:16.5px; white-space:nowrap; flex:0 0 auto; }
+.mfoot .startbtn:disabled{ opacity:.65; cursor:wait; }
+.mdet{ font-size:12px; color:#b9af97; } .mdet summary{ cursor:pointer; list-style:none; padding:4px 0; text-decoration:underline dotted; text-underline-offset:3px; } .mdet summary::-webkit-details-marker{ display:none; }
+.mdet[open] summary{ color:var(--amber); }
+.mdet-body{ position:absolute; left:0; bottom:calc(100% + 14px); width:min(760px,92vw); max-height:50vh; overflow:auto; background:var(--panel); border:1px solid var(--amber); border-radius:3px; padding:14px 16px; font-size:12.5px; line-height:1.8; color:#d6ccb4; box-shadow:0 14px 40px rgba(0,0,0,.6); z-index:5; }
+@media (max-width:980px){ .mbody{ grid-template-columns:1fr; overflow-y:auto; } .mside{ border-right:none; border-bottom:1px solid var(--line); } .mhead{ flex-wrap:wrap; } .mlead{ display:none; } .msettings{ flex-wrap:wrap; } .mfoot{ flex-wrap:wrap; } .mfoot .startbtn{ width:100%; } }
+
 /* ---------- GAME UI ---------- */
 .ui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
 .ui.on{ display:block; }
@@ -304,13 +349,29 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 
 <!-- MENU -->
 <section id="menu">
-  <div class="card">
-    <div class="brandline"><span class="brandmark">OKADEN</span><small>DRIVER CAB SIMULATOR / 岡山</small></div>
-    <h1>実測データの街を、<br><em>運転する。</em></h1>
-    <p class="lead">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。</p>
+  <div class="card mcard">
+    <header class="mhead">
+      <div class="mtitle">
+        <div class="brandline"><span class="brandmark">OKADEN</span><small>DRIVER CAB SIMULATOR / 岡山</small></div>
+        <h1>実測データの街を、<em>運転する。</em></h1>
+      </div>
+      <p class="mlead">PLATEAU 岡山市の建物・道路・地形に、OpenStreetMap と国土地理院のデータを重ねて再現しています。</p>
+      <button type="button" id="src-btn" class="mlink"><span>このシミュレーターの基準時点・出典・推定している所</span><span>ⓘ</span></button>
+    </header>
+    <div class="mbody">
+      <aside class="mside">
+        <div class="mside-h">1　モードを選ぶ</div>
+        <div class="modes mlist">
+        <button type="button" class="mode-opt on" data-mode="tram"><i class="mi">🚋</i><span><b>路面電車</b><small>東山線・清輝橋線（岡電）</small></span></button>
+        <button type="button" class="mode-opt" data-mode="jr"><i class="mi">🚄</i><span><b>JR・新幹線</b><small>山陽新幹線（福山〜相生）・在来線</small></span></button>
+        <button type="button" class="mode-opt" data-mode="bus"><i class="mi">🚌</i><span><b>両備バス</b><small>西大寺線（314系統）</small></span></button>
+        <button type="button" class="mode-opt" data-mode="car"><i class="mi">🚗</i><span><b>車で自由に走る</b><small>市街地・山陽自動車道（約100km）</small></span></button>
+        <button type="button" class="mode-opt" data-mode="heli"><i class="mi">🚁</i><span><b>ヘリコプター</b><small>空から岡山を見る</small></span></button>
+      </div>
+      </aside>
+      <main class="mmain">
+        <div class="mside-h">2　路線・出発地・車両を選ぶ</div>
 
-    <div class="sechead"><span>モード</span><small>路面電車／JR・新幹線／両備バス／車／ヘリコプター</small></div>
-    <div class="modes"><button type="button" class="mode-opt on" data-mode="tram">路面電車を運転</button><button type="button" class="mode-opt" data-mode="jr">JR・新幹線を運転</button><button type="button" class="mode-opt" data-mode="bus">バスを運転</button><button type="button" class="mode-opt" data-mode="car">車で自由に走る</button><button type="button" class="mode-opt" data-mode="heli">ヘリで空から</button></div>
     <div id="routes-wrap"><div class="sechead"><span>運転する路線</span><small>往復とも選べます</small></div>
     <div class="routes" id="routes"></div>
     <div class="sechead"><span>車両</span><small>形式を選べます</small></div>
@@ -370,25 +431,32 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     </div>
     <p class="foot" id="car-note" style="display:none">出発地で「山陽自動車道」を選ぶと、県内の山陽道（福山東〜兵庫県境の約 100km）を走れます（上り・下り、IC・SA/PA から出発）。線形・IC・橋・トンネルは OpenStreetMap、道路面の高さは国土地理院の標高から推定した縦断です（実際の設計値ではありません）。他の車は走行車線を守り、前の車に追いつくと減速します。<br>岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点　Space サイドブレーキ。画面のハンドルは指で回せます。</p>
 
-    <div class="sechead"><span>表示</span><small>PC の性能に合わせて</small></div>
-    <div class="modes opts">
+
+      </main>
+    </div>
+    <div class="msettings">
+    <div class="mset"><div class="mset-h"><span>表示</span><small>PC の性能に合わせて</small></div><div class="modes opts">
       <button type="button" class="look-opt on" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写（PLATEAU）</button>
       <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁で描く簡略表示。色は写真から推定">建物: 簡略（軽い）</button>
       <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
-    </div>
-    <div class="sechead"><span>時間帯・天気</span><small>走行中も N（時間帯）・M（天気）で切り替え</small></div>
-    <div class="modes opts">
+    </div></div>
+    <div class="mset"><div class="mset-h"><span>時間帯・天気</span><small>走行中も N・M キーで切り替え</small></div><div class="modes opts">
       <button type="button" class="time-opt" data-time="morning">朝</button>
       <button type="button" class="time-opt on" data-time="noon">昼</button>
       <button type="button" class="time-opt" data-time="evening">夕方</button>
       <button type="button" class="time-opt" data-time="night">夜</button>
       <button type="button" class="rain-opt">天気: 晴れ</button>
-    </div>
-    <button id="start" class="startbtn" disabled><span id="start-label">3D都市モデルを読み込み中…</span><span>→</span></button>
-    <div class="loadbar"><i id="loadbar"></i></div>
-    <p class="foot" id="records"></p>
-    <button type="button" id="src-btn" class="startbtn" style="background:#2a2418;color:#e9dfc6;margin-top:10px;font-size:13px;padding:10px 14px"><span>このシミュレーターの基準時点・出典・推定している所</span><span>ⓘ</span></button>
-    <p class="foot">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</p>
+    </div></div>
+  </div>
+    <footer class="mfoot">
+      <div class="mfoot-l">
+        <details class="mdet"><summary>操作方法</summary><div class="mdet-body">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます</div></details>
+        <details class="mdet"><summary>データについて</summary><div class="mdet-body">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</div></details>
+        <p class="foot" id="records"></p>
+        <div class="loadbar"><i id="loadbar"></i></div>
+      </div>
+      <button id="start" class="startbtn" disabled><span id="start-label">3D都市モデルを読み込み中…</span><span>→</span></button>
+    </footer>
   </div>
 </section>
 
@@ -913,7 +981,7 @@ const OrthoPages = (() => {
 })();
 /* ---------------- 読み込み ---------------- */
 let loaded=0, toLoad=1;
-function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; }
+function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; if($("start").disabled) $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; }
 async function fetchPacked(fn){
   const res = await fetch("data/"+fn); if(!res.ok) throw new Error(fn+" "+res.status);
   let u8;

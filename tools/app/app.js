@@ -306,7 +306,7 @@ const OrthoPages = (() => {
 })();
 /* ---------------- 読み込み ---------------- */
 let loaded=0, toLoad=1;
-function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; }
+function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; if($("start").disabled) $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; }
 async function fetchPacked(fn){
   const res = await fetch("data/"+fn); if(!res.ok) throw new Error(fn+" "+res.status);
   let u8;
