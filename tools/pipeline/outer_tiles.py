@@ -16,7 +16,7 @@ from common import LAT0, LON0, KX, KZ
 from jr_hs import chains_hs
 import demz
 from demz import ll, tile_xy, fetch
-OUT = "/home/claude/okaden-x/data"; CACHE = "/home/claude/wx/outer"; EXP = "/home/claude/wx/exp"
+OUT = os.environ.get("OUT_DIR", "/home/claude/okaden-x/data"); CACHE = "/home/claude/wx/outer"; EXP = "/home/claude/wx/exp"
 CELL = 2000.0
 FAR = (-8950.0, -9100.0, 11050.0, 10900.0)       # 遠景の範囲 (x0, z0, x1, z1)
 HOLE = (-4048.0, -4692.0, 7308.0, 4432.0)        # データ（PLATEAU）の範囲
@@ -40,20 +40,25 @@ def far_interp(m, A, X, Z):
     return (A[j, i] * (1 - tx) + A[j, i + 1] * tx) * (1 - tz) + (A[j + 1, i] * (1 - tx) + A[j + 1, i + 1] * tx) * tz
 
 def road_samples():
-    """山陽道の点（道路面の高さ付き）。戻り: 全点 (x,z), 掘る点 (x,z,h,W)"""
+    """山陽道の点（道路面の高さ付き）。戻り: 全点 (x,z), 掘る点 (x,z,h,W), トンネルの中の点 (x,z), 坑口の外側の点 (x,z,h)
+    v38: 掘る点はトンネルの外だけ（トンネルの中は掘らない）。トンネルの上の山は、坑口の路面 + 8.8m から外へ 1:1.4 の斜面（berm）で残す（carve の prot）"""
     C = pickle.load(open(f"{EXP}/mw_prof.pkl", "rb"))
-    allp = []; car = []
+    allp = []; car = []; tnp = []; prt = []
     for c in C:
         Q = c["Q"]; n = len(Q); allp.append(Q)
         tn = c["tn"].copy()
-        # 坑口の前後 25m（5 点）は掘る点に入れる（坑口へつながる切土）
+        # 坑口の前後 25m（5 点）は、トンネルの外側の点として掘る点に入れる（坑口へつながる切土）。トンネルの中の点は入れない
         d = np.diff(tn.astype(int)); edge = np.zeros(n, bool)
-        for q in list(np.flatnonzero(d == 1)) + list(np.flatnonzero(d == -1)):
-            edge[max(0, q - 4):q + 6] = True
-        use = ~tn | edge
+        for q in np.flatnonzero(d == 1): edge[max(0, q - 4):q + 1] = True
+        for q in np.flatnonzero(d == -1): edge[q + 1:q + 6] = True
+        use = (~tn) | (edge & ~tn)
         W = np.maximum(c["lanes"], 1) * 1.75 + 3.0
         car.append(np.stack([Q[use, 0], Q[use, 1], c["h"][use], W[use]], axis=1))
-    return np.concatenate(allp), np.concatenate(car)
+        if tn.any():
+            pe = edge & ~tn
+            tnp.append(Q[tn]); prt.append(np.stack([Q[pe, 0], Q[pe, 1], c["h"][pe]], axis=1))
+    z2 = np.zeros((0, 2)); z3 = np.zeros((0, 3))
+    return np.concatenate(allp), np.concatenate(car), (np.concatenate(tnp) if tnp else z2), (np.concatenate(prt) if prt else z3)
 
 def pick(road_pts, shin_pts):
     """タイルの一覧。戻り: [dict(kind='W'|'F'|'FF', i,j or a,b, x0,z0, nh)]"""
@@ -84,7 +89,7 @@ def pick(road_pts, shin_pts):
                 tiles.append(dict(kind="FF", i=a, j=b, x0=x0, z0=z0, s=CELL, nh=NH_F, px=PX_F, key=f"f_{a}_{b}"))
     return tiles
 
-def carve(X, Z, H, tr, car, step):
+def carve(X, Z, H, tr, car, step, tr_tn=None, tr_pt=None, pt_h=None):
     """H（標高 m）を、道路面 − 0.7m を上限にした切土の形に下げる。のりめんは 1:1.4。底の平らな幅は 道路の半幅 + 格子の間隔"""
     d0, _ = tr.query(np.stack([X.ravel(), Z.ravel()], 1), k=1, distance_upper_bound=120.0)
     near = np.flatnonzero(np.isfinite(d0))
@@ -95,11 +100,22 @@ def carve(X, Z, H, tr, car, step):
     hr = car[ids, 2]; W = car[ids, 3]
     ceil = hr - 0.7 + CARVE_SLOPE * np.maximum(0, d - (W + step))
     ceil = np.where(ok, ceil, np.inf).min(axis=1)
+    if tr_tn is not None:
+        # トンネルの中の上は掘らない: トンネルの点が、掘る点（トンネルの外）よりも 9m 以上近い所は、
+        # 坑口（トンネルの外側の端の点）の路面 + 8.8m を底に、坑口から離れるほど 1:1.4 で高くなる「berm」を上限にする
+        dt, _ = tr_tn.query(P, k=1, distance_upper_bound=120.0)
+        okt = np.isfinite(dt)
+        dc = np.where(ok[:, 0], d[:, 0], np.inf)
+        prot = okt & (dt < dc - 9.0)
+        dp, ip = tr_pt.query(P, k=1)
+        cp = pt_h[ip] + 8.8 + CARVE_SLOPE * np.maximum(0, dp - 10.6)
+        ceil = np.where(prot, cp, ceil)
     Hf = H.ravel().copy(); old = Hf[near].copy(); Hf[near] = np.minimum(old, ceil)
     return Hf.reshape(H.shape), int((Hf[near] < old - 0.05).sum())
 
 def build(only_geom=False):
-    road_pts, car = road_samples()
+    road_pts, car, tn_pts, prt = road_samples()
+    tr_tn = cKDTree(tn_pts) if len(tn_pts) else None; tr_pt = cKDTree(prt[:, :2]) if len(prt) else None
     P = chains_hs()[0][0]; P = P[(P[:, 0] > WEST) & (P[:, 0] < EAST)]
     shin = []
     for a, b in zip(P[:-1], P[1:]):
@@ -127,7 +143,7 @@ def build(only_geom=False):
         h = np.maximum(h, -1.0)
         t["H"] = h; t["step"] = st
         if t["kind"] != "W":
-            h2, cnt = carve(X, Z, h, tr_car, car, st); t["H"] = h2; t["carved"] = cnt
+            h2, cnt = carve(X, Z, h, tr_car, car, st, tr_tn, tr_pt, prt[:, 2] if len(prt) else None); t["H"] = h2; t["carved"] = cnt
         # 遠景の格子の縁（FF ブロックの縁・遠景の範囲の縁に載る頂点）は遠景の補間に合わせる
         if t["kind"] in ("FF", "F"):
             on = (np.abs(X - FAR[0]) < 1e-6) | (np.abs(X - FAR[2]) < 1e-6) | (np.abs(Z - FAR[1]) < 1e-6) | (np.abs(Z - FAR[3]) < 1e-6)
@@ -161,7 +177,7 @@ def build(only_geom=False):
     open(f"{OUT}/outer_h.bin", "wb").write(np.concatenate(arr).tobytes())
     print("heights", o, "int16 =", o * 2 / 1e6, "MB", flush=True)
     # ---- 写真 ----
-    photos(tiles)
+    if not os.environ.get("NO_PHOTOS"): photos(tiles)
     drop = [[t["x0"], t["z0"], t["x0"] + t["s"], t["z0"] + t["s"]] for t in tiles if t["kind"] == "FF"]
     man = dict(cell=CELL, far=list(FAR), hole=list(HOLE), drop=drop, tiles=man_t,
                note="標高: 国土地理院 標高タイル(dem_png z14)、写真: 国土地理院 シームレス空中写真(z15/z16)。山陽道の沿線は道路面に合わせて切土を標高に反映（推定）")

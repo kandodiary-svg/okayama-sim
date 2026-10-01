@@ -61,6 +61,23 @@ class Profiles:
         from collections import defaultdict
         nodes_ways = defaultdict(list)
         for (nid, i), k in node_pt.items(): nodes_ways[nid].append((i, k))
+        # ---- v38: 橋の端の手前（地上）は、堤防の天端まで上げる ----
+        # OSM の橋の端は川側（堤防の下・水際）にあることが多く、DEM の高さをそのまま使うと、橋の床が堤防の天端より 3〜6m 低くなり、
+        # 手前の道（天端の高さ）と橋が段差でつながらなかった。橋の端の周り R m の地上の点を、天端（近くの最高）から勾配 G で下がる包絡線より下にしない
+        from scipy.spatial import cKDTree
+        _gm = np.array([l == "ground" for l in lvl]); _tree = cKDTree(P); Z0 = Z.copy(); self.n_raised = 0
+        for nid, L in nodes_ways.items():
+            bp_ = [k for i, k in L if lv[i] == "bridge"]; gp_ = [k for i, k in L if lv[i] == "ground"]
+            if not bp_ or not gp_: continue
+            c_ = P[gp_[0]]
+            ix_ = np.array(_tree.query_ball_point(c_, self.RAISE_R), np.int64)
+            if len(ix_): ix_ = ix_[_gm[ix_]]
+            if len(ix_) < 2: continue
+            Q_ = P[ix_]; D_ = np.hypot(Q_[:, None, 0] - Q_[None, :, 0], Q_[:, None, 1] - Q_[None, :, 1])
+            env_ = (Z0[ix_][None, :] - self.RAISE_G * D_).max(axis=1)
+            zn_ = np.minimum(np.maximum(Z0[ix_], env_), Z0[ix_] + self.RAISE_MAX)
+            up_ = zn_ > Z[ix_] + 0.02
+            if up_.any(): Z[ix_[up_]] = zn_[up_]; self.n_raised += int(up_.sum())
         # ---- 橋: 橋の点だけのグラフで、地上とつながる点を固定して、間をなめらかにつなぐ ----
         isb = np.array([l == "bridge" for l in lvl])
         bidx = np.nonzero(isb)[0]; self.n_bridge_pts = len(bidx)
@@ -117,7 +134,7 @@ class Profiles:
         allL = np.concatenate([self._idx["ground"], self._idx["bridge"]]); self._idx["any"] = allL
         self._tree["any"] = STRtree(shapely.linestrings(np.stack([P[allL], P[allL + 1]], 1))) if len(allL) else None
         if verbose:
-            print("profiles: ways", len(W), "points", N, "bridge points", self.n_bridge_pts, "crossing constraints", self.n_cons,
+            print("profiles: ways", len(W), "points", N, "bridge points", self.n_bridge_pts, "raised ground points", self.n_raised, "crossing constraints", self.n_cons,
                   "segments", {k: len(v) for k, v in self._idx.items()}, flush=True)
 
     def _crossings(self, W, lv, wp, P, Z, rails, bidx, nodes_ways):
@@ -154,6 +171,7 @@ class Profiles:
                         kk = a + int(k); cons[kk] = max(cons.get(kk, -1e9), need)
         return cons
 
+    RAISE_R = 40.0; RAISE_G = 0.08; RAISE_MAX = 8.0   # v38: 橋の端の手前を堤防の天端まで上げる範囲・勾配・上限
     GRADE = 0.05    # 橋・高架の取り付け（地上とつながる端から）の最大の勾配
     GRADE_C = 0.015 # すき間の点から離れる時の下がり方（高架の途中で大きく垂れないように）
     def _msd(self, nb, ia, ib, ln, src, val, g, sign):

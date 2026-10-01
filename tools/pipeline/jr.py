@@ -29,15 +29,19 @@ def inData(x, z): return BX0 + 2 < x < BX1 - 2 and BZ0 + 2 < z < BZ1 - 2   # v29
 import os as _os
 _OUT_MAN = json.load(open(f"{OUT}/outer.json")) if _os.path.exists(f"{OUT}/outer.json") else None
 if _OUT_MAN:
-    _OH = np.frombuffer(open(f"{OUT}/outer_h.bin", "rb").read(), np.int16).reshape(len(_OUT_MAN["tiles"]), _OUT_MAN["nh"], _OUT_MAN["nh"]) / 10.0
-    _OK = {(t["i"], t["j"]): t["k"] for t in _OUT_MAN["tiles"]}
+    # v38: outer.json は v37 の形式（タイルごとに nh・x0・z0・s。種類 W/F/FF。k は outer_h.bin の先頭からの要素番号）
+    _OH = np.frombuffer(open(f"{OUT}/outer_h.bin", "rb").read(), np.int16)
+    _OT = _OUT_MAN["tiles"]
+    _OX0 = np.array([t["x0"] for t in _OT], float); _OZ0 = np.array([t["z0"] for t in _OT], float); _OS = np.array([t["s"] for t in _OT], float)
+    _OPR = np.array([{"FF": 2, "F": 1}.get(t["kind"], 0) for t in _OT])   # 細かいタイルを優先
 def outer_ground(x, z):
     if not _OUT_MAN: return None
-    C = _OUT_MAN["cell"]; n = _OUT_MAN["nh"] - 1
-    i = int(math.floor(x / C)); j = int(math.floor(z / C)); k = _OK.get((i, j))
-    if k is None: return None
-    fx = (x - i * C) / C * n; fz = (z - j * C) / C * n
-    a = min(int(fx), n - 1); b = min(int(fz), n - 1); tx = fx - a; tz = fz - b; T = _OH[k]
+    m = (_OX0 <= x) & (x < _OX0 + _OS) & (_OZ0 <= z) & (z < _OZ0 + _OS)
+    if not m.any(): return None
+    q = np.nonzero(m)[0]; q = q[np.argmax(_OPR[q])]; t = _OT[q]
+    n = t["nh"] - 1; fx = (x - t["x0"]) / t["s"] * n; fz = (z - t["z0"]) / t["s"] * n
+    a = min(int(fx), n - 1); b = min(int(fz), n - 1); tx = fx - a; tz = fz - b
+    T = _OH[t["k"]:t["k"] + (n + 1) * (n + 1)].reshape(n + 1, n + 1) / 10.0
     return float((T[b, a] * (1 - tx) + T[b, a + 1] * tx) * (1 - tz) + (T[b + 1, a] * (1 - tx) + T[b + 1, a + 1] * tx) * tz)
 def ground(x, z):
     if not inData(x, z) and not (fm["x0"] < x < fm["x0"] + fm["step"] * (fm["nx"] - 1) and fm["z0"] < z < fm["z0"] + fm["step"] * (fm["nz"] - 1)):

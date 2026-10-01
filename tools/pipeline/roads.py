@@ -99,6 +99,25 @@ def tri_polygon_grid(p, hfun, step=4.0):
     y = hfun(xz[:, 0], xz[:, 1])
     return np.stack([xz[:, 0], y, xz[:, 1]], 1)
 
+PROF_GRID = float(os.environ.get("PROF_GRID", "0.12"))   # v38: 縦断（OSM の道の高さ）が平面から外れる面は格子で切る
+n_prof_grid = [0]
+def prof_misfit(P, hfun):
+    return max([_prof_misfit1(q, hfun) for q in poly_parts(P)] or [0.0])
+def _prof_misfit1(P, hfun):
+    """多角形の中で、道の高さ（hfun）が平面からずれる最大。ランプ・坂の面は平面でないので、頂点だけに高さを付けると横に傾いた面になる"""
+    x0, z0, x1, z1 = P.bounds
+    stp = max(3.0, math.sqrt(max((x1 - x0) * (z1 - z0), 1.0) / 250.0))
+    xs = np.arange(x0, x1 + stp, stp); zs = np.arange(z0, z1 + stp, stp)
+    X, Z = np.meshgrid(xs, zs); X = X.ravel(); Z = Z.ravel()
+    ins = shapely.contains_xy(P, X, Z)
+    ring = np.array(P.exterior.coords)[:-1]
+    if len(ring) > 60: ring = ring[::int(math.ceil(len(ring) / 60))]
+    px = np.concatenate([X[ins], ring[:, 0]]); pz = np.concatenate([Z[ins], ring[:, 1]])
+    if len(px) < 5: return 0.0
+    y = np.asarray(hfun(px, pz), np.float64)
+    A = np.stack([px - px.mean(), pz - pz.mean(), np.ones(len(px))], 1)
+    c, *_ = np.linalg.lstsq(A, y, rcond=None)
+    return float(np.abs(A @ c - y).max())
 SLOPE_MAX = float(os.environ.get("ROAD_SLOPE_MAX", "0.35"))   # v33: 道路面（LOD1 を格子で切った面）で、これより急な三角形は捨てる（堤防・切土の斜面を舗装していた。斜面は地形のまま）
 n_slope_drop = [0, 0]; n_bridge_drop = [0]
 def slope_filter(t):
@@ -190,6 +209,15 @@ for f in sorted(glob.glob("/home/claude/wx/out_tran/*.pkl")):
                 lod1.append((t[m_], bridge, code, int(p_), int(sc_[m_][0]) if sc_ is not None else (3 if bridge else 1)))
         else:
             lod3.setdefault(cat, []).append((tri.astype(np.float64), bridge))
+# v38: 試験用に範囲を絞る（ROADS_BOX="x0,z0,x1,z1"）。全域の作り直し（約 1 時間）の前に、数か所だけを数分で試す
+_BOX = os.environ.get("ROADS_BOX")
+if _BOX:
+    _bx = [float(v) for v in _BOX.split(",")]
+    def _inbox(t):
+        T = t.reshape(-1, 3)
+        return not (T[:, 0].max() < _bx[0] or T[:, 0].min() > _bx[2] or T[:, 2].max() < _bx[1] or T[:, 2].min() > _bx[3])
+    lod1 = [e for e in lod1 if _inbox(e[0])]
+    lod3 = {k: [(t, b) for t, b in v if _inbox(t)] for k, v in lod3.items()}
 print("lod3 cats", {k: sum(len(t) for t, b in v) // 3 for k, v in lod3.items()}, "lod1 polys", len(lod1), flush=True)
 
 ways, nodes = osm_load()
@@ -337,6 +365,8 @@ for t, bridge, code, pid, sect in lod1:
         S = None; C = P if not carriage else C
     _tp = tri_polygon
     if (bridge and PROFILE_ON) or (not bridge and relief(P) > RELIEF_GRID): _tp = tri_polygon_grid; n_grid += 1   # v32: 橋は縦断に沿うよう格子で切る
+    elif PROFILE_ON and not bridge and P.area > 20 and prof_misfit(P, hfun) > PROF_GRID:   # v38: 縦断が平面でない面（取り付けの坂など）
+        _tp = tri_polygon_grid; n_grid += 1; n_prof_grid[0] += 1
     lane_t = _tp(C, hfun)
     _bdrop = False
     if PROFILE_ON and _tp is tri_polygon_grid:
@@ -374,7 +404,7 @@ for t, bridge, code, pid, sect in lod1:
     if bridge and PROFILE_ON and _bdrop:
         _kp = unary_union([q for q in (C, S) if q is not None and not q.is_empty])
         bridge_parts[_bp_i] = _kp; n_bridge_drop[0] += 1
-print("v33 slope-dropped tris", n_slope_drop[0], "of", n_slope_drop[1], "bridge polys trimmed", n_bridge_drop[0], flush=True)
+print("v33 slope-dropped tris", n_slope_drop[0], "of", n_slope_drop[1], "bridge polys trimmed", n_bridge_drop[0], "v38 profile-gridded", n_prof_grid[0], flush=True)
 print("lod1 split into carriage/sidewalk:", n_split, "gridded (relief >", RELIEF_GRID, "m / bridges):", n_grid, "tunnel polys skipped", n_tunnel,
       "bridge polys", len(bridge_parts), "(of which by OSM", n_bridge_osm, ")", flush=True)
 

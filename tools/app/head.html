@@ -226,6 +226,14 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .mdet-body{ position:absolute; left:0; bottom:calc(100% + 14px); width:min(760px,92vw); max-height:50vh; overflow:auto; background:var(--panel); border:1px solid var(--amber); border-radius:3px; padding:14px 16px; font-size:12.5px; line-height:1.8; color:#d6ccb4; box-shadow:0 14px 40px rgba(0,0,0,.6); z-index:5; }
 @media (max-width:980px){ .mbody{ grid-template-columns:1fr; overflow-y:auto; } .mside{ border-right:none; border-bottom:1px solid var(--line); } .mhead{ flex-wrap:wrap; } .mlead{ display:none; } .msettings{ flex-wrap:wrap; } .mfoot{ flex-wrap:wrap; } .mfoot .startbtn{ width:100%; } }
 
+.navi{ position:fixed; right:12px; top:calc(62px + env(safe-area-inset-top,0px)); width:220px; z-index:11; display:none; pointer-events:none; }
+.navi.on{ display:block; }
+.navi canvas{ width:220px; height:220px; border-radius:50%; border:2px solid rgba(201,168,106,.95); box-shadow:0 4px 16px rgba(0,0,0,.55); background:#cfcab8; display:block; pointer-events:auto; }
+.navi-bar{ position:absolute; left:-4px; top:84px; display:flex; flex-direction:column; gap:4px; pointer-events:auto; }
+.navi-bar button{ width:30px; height:30px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-size:16px; font-weight:700; font-family:inherit; cursor:pointer; line-height:1; }
+.navi-bar button.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+.navi-info{ margin-top:6px; background:rgba(23,20,15,.88); border:1px solid var(--line); border-radius:3px; padding:5px 9px; text-align:center; }
+.navi-info #navi-rd{ font-size:12.5px; color:#f1ead9; font-weight:700; min-height:16px; } .navi-info #navi-ll{ font-size:11px; color:#a99f88; font-variant-numeric:tabular-nums; }
 /* ---------- GAME UI ---------- */
 .ui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
 .ui.on{ display:block; }
@@ -536,6 +544,9 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 <div class="locchip" id="locchip"></div>
 <div id="fade" class="fade"><div id="fade-text"></div></div>
 <!-- CAR UI -->
+<div class="navi" id="navi"><canvas id="navi-cv" width="440" height="440"></canvas>
+  <div class="navi-bar"><button type="button" id="navi-zi" title="拡大（]）">＋</button><button type="button" id="navi-zo" title="縮小（[）">－</button><button type="button" id="navi-rot" title="進行方向を上／北を上">⌖</button></div>
+  <div class="navi-info"><div id="navi-rd"></div><div id="navi-ll"></div></div></div>
 <div class="carui" id="carui">
   <header class="car-top">
     <div class="chip"><span class="rname">MODE <b id="car-mode-lbl">車で自由に走る</b></span></div>
@@ -621,7 +632,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
         <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL。中心部〔v28 の範囲〕は 2026年9月26日時点、v29 で広げた所は 9月28日時点、v30 で広げた所は 9月29日時点のデータ）</li>
         <li>地面・屋根の航空写真: 国土地理院 シームレス空中写真（撮影時期は場所によって異なります）。遠景: 国土地理院 標高タイル・空中写真</li>
         <li>バスの停留所の順序: 晴れバスナビ（岡山の時刻表検索）。岡山駅東口ののりば: 岡山駅東口バスのりば行き先案内</li>
-        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材</li>
+        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材（新幹線の車内音は hoshisato 氏の Freesound #842063・CC0）</li>
       </ul>
       <p style="margin:0 0 4px"><b style="color:#e6a94d">推定・仮定している所（実際とは異なる場合があります）</b></p>
       <ul style="margin:0;padding-left:18px">

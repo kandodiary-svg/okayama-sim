@@ -40,7 +40,9 @@ def grad_encode(H):
     return (u & 255).astype(np.uint8).tobytes() + (u >> 8).astype(np.uint8).tobytes()
 os.makedirs(OUT, exist_ok=True)
 if not os.environ.get("TRACK_ONLY"):
+    # v38: ディレクトリ（outer/）と、別の工程が作るファイル（山陽道 mw.*・外側の地形 outer*）は消さない
     for f in glob.glob(OUT + "/*"):
+        if os.path.isdir(f) or os.path.basename(f) in ("mw.json", "mw.bin", "outer.json", "outer_h.bin"): continue
         os.remove(f)
 
 # v30: 道路の高さ・区分のラスタ（0.5m）はファイルのまま読む（範囲拡大で大きい。common.load_roads）
@@ -700,11 +702,15 @@ MAT = {"lane": "asphalt", "xing": "asphalt", "rail": "asphalt", "walk": "paving"
 def clip_tris(tri, poly, keep_inside=False):
     """三角形群から poly の内側を取り除き、元の面の高さで再三角形化"""
     t = tri.reshape(-1, 3, 3)
-    polys = shapely.polygons(np.concatenate([t[:, :, [0, 2]], t[:, :1, [0, 2]]], 1))
-    hit = shapely.intersects(polys, poly)
+    # v38: 三角形ごとの shapely 図形を全部いっぺんに作るとメモリが 1GB 以上増えるので、50 万個ずつ判定する
+    hit = np.zeros(len(t), bool); shapely.prepare(poly)
+    for _a in range(0, len(t), 500000):
+        _q = t[_a:_a + 500000]
+        _pl = shapely.polygons(np.concatenate([_q[:, :, [0, 2]], _q[:, :1, [0, 2]]], 1))
+        hit[_a:_a + 500000] = shapely.intersects(_pl, poly); del _pl
     out = [t[~hit].reshape(-1, 3)]
     for k in np.nonzero(hit)[0]:
-        g = polys[k].difference(poly)
+        g = shapely.polygons(np.concatenate([t[k][:, [0, 2]], t[k][:1, [0, 2]]], 0)).difference(poly)
         if g.is_empty or g.area < 1e-4: continue
         A, B, C = t[k]
         v0 = C[[0, 2]] - A[[0, 2]]; v1 = B[[0, 2]] - A[[0, 2]]
