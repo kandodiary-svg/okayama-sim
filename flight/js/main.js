@@ -18,7 +18,7 @@ async function init(){
   const terrain=FS.terrain=new Terrain(T,scene,"data/",tiles,{maxActive:+q.get("act")||8});
   let ap=null; const bld=FS.bld=new Buildings(T,scene,"data/",bidx,sky,{skip:(x,z)=>ap&&ap.skipAt(x,z)});
   ap=FS.ap=new Airports(T,scene,"data/",apd,terrain,sky,bld); const lights=FS.lights=new AirLights(T,scene,ap,sky,renderer);
-  const hudCv=document.getElementById("inst"); const hud=FS.hud=new Hud(hudCv); const audio=FS.audio=new Sound();
+  const lm=FS.lm=new Landmarks(T,scene,terrain,sky); const pk=FS.pk=new Parked(T,ap,terrain); const hudCv=document.getElementById("inst"); const hud=FS.hud=new Hud(hudCv); const audio=FS.audio=new Sound();
   const game=FS.game=new Game(FS,{hud,audio}); const ui=FS.ui=bindUI(game,hud,audio); game.ui=ui;
   sky.setHour(+q.get("h")||14); game.cam.x=0;
   const frustum=new T.Frustum(), pm=new T.Matrix4();
@@ -31,7 +31,7 @@ async function init(){
     const cam=game.cam; pm.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
     sky.update(cam,dt); scene.fog.color.copy(sky.fogColor);
     const tc=sky.tintCol; terrain.tint.setRGB(tc[0],tc[1],tc[2]); terrain.nlK.value=Math.max(0,sky.night-0.2)*1.0;
-    terrain.update(cam,frustum); bld.update(cam,frustum); ap.prepare(cam); ap.update(cam,frustum);
+    lm.update(cam,game.t); terrain.update(cam,frustum); bld.update(cam,frustum); ap.prepare(cam); pk.ensure("RJOB"); pk.ensure("RJTT"); ap.update(cam,frustum);
     const s=game.s; const pp=(game.state==="fly"||game.state==="crashed")?{x:s.pos[0],y:s.pos[1],z:s.pos[2]}:null;
     lights.update(cam,dt,camera.fov*D2R,renderer.domElement.height,pp);
     renderer.render(scene,camera);
