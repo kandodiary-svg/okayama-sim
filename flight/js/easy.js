@@ -11,6 +11,8 @@ const n180=a=>{ while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI; r
 const CRUISE_ALT=35000*FT, CLIMB_TAN=Math.tan(5*D2R), GLIDE_TAN=Math.tan(3*D2R);
 const MAXN=40;                     // ゲートの最大数
 const FRAME_W=100, FRAME_H=50;      // ゲートの大きさ [m]
+const GROUND_N=90;                 // 地上の破線の最大数
+const TAXI=root.TAXI;
 const fmt=(n)=>Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,",");
 const kc=(...ks)=>ks.map(k=>"<kbd>"+k+"</kbd>").join('<i>/</i>');
 
@@ -21,12 +23,13 @@ class Easy{
     const box=new T.BoxGeometry(1,1,1);
     const mk=(color,op)=>new T.MeshBasicMaterial({color,transparent:true,opacity:op,fog:false,depthWrite:false});
     this.gates=new T.InstancedMesh(box,mk(0x1f8fff,0.92),MAXN*4); this.line=new T.InstancedMesh(box,mk(0x58c4ff,0.95),MAXN);
-    for(const m of [this.gates,this.line]){ m.frustumCulled=false; m.count=0; m.renderOrder=5; scene.add(m); }
+    this.ground=new T.InstancedMesh(box,mk(0x58c4ff,0.95),GROUND_N);      // 地上走行用: 誘導路に敷く青い破線
+    for(const m of [this.gates,this.line,this.ground]){ m.frustumCulled=false; m.count=0; m.renderOrder=5; scene.add(m); }
     this.m4=new T.Matrix4(); this.q=new T.Quaternion(); this.pv=new T.Vector3(); this.sv=new T.Vector3(); this.zax=new T.Vector3(0,0,1); this.dir=new T.Vector3(); this.qy=new T.Quaternion(); this.yax=new T.Vector3(0,1,0);
     this.el=document.getElementById("easy");
     this.info={};
   }
-  setOn(v){ this.on=!!v; try{ localStorage.setItem("okfl_easy",this.on?"1":"0"); }catch(e){} if(!this.on){ this.gates.count=0; this.line.count=0; if(this.el) this.el.style.display="none"; } this.game.easyOn=this.on; this.game.updateHints&&this.game.updateHints(); }
+  setOn(v){ this.on=!!v; try{ localStorage.setItem("okfl_easy",this.on?"1":"0"); }catch(e){} if(!this.on){ this.gates.count=0; this.line.count=0; this.ground.count=0; if(this.el) this.el.style.display="none"; } this.game.easyOn=this.on; this.game.updateHints&&this.game.updateHints(); }
   toggle(){ this.setOn(!this.on); this.game.say(this.on?"かんたんモード ON（青いラインと操作ガイド）":"かんたんモード OFF","#58c4ff",2); return this.on; }
 
   // ---- 目的地の滑走路（しきい値・延長線） ----
@@ -90,9 +93,11 @@ class Easy{
   }
   // ---- 毎フレーム ----
   update(dt){
-    const g=this.game; if(g.state!=="fly"){ this.gates.count=0; this.line.count=0; if(this.el) this.el.style.display="none"; return; }
+    const g=this.game; if(g.state!=="fly"){ this.gates.count=0; this.line.count=0; this.ground.count=0; if(this.el) this.el.style.display="none"; return; }
     this.game.easyOn=this.on;
-    if(!this.on){ if(this.gates.count){ this.gates.count=0; this.line.count=0; } return; }
+    if(!this.on){ if(this.gates.count||this.ground.count){ this.gates.count=0; this.line.count=0; this.ground.count=0; } return; }
+    if(g.taxiPhase==="push"||g.taxiPhase==="taxi"){ this.updateTaxi(dt); return; }
+    this.ground.count=0; this.tIdx=0;
     const s=g.s, cam=g.cam; const P=this.buildPath(); if(!P){ this.gates.count=0; this.line.count=0; return; }
     const onG=!!s.onGround, ap=g.c.ap; const base=onG?T_h(g,s.pos[0],s.pos[2]):s.pos[1];
     // ゲートの位置
@@ -117,6 +122,60 @@ class Easy{
     this.gates.count=gc; this.line.count=lc; this.gates.instanceMatrix.needsUpdate=true; this.line.instanceMatrix.needsUpdate=true;
     // 案内（約 8 回／秒）
     this.accum+=dt; if(this.accum<0.12) return; this.accum=0; this.guide(P,base,onG);
+  }
+  // ---- 地上走行（プッシュバック → 誘導路 → 滑走路）----
+  updateTaxi(dt){
+    const g=this.game, s=g.s, cam=g.cam, plan=g.taxiPlan; this.gates.count=0; this.line.count=0; if(!plan){ this.ground.count=0; return; }
+    const P=plan.taxi, n=P.length, m4=this.m4, q=this.q, pv=this.pv, sv=this.sv, yax=this.yax;
+    const fw=[Math.sin(s.psi),-Math.cos(s.psi)]; const mx=s.pos[0]+fw[0]*TAXI.MAIN, mz=s.pos[2]+fw[1]*TAXI.MAIN;
+    this.tIdx=TAXI.progress(P,mx,mz,this.tIdx||0); const i0=this.tIdx;
+    // 青い破線（先 約 700m）
+    let gc=0; const th=(x,z,mn,mxv)=>clamp(Math.hypot(x-cam.x,z-cam.z)*0.004,mn,mxv);
+    for(let i=i0;i<n-1&&gc<GROUND_N;i+=5){
+      const a=P[i], b=P[Math.min(n-1,i+3)]; const dx=b.x-a.x, dz=b.z-a.z, len=Math.hypot(dx,dz); if(len<0.5) continue; const hd=Math.atan2(dx,-dz);
+      const gy=g.terrain.heightAt((a.x+b.x)/2,(a.z+b.z)/2); const w=th(a.x,a.z,1.3,6);
+      q.setFromAxisAngle(yax,-hd); sv.set(w,0.3,len+w*0.5); pv.set((a.x+b.x)/2-cam.x,gy+0.45,(a.z+b.z)/2-cam.z); m4.compose(pv,q,sv); this.ground.setMatrixAt(gc++,m4);
+    }
+    this.ground.count=gc; this.ground.instanceMatrix.needsUpdate=true;
+    // 門（アーチ）: 先の 6 か所
+    let ac=0; const W=34, H=9;
+    for(let k=1;k<=6;k++){
+      const i=Math.min(n-1,i0+Math.round(k*70/2)); const a=P[i]; if(i>=n-1&&k>1) break; const hd=a.psi; const gy=g.terrain.heightAt(a.x,a.z); const t=th(a.x,a.z,0.5,2.2);
+      q.setFromAxisAngle(yax,-hd); const cx=Math.cos(hd), cz=Math.sin(hd), rx=a.x-cam.x, rz=a.z-cam.z;
+      sv.set(W+t,t,t); pv.set(rx,gy+H,rz); m4.compose(pv,q,sv); this.gates.setMatrixAt(ac++,m4);
+      sv.set(t,H,t); pv.set(rx+cx*W/2,gy+H/2,rz+cz*W/2); m4.compose(pv,q,sv); this.gates.setMatrixAt(ac++,m4);
+      pv.set(rx-cx*W/2,gy+H/2,rz-cz*W/2); m4.compose(pv,q,sv); this.gates.setMatrixAt(ac++,m4);
+    }
+    this.gates.count=ac; this.gates.instanceMatrix.needsUpdate=true;
+    this.accum+=dt; if(this.accum<0.12) return; this.accum=0; this.guideTaxi(P,i0,mx,mz);
+  }
+  guideTaxi(P,i0,mx,mz){
+    const g=this.game, s=g.s, pil=g.pilot; const rows=[]; const n=P.length;
+    const v=Math.hypot(s.vel[0],s.vel[2]), kt=v/KT; const remain=P[n-1].s-P[i0].s;
+    // 先読み点への向き
+    let j=i0; while(j<n-1&&P[j].s<P[i0].s+28) j++; const brg=Math.atan2(P[j].x-mx,-(P[j].z-mz)); const err=n180(brg-s.psi); const deg=Math.round(Math.abs(err)/D2R);
+    const cte=(mx-P[i0].x)*Math.cos(P[i0].psi)+(mz-P[i0].z)*Math.sin(P[i0].psi);
+    let vref=P[i0].v; const sLook=P[i0].s+Math.max(15,v*3); for(let k=i0;k<n&&P[k].s<sLook;k++) vref=Math.min(vref,P[k].v); const vtk=vref/KT;
+    const phase=g.taxiPhase==="push"?"プッシュバック中":(remain<250?"滑走路へ進入":"地上走行（誘導路）");
+    const next={name:"滑走路07 離陸位置",dist:remain};
+    if(g.taxiPhase==="push"){
+      rows.push({ico:"🚜",lab:"プッシュバック",st:"ok",txt:"トーイングカーが機体を後ろへ押しています。そのまま待つ（"+kc("Enter")+" でスキップ）"});
+    } else if(g.autoTaxi){
+      rows.push({ico:"🤖",lab:"自動タキシー",st:"ok",txt:"作動中。誘導路を自動で走っています。止めるには "+kc("Enter")+"、手動にするには "+kc("A","D")+" やブレーキ",sub:"滑走路まであと約 "+(remain/1000).toFixed(1)+" km ／ "+kc("T")+" で早送り"});
+    } else {
+      if(s.parking) rows.push({ico:"🅿",lab:"パーキングブレーキ",st:"act",txt:"外す "+kc("P")});
+      if(deg>=4) rows.push({ico:"🧭",lab:"向き",st:"act",txt:(err>0?"右へ ":"左へ ")+(err>0?kc("D","→"):kc("A","←"))+"（押している間、前輪が切れる）",sub:"青いラインまで あと約 "+deg+"° "+(err>0?"右":"左")+(Math.abs(cte)>3?" ／ 中心線から "+Math.abs(cte).toFixed(0)+" m "+(cte>0?"右":"左"):"")});
+      else rows.push({ico:"🧭",lab:"向き",st:"ok",txt:"向きOK（青いラインに沿って進んでいます）"+(Math.abs(cte)>3?"":"")});
+      if(!s.parking){
+        if(kt>vtk+3) rows.push({ico:"⚙",lab:"速度",st:"act",txt:"ブレーキ "+kc("Space","B")+"（速すぎ）、スロットルは "+kc("0"),sub:"いま "+Math.round(kt)+" kt ／ 目安 "+Math.round(vtk)+" kt"});
+        else if(kt<vtk-3&&pil.throttle<0.04) rows.push({ico:"⚙",lab:"速度",st:"act",txt:"スロットルを少し "+kc("1")+"（10%）。動き出したら "+kc("0")+" に戻す",sub:"いま "+Math.round(kt)+" kt ／ 目安 "+Math.round(vtk)+" kt"});
+        else if(kt>vtk-1&&pil.throttle>0.04&&kt>2) rows.push({ico:"⚙",lab:"速度",st:"act",txt:"スロットルを戻す "+kc("0"),sub:"いま "+Math.round(kt)+" kt ／ 目安 "+Math.round(vtk)+" kt"});
+        else rows.push({ico:"⚙",lab:"速度",st:"ok",txt:"速度OK（"+Math.round(kt)+" kt）",sub:"曲がり角では目安 "+Math.round(vtk)+" kt まで落とす"});
+      }
+      rows.push({ico:"💡",lab:"らくに進む",st:"info",txt:kc("Enter")+" で自動タキシー（滑走路の手前まで連れて行きます）"});
+    }
+    this.render(phase,next.name,next.dist,err,rows,{next:next});
+    this.info={phase,nextName:next.name,dNext:remain,err};
   }
   guide(P,base,onG){
     const g=this.game, s=g.s, ap=g.c.ap, pil=g.pilot; const cas=s.cas/KT, raFt=s.radAlt/FT, altFt=s.pos[1]/FT, gs=Math.max(s.gs,30);

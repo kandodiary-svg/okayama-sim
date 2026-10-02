@@ -58,7 +58,15 @@ function stands(data,P,apron){
 }
 
 class Parked{
-  constructor(THREE,airports,terrain){ this.T=THREE; this.ap=airports; this.terrain=terrain; this.done={}; this.baked=null; }
+  constructor(THREE,airports,terrain){ this.T=THREE; this.ap=airports; this.terrain=terrain; this.done={}; this.baked=null; this.res={}; this.recs={}; }
+  // プレイヤーが出発するゲートの駐機機を隠す／戻す
+  reserve(icao,x,z,r){ this.res[icao]={x,z,r}; this.applyRes(icao); }
+  release(icao){ if(!this.res[icao]) return; delete this.res[icao]; this.applyRes(icao); }
+  applyRes(icao){
+    const recs=this.recs[icao]; if(!recs) return; const r=this.res[icao]; const zero=new this.T.Matrix4().makeScale(0,0,0); const ims=new Set();
+    for(const k of recs){ const hide=!!r&&Math.hypot(k.x-r.x,k.z-r.z)<r.r; k.im.setMatrixAt(k.k,hide?zero:k.m); ims.add(k.im); }
+    for(const im of ims) im.instanceMatrix.needsUpdate=true;
+  }
   ensure(icao){
     const a=this.ap.ap[icao]; if(!a||!a.built||this.done[icao]) return; this.done[icao]=true;
     const T=this.T, P=a.ref, data=this.ap.data[icao];
@@ -78,7 +86,7 @@ class Parked{
       placed.push(s); cnt[Math.floor(hash(i*3.1+5)*LIVERIES.length)%LIVERIES.length].push(s);
     }
     const grp=new T.Group(); a.group.add(grp); a.parkedGroup=grp; a.parkedCount=placed.length; a.parked=placed;
-    const m4=new T.Matrix4(), q=new T.Quaternion(), pv=new T.Vector3(), sc=new T.Vector3(1,1,1), up=new T.Vector3(0,1,0);
+    const m4=new T.Matrix4(), q=new T.Quaternion(), pv=new T.Vector3(), sc=new T.Vector3(1,1,1), up=new T.Vector3(0,1,0); const recs=this.recs[icao]=[];
     cnt.forEach((arr,li)=>{
       if(!arr.length) return; const b=this.baked[li];
       for(const part of b.parts){
@@ -87,11 +95,12 @@ class Parked{
           const hdg=Math.atan2(s.dx,-s.dz);          // 機首の真方位（北=−z, 東=+x）
           q.setFromAxisAngle(up,-hdg);
           const gy=this.terrain.heightAt(s.x,s.z)+0.12;      // 舗装面
-          pv.set(s.x-P[0],gy-b.minY,s.z-P[1]); m4.compose(pv,q,sc); im.setMatrixAt(k,m4);
+          pv.set(s.x-P[0],gy-b.minY,s.z-P[1]); m4.compose(pv,q,sc); im.setMatrixAt(k,m4); recs.push({x:s.x,z:s.z,im,k,m:m4.clone()});
         });
         im.instanceMatrix.needsUpdate=true; grp.add(im);
       }
     });
+    this.applyRes(icao);
   }
 }
 root.Parked=Parked;

@@ -127,7 +127,7 @@ function compute(c, s, pilot, env, dt){
     c.phiHold=0; c.aInt=0;
   } else { ctl.aileron=clamp(rIn,-1,1); ctl.rudder=clamp(yIn,-1,1); ctl.nws = onGround?clamp(yIn,-1,1):0; }
   // 地上: 前輪操舵は低速ほど大きく
-  if(onGround){ const k = s.gs<12?1:(s.gs<45?0.5:0.2); ctl.nws = clamp(yIn,-1,1)*k; }
+  if(onGround){ const k = s.gs<12?1:(s.gs<45?0.5:0.2); const st = clamp(yIn + (s.gs<25 ? rIn*0.9 : 0), -1, 1); ctl.nws = st*k; }   // 低速の地上では A / D（ロール入力）でも前輪を操舵
   // ---- 推力 ----
   if(ap.on && ap.athr && apSpdThr!=null){
     let t=apSpdThr;

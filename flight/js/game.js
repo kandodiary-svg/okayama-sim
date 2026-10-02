@@ -5,6 +5,7 @@
 const G=root.GEO, F=root.FDM, C=root.FCS, D2R=Math.PI/180, KT=F.KT, FT=0.3048, NM=1852, MAGVAR=7.5;
 const clamp=F.clamp, n180=a=>((a+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;
 const $=id=>document.getElementById(id);
+const TAXI=root.TAXI, GATE_REF="3", NOSE_X=13.0;   // 出発ゲート（岡山桃太郎空港 3 番）
 const magDeg=r=>(((r/D2R)+MAGVAR)%360+360)%360;
 const fmtClock=h=>{ const hh=Math.floor(h)%24, mm=Math.floor((h%1)*60); return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); };
 
@@ -32,7 +33,22 @@ class Game{
     this.acft=new Aircraft(this.T,{}); this.scene.add(this.acft.root); this.acft.root.visible=false; this.lightsOn={nav:true,strobe:false,beacon:false,landing:false,taxi:false,logo:false};
     this.vsp={v1:0,vr:0,v2:0,vref:0}; this.route=[]; this.audio=opts.audio; this.hud=opts.hud; this.wx={wind:0,dir:0,jet:0,turb:0}; this.log={};
     this.assistConfig=true; this.simT=0; this.groundCache=null; this.warn=[]; this.eventT=0; this.touch=null; this.t=0; this.stats={};
+    this.makeTug();
     this.bindInput();
+  }
+  // プッシュバック用のトーイングカー（箱を組み合わせた簡単な形）
+  makeTug(){
+    const T=this.T, g=new T.Group(); const mat=(c)=>new T.MeshLambertMaterial({color:c});
+    const box=(w,h,l,x,y,z,c)=>{ const m=new T.Mesh(new T.BoxGeometry(w,h,l),mat(c)); m.position.set(x,y,z); g.add(m); return m; };
+    box(2.5,0.9,6.0,0,0.85,0,0xe2b100); box(2.3,1.1,2.4,0,1.85,-1.2,0x24303c); box(2.5,0.35,0.5,0,0.5,3.05,0x222222);
+    for(const sx of [-1,1]) for(const z of [-2.0,2.0]) box(0.5,1.0,1.0,sx*1.3,0.5,z,0x151515);
+    box(0.25,0.25,4.2,0,0.55,5.0,0x555555);     // トーバー（機首側へ）
+    g.visible=false; this.scene.add(g); this.tug=g;
+  }
+  updateTug(){
+    const g=this.tug, s=this.s; if(!g) return; if(!(this.push&&this.state==="fly")){ g.visible=false; return; }
+    const fw=[Math.sin(s.psi),-Math.cos(s.psi)]; const d=NOSE_X+7.2; const x=s.pos[0]+fw[0]*d, z=s.pos[2]+fw[1]*d; const h=this.terrain.heightAt(x,z);
+    g.visible=true; g.position.set(x-this.cam.x,h+0.12,z-this.cam.z); g.rotation.y=-s.psi;    // 車体の +z 側（トーバー）が機首のほうを向く
   }
   // ---------------- 地面 ----------------
   groundAt(x,z){
@@ -53,6 +69,7 @@ class Game{
   startPoint(o){
     const A=this.ap;
     if(o.id==="rjob_to"){ const re=A.runwayEnd("RJOB","07"); return {x:re.e.x,z:re.e.z,alt:240}; }
+    if(o.id==="rjob_gate"){ const st=this.gateStand(); return st?{x:st.stop[0],z:st.stop[1],alt:240}:this.startPoint({id:"rjob_to"}); }
     if(o.id==="rjob_app"){ const re=A.runwayEnd("RJOB","25"); return {x:re.e.x-re.e.ux*3000,z:re.e.z-re.e.uz*3000,alt:600}; }
     if(o.id==="cruise"){ const w=GEO_WPT.nagoya, p=G.ll2xz(w[0],w[1]); return {x:p[0],z:p[1],alt:9500}; }
     if(o.id==="rjtt_app"){ const re=A.runwayEnd("RJTT",o.rwy||"16L"); return {x:re.e.x-re.e.ux*28000,z:re.e.z-re.e.uz*28000,alt:900}; }
@@ -60,7 +77,7 @@ class Game{
   }
   ready(dt){   // 読み込み完了の判定
     const o=this.pending; if(!o) return false; const A=this.ap; this.loadT+=dt;
-    const icaoNeed=(o.id==="rjob_to"||o.id==="rjob_app")?"RJOB":(o.id==="rjtt_app"?"RJTT":null);
+    const icaoNeed=(o.id==="rjob_to"||o.id==="rjob_gate"||o.id==="rjob_app")?"RJOB":(o.id==="rjtt_app"?"RJTT":null);
     const loaded=this.terrain.settled();
     if(icaoNeed){ const a=A.ap[icaoNeed]; if(!a.built) return this.loadT>120; return loaded||this.loadT>30; }
     return loaded||this.loadT>6;
@@ -77,6 +94,18 @@ class Game{
     this.wx.turb=this.wx.turbBase||0; this.env.turb=this.wx.turb;
     const setAir=(x,z,alt,hdgTrue,cas,thr,flaps,gear)=>{ s.pos=[x,alt,z]; const a=F.atmos(alt); const tas=cas*KT/Math.sqrt(a.sigma); s.q=F.eulerToQ(hdgTrue,2.5*D2R,0); F.derived(s); s.vel=[s.fwd[0]*tas,0,s.fwd[2]*tas]; s.thr=[thr,thr]; pilot.throttle=thr; s.flaps=s.flapsTarget=flaps; pilot.flapsTarget=flaps; s.gear=s.gearTarget=gear; pilot.gearTarget=gear; F.derived(s); this.s.onGround=false; };
     let windFrom=null, scene=o.id;
+    this.push=null; this.autoTaxi=null; this.taxiPhase=null; this.taxiPlan=null; if(this.FS.pk) this.FS.pk.release("RJOB");
+    if(scene==="rjob_gate"){
+      const re=A.runwayEnd("RJOB","07"), e=re.e; const plan=this.planGate(); if(!plan){ scene="rjob_to"; }
+      else {
+        const p0=plan.push.poses[0], fw=[Math.sin(p0.psi),-Math.cos(p0.psi)]; const x=p0.mx-fw[0]*TAXI.MAIN, z=p0.mz-fw[1]*TAXI.MAIN, h=T.heightAt(x,z);
+        s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(p0.psi,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; s.onGround=true; F.derived(s);
+        this.taxiPlan=plan; this.taxiPhase="push"; this.push={i:0,d:0,v:0,t:0}; this.takeoffRwy=e; this.route=baseRouteToTokyo().concat(this.finalRoutePart(o)); windFrom=e.hdg;
+        if(this.FS.pk) this.FS.pk.reserve("RJOB",x,z,30);
+        this.setMsg("プッシュバック中（Enter でスキップ）","#3ddcff",8);
+        ap.alt=3000*FT; ap.hdg=e.hdg; ap.spd=250*KT; ap.vs=0; ap.spdIsMach=false;
+      }
+    }
     if(scene==="rjob_to"){
       const re=A.runwayEnd("RJOB","07"), e=re.e; const d=60; const x=e.x+e.ux*d, z=e.z+e.uz*d, h=T.heightAt(x,z);
       s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(e.hdg,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; F.derived(s);
@@ -100,6 +129,8 @@ class Game{
     ap.route=this.route; ap.wpIndex=0; this.stats.startFuel=s.fuel; this.stats.t0=this.t;
     this.state="fly"; this.pending=null; $("loadmsg").style.display="none"; this.acft.root.visible=true; this.applyView(this.view); this.sound("start");
   }
+  gateStand(){ const d=this.ap.data&&this.ap.data.RJOB; return d?TAXI.gateStand(d,GATE_REF):null; }
+  planGate(){ const d=this.ap.data&&this.ap.data.RJOB; if(!d) return null; const re=this.ap.runwayEnd("RJOB","07"); try{ return TAXI.planDeparture(d,GATE_REF,re.e); }catch(err){ console.error(err); return null; } }
   finalRoutePart(o){ const dest=o.dest||{icao:"RJTT",rwy:o.rwy||"16L"}; const A=this.ap; const re=A.runwayEnd(dest.icao,dest.rwy); if(!re) return []; const e=re.e; const pt=(d,name)=>({x:e.x-e.ux*d,z:e.z-e.uz*d,name}); this.destRwy={icao:dest.icao,name:dest.rwy}; return [pt(42000,"進入開始点"),pt(19000,"最終進入点")]; }
   engageBasic(cruise){ const ap=this.c.ap; ap.on=true; ap.athr=true; ap.latMode=this.route.length>0&&cruise?"LNAV":"HDG"; ap.vertMode=cruise?"ALT":"ALT"; if(!cruise){ ap.alt=Math.round(this.s.pos[1]/(100*FT))*100*FT; } }
   updateWind(){
@@ -124,8 +155,9 @@ class Game{
   simulate(dt){
     const s=this.s, c=this.c, pilot=this.pilot, env=this.env; this.readInput(dt);
     this.updateWind();
-    // 時間圧縮（低高度では 1x）
-    let ts=this.timeScale; if(s.radAlt<600||s.onGround) ts=1; if(this.state==="crashed") ts=1;
+    if(this.push&&this.state==="fly"){ this.pushStep(dt); this.afterStep(dt); return; }
+    // 時間圧縮（低高度では 1x。ただし自動タキシー中の地上走行は早送りできる）
+    let ts=this.timeScale; if(s.radAlt<600||s.onGround) ts=(this.autoTaxi&&s.onGround&&this.state==="fly"&&s.gs<12)?Math.min(ts,4):1; if(this.state==="crashed") ts=1;
     const sub=1/60; this.acc=(this.acc||0)+dt*ts; let n=0;
     // 高度が十分あるときは地面判定を簡略化
     const hc=this.terrain.heightAt(s.pos[0],s.pos[2]); const clr=s.pos[1]-hc; this.groundCache=(clr>900)?{on:true,v:{h:hc,kind:hc<=0.7?"water":"grass"}}:null;
@@ -138,12 +170,41 @@ class Game{
   }
   effectivePilot(){
     const p=Object.assign({},this.pilot), s=this.s, ap=this.c.ap;
+    if(this.autoTaxi&&this.taxiPhase==="taxi"&&s.onGround&&this.state==="fly"){
+      const a=this.autoTaxi.update(s,1/60); this.taxiInfo=a; this.pilot.throttle=a.thr; p.throttle=a.thr; p.brake=a.brake; p.yaw=a.nws; p.parking=false; this.pilot.parking=false; s.parking=false;
+      if(this.autoTaxi.done){ this.autoTaxi=null; this.timeScale=1; this.taxiPhase="done"; this.pilot.throttle=0; p.throttle=0; this.pilot.parking=true; this.say("滑走路に整列しました ― パーキングブレーキを外し、スロットルを上げて離陸（Shift / PageUp / 9）","#38e06a",8); }
+      return p;
+    }
     // 離陸滑走中は滑走路中心線に沿うよう自動で方向舵（入力があれば手動優先）
     if(s.onGround && !(ap.on&&ap.latMode==="LOC") && Math.abs(p.yaw)<0.05 && s.gs>6 && this.takeoffAssist!==false){
       const r=this.runwayUnder(s.pos[0],s.pos[2]); if(r){ const kind=this.ap.kindAt(s.pos[0],s.pos[2]);
         if(kind==="runway"){ const e=(Math.abs(n180(s.psi-r.hdg))<Math.abs(n180(s.psi-r.hdg-Math.PI)))?r.hdg:r.hdg+Math.PI; const err=n180(s.psi-e); if(Math.abs(err)<14*D2R){ const off=(s.pos[0]-r.ax)*(-r.uz)+(s.pos[2]-r.az)*(r.ux); const sgn=Math.abs(n180(e-r.hdg))<1?1:-1; const lat=off*sgn; p.yaw=clamp(-err*2.2-s.w[2]*1.2-lat*0.012,-0.6,0.6); } } } }
     // 電源・自動解除（スロットルを入れたらパーキングブレーキ解除）
     return p;
+  }
+  // プッシュバック: 主脚中心が計画した経路を後ろ向きに進む（物理計算はせず位置と向きを直接動かす）
+  pushStep(dt){
+    const s=this.s, pu=this.push, poses=this.taxiPlan.push.poses, n=poses.length; pu.t+=dt;
+    const rem=(n-1)-pu.d, vmax=5.0, acc=0.9;
+    if(this.keys.Enter||pu.skip){ pu.d=n-1; }
+    else { const vt=Math.min(vmax,Math.sqrt(2*acc*Math.max(0,rem))+0.25); pu.v+=clamp(vt-pu.v,-acc*dt*1.6,acc*dt); pu.d=Math.min(n-1,pu.d+pu.v*dt); }
+    const i0=Math.min(n-2,Math.floor(pu.d)), f=pu.d-i0, a=poses[i0], b=poses[i0+1];
+    const mx=a.mx+(b.mx-a.mx)*f, mz=a.mz+(b.mz-a.mz)*f, psi=a.psi+n180(b.psi-a.psi)*f;
+    const fw=[Math.sin(psi),-Math.cos(psi)]; const x=mx-fw[0]*TAXI.MAIN, z=mz-fw[1]*TAXI.MAIN, h=this.terrain.heightAt(x,z);
+    s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(psi,0,0); s.vel=[0,0,0]; s.w=[0,0,0]; s.onGround=true; s.parking=true; this.pilot.parking=true; s.nws=0; F.derived(s);
+    if(pu.d>=n-1-1e-6){ this.push=null; this.taxiPhase="taxi"; this.afterPush(); }
+  }
+  afterPush(){
+    this.say("プッシュバック完了 ― Enter で自動タキシー（手動なら P でブレーキを外して前進）","#3ddcff",9);
+  }
+  startAutoTaxi(){
+    const s=this.s; if(this.taxiPhase!=="taxi") return; this.autoTaxi=new TAXI.AutoTaxi(this.taxiPlan.taxi); this.pilot.parking=false; s.parking=false; this.say("自動タキシー開始（操作すると手動に戻ります。T キーで早送り）","#3ddcff",5);
+  }
+  cancelAutoTaxi(why){ if(!this.autoTaxi) return; this.autoTaxi=null; if(this.timeScale>1&&this.s.onGround) this.timeScale=1; this.say(why||"手動操縦に切り替え","#ffb11a",2.5); }
+  // タキシー段階の管理（手動で滑走路に乗ったら「完了」）
+  taxiTick(){
+    if(this.taxiPhase!=="taxi"||this.autoTaxi) return; const s=this.s, e=this.takeoffRwy; if(!e) return;
+    if(this.ap.kindAt(s.pos[0],s.pos[2])==="runway"&&Math.abs(n180(s.psi-e.hdg))<25*D2R){ this.taxiPhase="done"; this.say("滑走路に乗りました ― スロットルを上げて離陸","#38e06a",5); }
   }
   afterStep(dt){
     const s=this.s, pilot=this.pilot, c=this.c, ap=c.ap;
@@ -159,6 +220,8 @@ class Game{
     if(this.state==="crashed"&&this.t-this.crashT>2.2&&!this.ended){ this.ended=true; this.showEnd("crash"); }
     // 着陸後の停止
     if(this.landed&&!this.ended&&s.gs<1.5&&onG&&this.t-this.touchT>5){ this.ended=true; this.showEnd("landed"); }
+    this.taxiTick(); if(this.taxiPhase==="taxi"&&s.parking&&pilot.throttle>0.04&&s.onGround){ pilot.parking=false; s.parking=false; this.say("パーキングブレーキ解除","#fff",1.4); }
+    if(this.stats.liftoff&&this.taxiPhase){ this.taxiPhase=null; this.autoTaxi=null; }
     // 自動機能
     this.autoLights(); this.apprAssist(dt); this.takeoffCalls(); this.computeWarnings(dt); this.updateHints();
     // 失速速度（見かけの目安）
@@ -237,6 +300,8 @@ class Game{
     const s=this.s, ap=this.c.ap, p=this.pilot; let h="";
     const cas=s.cas/KT, raFt=s.radAlt/FT, altFt=s.pos[1]/FT;
     if(this.state==="crashed") h="";
+    else if(this.push) h="プッシュバック中です。まもなく自分で動かせます（Enter でスキップ）";
+    else if(this.taxiPhase==="taxi"){ if(this.autoTaxi) h="自動タキシー中。手で操作するか Enter で止められます（T で早送り）"; else if(s.parking) h="パーキングブレーキを外す（P）→ スロットルを少し上げて（数字キー 1 → しばらくしたら 0）前進。A / D で曲がる。Enter で自動タキシー"; else h="青いラインに沿って進む。A / D で操舵、速度が出すぎたら Space でブレーキ（目安 15 kt 以下、曲がり角は 8 kt）"; }
     else if(s.onGround&&!this.stats.liftoff&&!this.landed){ if(p.throttle<0.1) h="スロットルを上げて離陸滑走（Shift / PageUp / 数字キー 9）。パーキングブレーキは自動で外れます"; else if(cas<this.vsp.vr) h="加速中。滑走路中心線は自動で維持されます。VR（"+this.vsp.vr+" kt）で操縦桿を引く（↓ / S）"; else h="操縦桿を引いて機首を約 10° 上げる"; }
     else if(this.stats.liftoff&&!this.landed&&s.gear>0.5&&raFt>30&&s.vs>0) h="正の上昇率 → ギア上げ（G）";
     else if(!this.landed&&s.gear<0.5&&s.flaps>0.5&&altFt>1500&&cas>180) h="フラップ上げ（V でフラップを一段ずつ引き上げ）";
@@ -277,7 +342,7 @@ class Game{
       case "KeyL": p.spoilerArm=!p.spoilerArm; this.say(p.spoilerArm?"グラウンドスポイラー ARM":"スポイラー ARM 解除","#fff",1.4); break;
       case "KeyO": p.autobrake=(p.autobrake+1)%5; this.say("オートブレーキ "+["OFF","1","2","3","MAX"][p.autobrake],"#fff",1.4); break;
       case "KeyC": this.cycleView(); break;
-      case "Enter": this.toggleAP(); break;
+      case "Enter": if(this.push) break; if(this.taxiPhase==="taxi"){ if(this.autoTaxi) this.cancelAutoTaxi("自動タキシーを止めました"); else this.startAutoTaxi(); } else this.toggleAP(); break;
       case "KeyY": this.c.assist=!this.c.assist; this.say(this.c.assist?"操縦補助 ON":"操縦補助 OFF（直接操縦）","#ffb11a",2); break;
       case "KeyT": this.timeScale=this.timeScale>=4?1:this.timeScale*2; this.say("時間 ×"+this.timeScale,"#fff",1.4); break;
       case "KeyU": if(this.easy){ this.easy.toggle(); const b=$("bEasy"); if(b) b.classList.toggle("on",this.easy.on); } break;
@@ -290,7 +355,7 @@ class Game{
       case "KeyI": case "KeyJ": this.pressAPPR(); break;
       case "Pause": this.paused=!this.paused; break;
     }
-    if(/^Digit[0-9]$/.test(e.code)&&!sh){ const d=+e.code.slice(5); p.throttle=d===9?1:d/10; }
+    if(/^Digit[0-9]$/.test(e.code)&&!sh){ const d=+e.code.slice(5); p.throttle=d===9?1:d/10; if(this.autoTaxi) this.cancelAutoTaxi(); }
   }
   readInput(dt){
     const K=this.keys, p=this.pilot; const axis=(a,b)=>(K[a]?1:0)-(K[b]?1:0);
@@ -303,6 +368,7 @@ class Game{
     if(K.ControlLeft||K.ControlRight||K.PageDown||K.Minus||K.NumpadSubtract) p.throttle=clamp(p.throttle-dt*0.45,0,1);
     p.brake=(K.Space||K.KeyB||this.padBrake>0.1||this.touchBrake)?1:0; if(this.padBrake>0.1) p.brake=this.padBrake;
     p.reverse=!!(K.KeyR||this.touchRev);
+    if(this.autoTaxi&&(K.Space||K.KeyB||K.KeyA||K.KeyD||K.KeyQ||K.KeyE||K.KeyZ||K.KeyX||K.ArrowLeft||K.ArrowRight||K.ShiftLeft||K.ShiftRight||K.PageUp||K.PageDown||K.ControlLeft||K.ControlRight||this.touchBrake)) this.cancelAutoTaxi();
     if(K.Comma) p.trim=clamp(p.trim-dt*0.2,-1,1); if(K.Period) p.trim=clamp(p.trim+dt*0.2,-1,1);
     this.pollPad();
     $("thrfill")&&($("thrfill").style.height=(p.throttle*100).toFixed(0)+"%");
@@ -337,7 +403,7 @@ class Game{
         const ql=new T.Quaternion().setFromEuler(new T.Euler(this.look.pitch,this.look.yaw,0,"YXZ")); camera.quaternion.copy(qa).multiply(ql); fov=(this.view==="cockpit"?62:56)*this.camZoom;
       }
       if(Math.abs(camera.fov-fov)>0.01){ camera.fov=fov; camera.updateProjectionMatrix(); }
-      this.acft.root.quaternion.copy(qa); this.acft.root.position.set(s.pos[0]-cam.x,s.pos[1],s.pos[2]-cam.z);
+      this.acft.root.quaternion.copy(qa); this.acft.root.position.set(s.pos[0]-cam.x,s.pos[1],s.pos[2]-cam.z); this.updateTug();
     } else if(this.state==="loading"){ camera.quaternion.setFromEuler(new T.Euler(-0.12,0.6,0,"YXZ")); }
     else if(this.state==="menu"){ const re=this.ap.runwayEnd("RJOB","07"); const mx=re.e.x+re.e.ux*700+re.e.uz*-90, mz=re.e.z+re.e.uz*700+re.e.ux*90; cam.x=mx; cam.z=mz; cam.y=(re.h||240)+60; camY=cam.y; camera.quaternion.setFromEuler(new T.Euler(-0.05,-(re.e.hdg)-0.9+Math.sin(this.t*0.07)*0.25,0,"YXZ")); if(Math.abs(camera.fov-55)>0.01){ camera.fov=55; camera.updateProjectionMatrix(); } }
     camera.position.set(0,camY,0);

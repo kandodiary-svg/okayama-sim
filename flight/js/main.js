@@ -42,7 +42,7 @@ async function init(){
   document.getElementById("load").style.display="none";
   game.state="menu"; document.getElementById("menu").style.display="flex";
   // 試験用: ?scn=rjob_to&view=chase で自動開始
-  if(q.get("scn")){ const o={id:q.get("scn"),hour:+q.get("h")||14,cloud:q.get("cloud")||"fair",wx:{wind:q.get("wind")||"light"},rwy:q.get("rwy")||"16L"}; if(o.id==="rjob_to"||o.id==="cruise"||o.id==="rjtt_app") o.dest={icao:"RJTT",rwy:o.rwy}; if(o.id==="rjob_app") o.dest={icao:"RJOB",rwy:"25"}; game.destRwy=o.dest||null; game.view=q.get("view")||"chase"; document.getElementById("menu").style.display="none"; game.startScenario(o); ui.showPlay(true); }
+  if(q.get("scn")){ const o={id:q.get("scn"),hour:+q.get("h")||14,cloud:q.get("cloud")||"fair",wx:{wind:q.get("wind")||"light"},rwy:q.get("rwy")||"16L"}; if(o.id==="rjob_to"||o.id==="rjob_gate"||o.id==="cruise"||o.id==="rjtt_app") o.dest={icao:"RJTT",rwy:o.rwy}; if(o.id==="rjob_app") o.dest={icao:"RJOB",rwy:"25"}; game.destRwy=o.dest||null; game.view=q.get("view")||"chase"; document.getElementById("menu").style.display="none"; game.startScenario(o); ui.showPlay(true); }
   requestAnimationFrame(frame);
 }
 init().catch(e=>{ console.error(e); const l=document.getElementById("lmsg"); if(l) l.textContent="エラー: "+e.message; });

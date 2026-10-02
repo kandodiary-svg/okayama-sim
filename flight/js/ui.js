@@ -12,7 +12,7 @@ function bindUI(game, hud, audio){
   document.querySelectorAll("input[name=scn]").forEach(e=>e.onchange=syncRwy); syncRwy();
   $("bStart").onclick=()=>{
     audio.start(); const id=scn(); const o={id,hour:+$("oHour").value,cloud:$("oCloud").value,wx:{wind:$("oWind").value},rwy:$("oRwy").value};
-    if(id==="rjob_to"||id==="cruise") o.dest={icao:"RJTT",rwy:$("oRwy").value};
+    if(id==="rjob_to"||id==="rjob_gate"||id==="cruise") o.dest={icao:"RJTT",rwy:$("oRwy").value};
     if(id==="rjtt_app") o.dest={icao:"RJTT",rwy:$("oRwy").value};
     if(id==="rjob_app") o.dest={icao:"RJOB",rwy:"25"};
     game.destRwy=o.dest||null; game.startScenario(o); showPlay(true); setTimeout(layout,0);

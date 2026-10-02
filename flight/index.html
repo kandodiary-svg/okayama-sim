@@ -95,7 +95,8 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
   <p style="margin:-4px 0 10px;font-size:12.5px"><a href="../" style="color:#9fc4ff">← 岡山シミュレーター（路面電車・新幹線など）へ戻る</a></p>
   <div class="sub">試作版 ／ 機体は B737-800 クラスの架空塗装機 ／ 地形は国土地理院、東京23区の建物は国土交通省 PLATEAU のデータ</div>
   <div class="scn" id="scnList">
-    <label><input type="radio" name="scn" value="rjob_to" checked><div><b>① 岡山桃太郎空港から離陸 → 羽田へ</b><span>滑走路07の端から。離陸〜上昇〜巡航〜羽田進入・着陸まで通して飛べます</span></div></label>
+    <label><input type="radio" name="scn" value="rjob_gate" checked><div><b>① 岡山桃太郎空港のゲートから出発 → 羽田へ</b><span>ターミナルのゲートからプッシュバック → 誘導路を走って（自動タキシーも可）→ 離陸〜羽田着陸まで通して</span></div></label>
+    <label><input type="radio" name="scn" value="rjob_to"><div><b>①′ 岡山桃太郎空港の滑走路から離陸 → 羽田へ</b><span>滑走路07の端から（地上走行を省略）。離陸〜上昇〜巡航〜羽田進入・着陸</span></div></label>
     <label><input type="radio" name="scn" value="cruise"><div><b>② 巡航中から羽田へ（名古屋付近・約35,000ft）</b><span>オートパイロットで降下〜進入〜着陸を体験</span></div></label>
     <label><input type="radio" name="scn" value="rjtt_app"><div><b>③ 羽田空港へ進入・着陸</b><span>最終進入の約30km手前から。滑走路は下で選べます</span></div></label>
     <label><input type="radio" name="scn" value="rjob_app"><div><b>④ 岡山桃太郎空港へ進入・着陸（RWY25）</b><span>最終進入の約22km手前から</span></div></label>
@@ -117,12 +118,12 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 <div class="panel" id="help"><div class="card"><h2>操作方法</h2>
   <div class="kbd">
     <b>↑ ↓ / W S</b><span>操縦桿（↓ または S = 引く＝機首上げ）</span>
-    <b>← → / A D</b><span>ロール（旋回） ／ <b>Q E</b> または <b>Z X</b> = 方向舵</span>
+    <b>← → / A D</b><span>ロール（旋回）。<b>地上（時速約 90km/h 以下）では前輪の操舵</b>にもなります ／ <b>Q E</b> または <b>Z X</b> = 方向舵（地上では前輪）</span>
     <b>Shift / Ctrl</b><span>推力 上げる／下げる（長押し）。 <b>PageUp/PageDown</b>、数字キー <b>0〜9</b>（9=最大）、<b>Home/End</b> も可。右端のスライダーでも操作</span>
     <b>G</b><span>ギア上げ／下げ ／ <b>F / V</b> フラップ 下げ／上げ（一段ずつ）</span>
     <b>Space / B</b><span>ブレーキ（長押し） ／ <b>R</b> 逆噴射（地上・長押し） ／ <b>P</b> 駐機ブレーキ ／ <b>L</b> スポイラー自動展開 ／ <b>O</b> オートブレーキ</span>
     <b>K</b><span>スピードブレーキ（空中で降下・減速）</span>
-    <b>Enter</b><span>オートパイロット ON/OFF。上のパネル（MCP）で 速度・方位・高度・昇降率 を設定</span>
+    <b>Enter</b><span>オートパイロット ON/OFF。上のパネル（MCP）で 速度・方位・高度・昇降率 を設定 ／ <b>ゲート出発のとき</b>は、プッシュバックのスキップ、地上では<b>自動タキシー</b>の開始・停止</span>
     <b>I または J</b><span>ILS進入（APPR）。滑走路の延長線に乗っていると、ローカライザーとグライドスロープで自動進入・着陸します</span>
     <b>C</b><span>視点 コックピット／外から／客室の窓。ドラッグで見回し・周回、ホイールでズーム、ダブルクリックで戻す</span>
     <b>U</b><span><b style="color:#58c4ff">かんたんモード</b>のオン／オフ。青いラインで進む道を示し、パネルに「いま押すキー」を表示します</span>
@@ -134,6 +135,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/geo.js"></script>
 <script src="js/fdm.js"></script>
+<script src="js/taxi.js"></script>
 <script src="js/fcs.js"></script>
 <script src="js/terrain.js"></script>
 <script src="js/sky.js"></script>
