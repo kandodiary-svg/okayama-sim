@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#9bb}canvas{display:block}</style></head><body>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/geo.js"></script><script src="js/aircraft.js"></script>
+<script>
+const T=THREE; const q=new URLSearchParams(location.search);
+const r=new T.WebGLRenderer({antialias:true}); r.setSize(innerWidth,innerHeight); document.body.appendChild(r.domElement);
+const sc=new T.Scene(); sc.background=new T.Color(0x9cc3e8);
+const cam=new T.PerspectiveCamera(35,innerWidth/innerHeight,0.5,500);
+sc.add(new T.HemisphereLight(0xcfe3ff,0x6a6a60,0.9)); const sun=new T.DirectionalLight(0xfff2dd,1.5); sun.position.set(30,60,40); sc.add(sun);
+const gnd=new T.Mesh(new T.PlaneGeometry(400,400),new T.MeshBasicMaterial({color:0x555a60})); gnd.rotation.x=-Math.PI/2; gnd.position.y=-3.85-0.0; sc.add(gnd);
+const ac=window.ac=new Aircraft(T,{}); sc.add(ac.root);
+const s={gear:+q.get('gear')||1,flaps:+q.get('fl')||0,thr:[0.3,0.3],gs:0,ail:+q.get('ail')||0,elev:+q.get('el')||0,rud:+q.get('rud')||0,speedbrake:+q.get('sb')||0,nws:0};
+const az=(+q.get('az')||35)*Math.PI/180, el=(+q.get('el2')||14)*Math.PI/180, d=+q.get('d')||75;
+cam.position.set(Math.sin(az)*Math.cos(el)*d,Math.sin(el)*d,Math.cos(az)*Math.cos(el)*d); cam.lookAt(0,0,0);
+ac.update(s,{},0.016,0,{nav:true,strobe:true,beacon:true,landing:true,taxi:true,logo:true});
+r.render(sc,cam); window.done=1;
+</script></body></html>

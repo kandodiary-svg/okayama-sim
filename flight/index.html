@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>岡山空港発 フライトシミュレーター（試作）</title>
+<style>
+:root{--ac:#3ddcff;--ok:#38e06a;--warn:#ffb11a;--bad:#ff3b30;--pnk:#ff5ad8}
+html,body{margin:0;height:100%;background:#0b1118;color:#e8eef5;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
+canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+canvas#frame{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:2}
+body.v-cockpit canvas#frame,body.v-window canvas#frame{display:block}
+#dbg{position:fixed;left:8px;bottom:8px;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#cfe;background:rgba(0,0,0,.45);padding:4px 7px;border-radius:5px;white-space:pre;pointer-events:none;z-index:5;display:none}
+body.dbg #dbg{display:block}
+body.v-window #inst{display:none!important}
+button{font:inherit;color:#e8eef5;background:rgba(18,26,36,.82);border:1px solid #33465a;border-radius:7px;padding:5px 9px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:hover{background:rgba(36,52,70,.92)} button:active{background:#2c4a66}
+button.on{background:#12432b;border-color:var(--ok);color:#caffdb} button.arm{background:#3b3210;border-color:var(--warn);color:#ffe9b0}
+#mcp{position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:6;display:none;background:rgba(10,15,20,.78);border:1px solid #2b3b4b;border-radius:10px;padding:6px 8px;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:98vw;backdrop-filter:blur(3px)}
+#mcp .win{display:flex;flex-direction:column;align-items:center;min-width:64px}
+#mcp .win label{font-size:9.5px;color:#8aa;letter-spacing:.06em}
+#mcp .win .v{font:bold 17px ui-monospace,Menlo,monospace;color:var(--pnk);background:#050709;border:1px solid #223;border-radius:5px;padding:1px 7px;min-width:52px;text-align:center}
+#mcp .win .pm{display:flex;gap:3px;margin-top:2px} #mcp .win .pm button{padding:0 8px;line-height:18px;font-size:13px}
+#mcp .btns{display:flex;gap:4px;flex-wrap:wrap}
+#mcp .btns button{padding:5px 8px;font-size:12px;font-weight:600;letter-spacing:.02em}
+#topright{position:fixed;top:8px;right:8px;z-index:7;display:none;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:36vw}
+#topright button{font-size:12px;padding:4px 8px}
+#inst{position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:3;pointer-events:none;display:none}
+#hint{position:fixed;left:50%;bottom:170px;transform:translateX(-50%);z-index:6;background:rgba(8,40,60,.78);border:1px solid #1c5d7d;color:#d6f4ff;padding:6px 12px;border-radius:8px;font-size:13px;max-width:min(720px,92vw);text-align:center;display:none;pointer-events:none}
+#bigmsg{position:fixed;left:50%;top:32%;transform:translate(-50%,-50%);z-index:6;font:bold 26px/1.2 -apple-system,"Hiragino Sans",sans-serif;text-shadow:0 2px 8px #000,0 0 3px #000;opacity:0;transition:opacity .25s;pointer-events:none;text-align:center;max-width:92vw}
+#thr{position:fixed;right:12px;bottom:12px;width:44px;height:min(34vh,230px);z-index:6;display:none;background:rgba(10,15,20,.72);border:1px solid #33465a;border-radius:10px;touch-action:none;cursor:ns-resize}
+#thr .fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(#2fa8d0,#1e6f93);border-radius:0 0 9px 9px}
+#thr .lab{position:absolute;left:0;right:0;top:-18px;text-align:center;font-size:10px;color:#9ab}
+#thrfill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(#35c9ff,#1b6a8f);border-radius:0 0 9px 9px;opacity:.85}
+#bar{position:fixed;left:8px;bottom:8px;z-index:6;display:none;gap:5px;flex-wrap:wrap;max-width:24vw}
+#bar button{font-size:12px;padding:5px 8px}
+#loadmsg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9;background:rgba(0,0,0,.65);padding:12px 20px;border-radius:10px;display:none}
+#load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;background:#0b1118;z-index:20;gap:10px}
+#load .t{font-size:18px;letter-spacing:.06em} #load .s{font-size:12px;opacity:.7}
+.panel{position:fixed;inset:0;z-index:15;display:none;align-items:center;justify-content:center;background:rgba(5,9,14,.82);backdrop-filter:blur(4px)}
+.card{background:#101923;border:1px solid #2b3d50;border-radius:14px;padding:18px 20px;max-width:min(880px,94vw);max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.card h1{margin:0 0 4px;font-size:22px} .card h2{margin:0 0 8px;font-size:19px} .card .sub{opacity:.7;font-size:12px;margin-bottom:12px}
+.scn{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin:8px 0}
+.scn label{display:block;border:1px solid #2b3d50;border-radius:10px;padding:9px 11px;cursor:pointer;background:#0d1620}
+.scn label:hover{border-color:#4a7aa0} .scn input{display:none} .scn input:checked+div{color:var(--ac)} .scn label:has(input:checked){border-color:var(--ac);background:#0f2432}
+.scn b{display:block;font-size:14px;margin-bottom:2px} .scn span{font-size:11.5px;opacity:.75;line-height:1.4}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:8px 0}
+.opts div{font-size:12px} .opts select{width:100%;margin-top:3px;background:#0d1620;color:#e8eef5;border:1px solid #2b3d50;border-radius:7px;padding:6px;font:inherit}
+.go{display:flex;gap:8px;justify-content:flex-end;margin-top:10px} .go button{font-size:15px;padding:9px 20px;background:#14507a;border-color:#3d8fc4}
+#end .ok{color:var(--ok);font-weight:700} #end .bad{color:#ff7a70;font-weight:700} #end table{border-collapse:collapse;margin:8px 0;font-size:13px} #end td{padding:4px 12px 4px 0;border-bottom:1px solid #223}
+#end .btns{display:flex;gap:8px;margin-top:10px} #end button{padding:8px 16px;font-size:14px}
+#help .kbd{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:12.5px;margin-top:6px} #help b{color:var(--ac);font-family:ui-monospace,Menlo,monospace;font-weight:600}
+#touch{position:fixed;inset:0;z-index:5;pointer-events:none;display:none}
+#stick{position:absolute;left:22px;bottom:150px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.25);pointer-events:auto;touch-action:none}
+#knob{position:absolute;left:45px;top:45px;width:40px;height:40px;border-radius:50%;background:rgba(61,220,255,.45)}
+#tbtns{position:absolute;right:76px;bottom:16px;display:flex;gap:6px;pointer-events:auto;flex-wrap:wrap;max-width:200px;justify-content:flex-end}
+#tbtns button{padding:10px 12px;font-size:13px}
+body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
+@media (max-width:760px){#bar{max-width:30vw}}
+</style></head><body>
+<canvas id="gl"></canvas><canvas id="frame"></canvas>
+<canvas id="inst"></canvas>
+<div id="dbg"></div>
+<div id="mcp">
+  <div class="win"><label id="lblspd">速度 SPD</label><div class="v" id="vspd">250</div><div class="pm"><button data-k="spd" data-d="-1">−</button><button data-k="spd" data-d="1">＋</button></div></div>
+  <div class="win"><label>方位 HDG</label><div class="v" id="vhdg">000</div><div class="pm"><button data-k="hdg" data-d="-1">−</button><button data-k="hdg" data-d="1">＋</button></div></div>
+  <div class="win"><label>高度 ALT(ft)</label><div class="v" id="valt">3000</div><div class="pm"><button data-k="alt" data-d="-1">−</button><button data-k="alt" data-d="1">＋</button></div></div>
+  <div class="win"><label>昇降率 V/S</label><div class="v" id="vvs">+0</div><div class="pm"><button data-k="vs" data-d="-1">−</button><button data-k="vs" data-d="1">＋</button></div></div>
+  <div class="btns">
+    <button id="bAP" title="オートパイロット (Enter)">A/P</button><button id="bAT" title="オートスロットル">A/T</button><button id="bLNAV" title="経由地に沿って自動航行">LNAV</button><button id="bHDG">HDG</button>
+    <button id="bALT">ALT</button><button id="bVS">V/S</button><button id="bFLCH" title="速度を保って上昇・降下">FLCH</button><button id="bAPPR" title="ILS進入 (I)">APPR</button><button id="bMACH" title="速度表示の切り替え">kt/M</button>
+  </div>
+</div>
+<div id="topright"><span id="viewname" style="font-size:12px;opacity:.7;align-self:center"></span><button id="bView">視点 (C)</button><button id="bTime">時間 ×1</button><button id="bSnd">音</button><button id="bHelp">操作 (?)</button><button id="bPause">メニュー</button></div>
+<div id="hint"></div><div id="bigmsg"></div>
+<div id="bar">
+  <button id="bGear">ギア (G)</button><button id="bFlapUp">フラップ− (V)</button><button id="bFlapDn">フラップ＋ (F)</button><button id="bSpoil">スポイラ (L)</button><button id="bAB">オートブレーキ (O)</button><button id="bPark">駐車ブレーキ (P)</button><button id="bBrake">ブレーキ</button><button id="bRev">逆噴射</button>
+</div>
+<div id="thr"><div class="lab">推力</div><div id="thrfill"></div></div>
+<div id="touch"><div id="stick"><div id="knob"></div></div><div id="tbtns"></div></div>
+<div id="loadmsg"></div>
+<div id="load"><div class="t">読み込み中…</div><div class="s" id="lmsg"></div></div>
+
+<div class="panel" id="menu"><div class="card">
+  <h1>✈ 岡山空港発 フライトシミュレーター</h1>
+  <div class="sub">試作版 ／ 機体は B737-800 クラスの架空塗装機 ／ 地形は国土地理院、東京23区の建物は国土交通省 PLATEAU のデータ</div>
+  <div class="scn" id="scnList">
+    <label><input type="radio" name="scn" value="rjob_to" checked><div><b>① 岡山桃太郎空港から離陸 → 羽田へ</b><span>滑走路07の端から。離陸〜上昇〜巡航〜羽田進入・着陸まで通して飛べます</span></div></label>
+    <label><input type="radio" name="scn" value="cruise"><div><b>② 巡航中から羽田へ（名古屋付近・約35,000ft）</b><span>オートパイロットで降下〜進入〜着陸を体験</span></div></label>
+    <label><input type="radio" name="scn" value="rjtt_app"><div><b>③ 羽田空港へ進入・着陸</b><span>最終進入の約30km手前から。滑走路は下で選べます</span></div></label>
+    <label><input type="radio" name="scn" value="rjob_app"><div><b>④ 岡山桃太郎空港へ進入・着陸（RWY25）</b><span>最終進入の約22km手前から</span></div></label>
+  </div>
+  <div class="opts">
+    <div>羽田の使用滑走路<select id="oRwy"><option value="16L">16L（北から・都心上空）</option><option value="16R">16R（北から・都心上空）</option><option value="34L">34L（南から・東京湾上）</option><option value="34R">34R（南から・東京湾上）</option><option value="22">22（海側・南西から）</option><option value="05">05</option></select></div>
+    <div>時刻<select id="oHour"><option value="7">朝（7:00）</option><option value="14" selected>昼（14:00）</option><option value="17.6">夕方（17:35）</option><option value="19.4">日没後（19:25）</option><option value="21">夜（21:00）</option></select></div>
+    <div>天気<select id="oCloud"><option value="clear">快晴</option><option value="fair" selected>晴れ（雲少なめ）</option><option value="cloudy">曇り（雲多め）</option></select></div>
+    <div>風<select id="oWind"><option value="calm">無風</option><option value="light" selected>弱い向かい風</option><option value="cross">横風（約14kt）</option><option value="strong">強い風（約22kt）</option></select></div>
+  </div>
+  <div class="go"><button id="bHelp2" style="background:#18222d;border-color:#33465a;font-size:13px">操作方法</button><button id="bStart">▶ スタート</button></div>
+</div></div>
+
+<div class="panel" id="pause"><div class="card" style="min-width:min(380px,90vw)">
+  <h2>一時停止</h2>
+  <div class="go" style="justify-content:flex-start;flex-direction:column;align-items:stretch;gap:8px"><button id="pResume">再開</button><button id="pRetry">最初からやり直す</button><button id="pMenu">メニューへ戻る</button></div>
+</div></div>
+<div class="panel" id="end"><div class="card"></div></div>
+<div class="panel" id="help"><div class="card"><h2>操作方法</h2>
+  <div class="kbd">
+    <b>↑ ↓ / W S</b><span>操縦桿（↓ または S = 引く＝機首上げ）</span>
+    <b>← → / A D</b><span>ロール（旋回） ／ <b>Q E</b> または <b>Z X</b> = 方向舵</span>
+    <b>Shift / Ctrl</b><span>推力 上げる／下げる（長押し）。 <b>PageUp/PageDown</b>、数字キー <b>0〜9</b>（9=最大）、<b>Home/End</b> も可。右端のスライダーでも操作</span>
+    <b>G</b><span>ギア上げ／下げ ／ <b>F / V</b> フラップ 下げ／上げ（一段ずつ）</span>
+    <b>Space / B</b><span>ブレーキ（長押し） ／ <b>R</b> 逆噴射（地上・長押し） ／ <b>P</b> 駐機ブレーキ ／ <b>L</b> スポイラー自動展開 ／ <b>O</b> オートブレーキ</span>
+    <b>K</b><span>スピードブレーキ（空中で降下・減速）</span>
+    <b>Enter</b><span>オートパイロット ON/OFF。上のパネル（MCP）で 速度・方位・高度・昇降率 を設定</span>
+    <b>I または J</b><span>ILS進入（APPR）。滑走路の延長線に乗っていると、ローカライザーとグライドスロープで自動進入・着陸します</span>
+    <b>C</b><span>視点 コックピット／外から／客室の窓。ドラッグで見回し・周回、ホイールでズーム、ダブルクリックで戻す</span>
+    <b>T</b><span>時間を速める ×1/×2/×4（地上近くでは自動で ×1） ／ <b>N</b> 地図(ND)の縮尺 ／ <b>H</b> ヒント表示 ／ <b>M</b> 消音 ／ <b>Y</b> 操縦補助 ON/OFF ／ <b>Esc</b> メニュー</span>
+  </div>
+  <p style="font-size:12px;opacity:.75;margin:10px 0 0">初期設定の「操縦補助」は、桿を離すと経路角とバンクを保つ機能です（Yキーで切ると素の操縦になります）。</p>
+  <div class="go"><button id="hClose">閉じる</button></div></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/fdm.js"></script>
+<script src="js/fcs.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/sky.js"></script>
+<script src="js/buildings.js"></script>
+<script src="js/airports.js"></script>
+<script src="js/airlights.js"></script>
+<script src="js/aircraft.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body></html>
