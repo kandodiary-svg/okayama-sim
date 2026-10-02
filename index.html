@@ -3864,6 +3864,7 @@ const Snd = (() => {
   let noiseBuf = null, windN = null, rumbN = null, hissN = null, lastTun = false, atcTimer = null;
   // 新幹線（N700）: 風切り音・低い唸り・IGBT インバータの磁励音（速度に連動して音程が上がる）・トンネル出入りの圧力変動音。
   // 溶接レールなので在来線のような継目音は鳴らさない。音は合成による近似で、実車の録音ではない
+  const hsMotorLv = 0.3;
   function hsUpdate(t, st){
     const vk = Number.isFinite(st.vk) ? st.vk : 0, k = Math.min(1, vk / 300), tun = st.tun ? 1 : 0, lvl = sm(1, 50, vk);
     // v38: 在来線のような継目音は出さない（溶接レール）。低速だけ弱く残す。主役は車内録音のループ。
@@ -3873,7 +3874,8 @@ const Snd = (() => {
     if(hsL){
       const lv = ins ? 0.42 : 0.2, tg = tun ? 1.25 : 1;
       hsL.idle.g.gain.setTargetAtTime(lv * 0.6 * (1 - sm(40, 150, vk)), t, 0.4);
-      hsL.cruise.g.gain.setTargetAtTime(lv * sm(15, 130, vk) * (1 - sm(200, 285, vk) * 0.8) * tg, t, 0.5);
+      const pw = Math.max(0, Math.min(1, Math.max(st.pf, st.bf * 0.7))) * sm(5, 120, vk) * (1 - sm(200, 290, vk));   // v39.2: 加速・回生中は録音の走行音が少し強まる（電子音の磁励音の代わり）
+      hsL.cruise.g.gain.setTargetAtTime(lv * sm(15, 130, vk) * (1 - sm(200, 285, vk) * 0.8) * tg * (1 + 0.2 * pw), t, 0.5);
       hsL.roar.g.gain.setTargetAtTime(lv * sm(150, 270, vk) * tg, t, 0.5);
       const cut = (ins ? 7000 : 2500) * (tun ? 0.7 : 1);              // 外から聞くときはこもらせる
       for(const k in hsL) hsL[k].lp.frequency.setTargetAtTime(cut, t, 0.4);
@@ -3890,8 +3892,8 @@ const Snd = (() => {
     const f = vk < 20 ? 380 + vk * 14 : vk < 90 ? 660 + (vk - 20) * 9.5 : Math.min(2100, 1325 + (vk - 90) * 3.6);
     const step = vk < 90 ? Math.round(f / 55) * 55 : f;
     motorO1.frequency.setTargetAtTime(step, t, 0.06); motorO2.frequency.setTargetAtTime(step * 2, t, 0.06);
-    motorF.Q.setTargetAtTime(7, t, 0.1); motorF.frequency.setTargetAtTime(step * 1.4, t, 0.1);
-    motorG.gain.setTargetAtTime(act > 0 && vk > 1 ? (0.008 + 0.034 * act) * (1 - 0.55 * sm(160, 290, vk)) : 0, t, 0.2);
+    motorF.Q.setTargetAtTime(2.5, t, 0.1); motorF.frequency.setTargetAtTime(Math.min(step * 1.2, 1500), t, 0.1);   // v39.2: 鋭いピーという電子音をやめ、帯域を広げて小さく（N700 は車内ではっきりした音階は出ない）
+    motorG.gain.setTargetAtTime(act > 0 && vk > 1 ? hsMotorLv * (0.008 + 0.034 * act) * (1 - 0.7 * sm(120, 250, vk)) * (hsL ? 1 : 3) : 0, t, 0.3);
     if(tun !== (lastTun ? 1 : 0)){ if(vk > 70) boom(t, k, tun); lastTun = !!tun; }
   }
   function boom(t, k, enter){   // トンネル突入・脱出の圧力変動（ドンッ）
@@ -3961,12 +3963,13 @@ const Snd = (() => {
   let lastMC = 0, lastBV = 0;
   function levers(mc, bv, emg){ emg = emg || 6;
     if(!ctx || !on){ lastMC = mc; lastBV = bv; return; }
-    const dm = mc - lastMC, db = bv - lastBV;
-    for(let i = 0; i < Math.abs(dm); i++) play("mc_click", {gain: 0.55 + Math.random()*0.15, rate: (dm > 0 ? 1.0 : 0.93) * (0.97 + Math.random()*0.06), delay: i * 0.075});
-    for(let i = 0; i < Math.abs(db); i++){
+    const dm = mc - lastMC, db = bv - lastBV, hsv = S.mode === "tram" && typeof VEH === "function" && VEH().hs;   // v39.2: 新幹線は 13 段のマスコンを一度に動かしても「カカカカ…」と連打しない
+    const nm = hsv ? Math.min(2, Math.abs(dm)) : Math.abs(dm), nbv = hsv ? Math.min(2, Math.abs(db)) : Math.abs(db), kg = hsv ? 0.5 : 1;
+    for(let i = 0; i < nm; i++) play("mc_click", {gain: kg * (0.55 + Math.random()*0.15), rate: (dm > 0 ? 1.0 : 0.93) * (0.97 + Math.random()*0.06), delay: i * 0.075});
+    for(let i = 0; i < nbv; i++){
       const toEmg = bv >= emg && lastBV + (db > 0 ? i + 1 : -(i + 1)) >= emg;
-      if(toEmg) play("lever_clunk", {gain: 0.9, rate: 0.8, delay: i * 0.08});
-      else play("bv_click", {gain: 0.6 + Math.random()*0.15, rate: 0.9 + Math.random()*0.08, delay: i * 0.08});
+      if(toEmg) play("lever_clunk", {gain: kg * 0.9, rate: 0.8, delay: i * 0.08});
+      else play("bv_click", {gain: kg * (0.6 + Math.random()*0.15), rate: 0.9 + Math.random()*0.08, delay: i * 0.08});
     }
     lastMC = mc; lastBV = bv;
   }
