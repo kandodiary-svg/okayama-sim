@@ -643,7 +643,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
         <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL。中心部〔v28 の範囲〕は 2026年9月26日時点、v29 で広げた所は 9月28日時点、v30 で広げた所は 9月29日時点のデータ）</li>
         <li>地面・屋根の航空写真: 国土地理院 シームレス空中写真（撮影時期は場所によって異なります）。遠景: 国土地理院 標高タイル・空中写真</li>
         <li>バスの停留所の順序: 晴れバスナビ（岡山の時刻表検索）。岡山駅東口ののりば: 岡山駅東口バスのりば行き先案内</li>
-        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材（新幹線の車内音は Freesound の KoimeMatsuchiya 氏 #872228・#872230（Hikari Green Car 車内）と mycompasstv 氏 #474615（高速列車の車内）、いずれも CC0）</li>
+        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材（新幹線の停車中の車内音は Freesound の KoimeMatsuchiya 氏 #872228・#872230（Hikari Green Car 車内）、mycompasstv 氏 #474615（高速列車の車内）のうち使用分、いずれも CC0）。新幹線の走行音・高速時の轟音・「まもなく到着」のチャイムは制作者が用意した音源（出典・ライセンスを確認中）</li>
       </ul>
       <p style="margin:0 0 4px"><b style="color:#e6a94d">推定・仮定している所（実際とは異なる場合があります）</b></p>
       <ul style="margin:0;padding-left:18px">
@@ -3810,7 +3810,7 @@ const Snd = (() => {
                   bus_door_open:"sfx/bus_door_open.wav", bus_door_close:"sfx/bus_door_close.wav",
                   heli_rotor:"sfx/heli_rotor.wav", heli_body:"sfx/heli_body.wav", heli_cabin:"sfx/heli_cabin.wav",
                   mc_click:"sfx/mc_click.wav", bv_click:"sfx/bv_click.wav", lever_clunk:"sfx/lever_clunk.wav",
-                  hs_idle:"sfx/hs_idle.wav", hs_cruise:"sfx/hs_cruise.wav", hs_roar:"sfx/hs_roar.wav" };   // v39: 新幹線の車内録音（Freesound・CC0。出典は画面下の注記）
+                  hs_idle:"sfx/hs_idle.wav", hs_cruise:"sfx/hs_u_cruise.wav", hs_roar:"sfx/hs_u_roar.wav", hs_chime:"sfx/hs_u_chime.mp3" };   // v40: 巡航・轟音・到着チャイムは制作者が用意した音源に差し替え（元の hs_cruise.wav / hs_roar.wav は予備として残してある）   // v39: 新幹線の車内録音（Freesound・CC0。出典は画面下の注記）
   async function load(name, url){
     try{ const r = await fetch(url); if(!r.ok) throw 0; buf[name] = await ctx.decodeAudioData(await r.arrayBuffer()); }
     catch(e){ console.warn("sound load failed", url); }
@@ -3992,6 +3992,7 @@ const Snd = (() => {
     if(S.mode === "bus"){ play("bus_horn", {gain: 0.8}); return; }
     if(S.mode === "car"){ play("car_horn", {gain: 0.75}); return; }
     play("bell", {gain: 0.9}); play("bell", {gain: 0.8, delay: 0.42}); }
+  function hsChime(){ return play("hs_chime", {gain: 0.7}); }   // v40: 新幹線の「まもなく到着」チャイム（提供音源）
   function chime(){ if(!ctx || !on) return; const t=ctx.currentTime;
     for(const [f,d] of [[1318.5,0],[1046.5,0.32]]){ const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=f; const g=ctx.createGain();
       g.gain.setValueAtTime(0.0001,t+d); g.gain.exponentialRampToValueAtTime(0.35,t+d+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+d+0.9); o.connect(g).connect(sfxBus); o.start(t+d); o.stop(t+d+1); } }
@@ -4127,7 +4128,7 @@ const Snd = (() => {
   function debug(){ const g = o => o ? +o.g.gain.value.toFixed(3) : null; return { ctx: ctx && ctx.state, bufs: Object.keys(buf).length, plays, last: Snd._last,
     car: eng && { car: g(eng.car), bus: g(eng.bus), road: g(eng.road), cabin: g(eng.cabin), rate: eng.car && +eng.car.src.playbackRate.value.toFixed(2), brate: eng.bus && +eng.bus.src.playbackRate.value.toFixed(2) },
     heli: hs && { rotor: g(hs.rotor), body: g(hs.body), cabin: g(hs.cabin) } }; }
-  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, get on(){ return on; }};
+  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, get on(){ return on; }};
 })();
 
 /* 放送文は audio/ann.json（提供の書き起こしを整えた文面。広告は除外、運賃は改定があるため入れていない）。 */
@@ -4141,7 +4142,7 @@ function annDepart(){
   Snd.preload(["app_" + S.key + "_" + AI(), "arr_" + S.key + "_" + AI(), "dep_" + S.key + "_" + (AI() + 1)]);
   const t = Snd.text(id); setSubtitle("（放送）" + (t ? t.replace(/^この電車は、[^。]+。発車します。ご注意ください。/, "") : "次は " + S.stops[S.stopIndex].name));
 }
-function annApproach(){ if(VEH().jr){ setSubtitle("（放送）まもなく "+S.stops[S.stopIndex].name+" です。"); return; } if(S.phase==="pull" || AI()<=0) return; const id = "app_" + S.key + "_" + AI(); Snd.ann(id); const t = Snd.text(id); if(t) setSubtitle("（放送）" + t); }
+function annApproach(){ if(VEH().jr){ if(VEH().hs && Snd.hsChime) Snd.hsChime(); setSubtitle("（放送）まもなく "+S.stops[S.stopIndex].name+" です。"); return; } if(S.phase==="pull" || AI()<=0) return; const id = "app_" + S.key + "_" + AI(); Snd.ann(id); const t = Snd.text(id); if(t) setSubtitle("（放送）" + t); }
 function annArrive(){ if(VEH().jr) return; Snd.ann("arr_" + S.key + "_" + AI(), 0.8); }
 
 /* ---------------- 運転台（3D）: 参考写真の在来形路面電車の運転台を再現 ----------------
