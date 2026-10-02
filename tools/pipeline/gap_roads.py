@@ -98,7 +98,7 @@ def width_of(t):
     except Exception: ln = None
     hw = t.get("highway", "").replace("_link", "")
     if ln: return ln * 3.25 + 1.0
-    return {"trunk": 10.0, "primary": 10.0, "secondary": 8.5, "tertiary": 7.5, "unclassified": 5.0, "residential": 4.5, "living_street": 4.0}.get(hw, 5.0)
+    return {"trunk": 10.0, "primary": 10.0, "secondary": 8.5, "tertiary": 7.5, "unclassified": 5.0, "residential": 4.5, "living_street": 4.0, "motorway": 8.0, "motorway_link": 6.5}.get(hw, 5.0)
 
 # ---- 欠けている区間 ----
 fin = np.isfinite(HR)
@@ -106,6 +106,8 @@ near = ndimage.binary_dilation(fin, iterations=5)            # 2.5m 以内に道
 DATA = box(BX0 + 3, BZ0 + 3, BX1 - 3, BZ1 - 3)
 COREB = box(*CORE)
 ways, _nodes = osm_load()
+import road_profile as _RPF0
+RPF_level = _RPF0.level_of
 segs = []   # (LineString, tags)
 for w in ways:
     t = w["tags"]
@@ -129,6 +131,57 @@ for w in ways:
         if s1 - s0 < 12.0: continue
         sub = substring(ln, max(0.0, s0 - 4.0), min(L, s1 + 4.0))
         if sub.length > 1.0: segs.append((sub, t))
+# ---- v39: 橋・高架の下をくぐる一般道 ----
+# 橋の面（HR）がある升目は「道路面がある」と見なされ、橋の下の道が作られていなかった（車が橋の上に持ち上げられる・橋の下が壁で塞がる）。
+# 橋の面だけがある升目（deck_own = bridge_parts の内側で「上の段」が無い升目）を、一般道（橋でもトンネルでもない OSM の道）が短く（6〜60m）横切り、
+# その前後 4〜12m に deck より 2.5m 以上低い地上の路面があって、前後の高さが 3m 以内で揃う所を「橋の下の道」として補う
+NZ_, NX_ = HR.shape
+deckm = np.zeros((NZ_, NX_), bool)
+for _p in R.get("bridge_parts", []):
+    if _p is None or _p.is_empty: continue
+    _x0, _z0, _x1, _z1 = _p.bounds; _i0 = max(0, int((_x0 - GX0) / RES)); _i1 = min(NX_, int((_x1 - GX0) / RES) + 1); _j0 = max(0, int((_z0 - GZ0) / RES)); _j1 = min(NZ_, int((_z1 - GZ0) / RES) + 1)
+    if _i1 <= _i0 or _j1 <= _j0: continue
+    _jj, _ii = np.mgrid[_j0:_j1, _i0:_i1]; _m = shapely.contains_xy(_p, GX0 + (_ii + 0.5) * RES, GZ0 + (_jj + 0.5) * RES); deckm[_jj[_m], _ii[_m]] = True
+_upm = np.zeros((NZ_, NX_), bool); _ui0 = np.asarray(R["upper"][0], np.int64)
+if len(_ui0): _upm[_ui0 // NX_, _ui0 % NX_] = True
+deck_own = deckm & ~_upm & fin
+del deckm, _upm
+print("v39 deck-own cells", int(deck_own.sum()), flush=True)
+ub_segs = []
+DRV_UB = DRV | {"motorway", "motorway_link"}
+for w in ways:
+    t = w["tags"]
+    if t.get("highway") not in DRV_UB or t.get("area") == "yes" or t.get("tunnel") == "yes" or len(w["xy"]) < 2: continue
+    if RPF_level(t) != "ground": continue
+    if t.get("access") in ("private", "no") and t.get("highway") not in MAJ: continue
+    ln = LineString(w["xy"]); L = ln.length
+    if not ln.intersects(DATA) or L < 8: continue
+    n = max(2, int(L // 1.0) + 1); ss = np.linspace(0, L, n); P = np.array([ln.interpolate(s).coords[0] for s in ss])
+    ci = ((P[:, 0] - GX0) / RES).astype(int); cj = ((P[:, 1] - GZ0) / RES).astype(int)
+    okc = (ci >= 0) & (ci < NX_) & (cj >= 0) & (cj < NZ_)
+    if not okc.any(): continue
+    m = np.zeros(n, bool); m[okc] = deck_own[cj[okc], ci[okc]]
+    if not m.any(): continue
+    lab, nl = ndimage.label(m)
+    for q in range(1, nl + 1):
+        idx = np.nonzero(lab == q)[0]; a, b = idx[0], idx[-1]
+        if not (6 <= (b - a + 1) <= 60): continue
+        if CORE[0] <= P[a, 0] <= CORE[2] and CORE[1] <= P[a, 1] <= CORE[3]: continue
+        dk = float(np.median(np.asarray(HR[cj[idx], ci[idx]], np.float64)))
+        def _anch(k0, k1):
+            vs = []
+            for k in range(k0, k1 + 1):
+                if 0 <= k < n and okc[k] and not deck_own[cj[k], ci[k]]:
+                    h_ = HR[cj[k], ci[k]]
+                    if np.isfinite(h_) and KIND[cj[k], ci[k]] == 1: vs.append(float(h_))
+            return float(np.median(vs)) if len(vs) >= 2 else None
+        ha = _anch(a - 12, a - 4); hb = _anch(b + 4, b + 12)
+        if ha is None or hb is None: continue
+        if ha > dk - 2.5 or hb > dk - 2.5 or abs(ha - hb) > 3.0: continue
+        sub = substring(ln, max(0.0, ss[a] - 6.0), min(L, ss[b] + 6.0))
+        if sub.length > 1.0: ub_segs.append((sub, t))
+print("v39 under-bridge road segments", len(ub_segs), "length m", round(sum(g.length for g, t in ub_segs)), flush=True)
+UBN = len(ub_segs); segs = segs + ub_segs
 print("gap segments", len(segs), "length km", round(sum(g.length for g, t in segs) / 1e3, 2), flush=True)
 if not segs:
     print("nothing to add"); sys.exit(0)
@@ -166,7 +219,8 @@ def new_var(p):
     wdata.append(0.0 if inw else 1.0); ydata.append(d)
     i, j = cell(x, z)
     sub = HR[max(0, j - 2):j + 3, max(0, i - 2):i + 3]; kk = KIND[max(0, j - 2):j + 3, max(0, i - 2):i + 3]
-    v = sub[np.isfinite(sub) & (kk == 1)]
+    own_ = deck_own[max(0, j - 2):j + 3, max(0, i - 2):i + 3]
+    v = sub[np.isfinite(sub) & (kk == 1) & ~own_]   # v39: 橋の面（deck_own）には拘束しない
     if len(v) >= 4: wanch.append(400.0); yanch.append(float(np.median(v)))
     else: wanch.append(0.0); yanch.append(0.0)
     key_of[k] = len(X) - 1
@@ -201,11 +255,12 @@ def y_road(x, z):
 
 # ---- 車道・歩道の多角形 ----
 lane_polys = []; walk_polys = []
-for g, t in segs:
+for _k, (g, t) in enumerate(segs):
     wd = width_of(t)
+    if _k >= len(segs) - UBN: continue   # v39: 橋の下の道は別に作る（下の UBLANE）
     lane_polys.append(g.buffer(wd / 2, cap_style=1, join_style=1))
     hw = t.get("highway", "").replace("_link", "")
-    if hw in MAJ and t.get("embankment") != "yes" and t.get("bridge") != "yes":
+    if hw in MAJ and t.get("embankment") != "yes" and t.get("bridge") != "yes" and _k < len(segs) - UBN:
         walk_polys.append(g.buffer(wd / 2 + 2.5, cap_style=2, join_style=2))
 def _minus_exist(G):
     """G から、既存の道路面（近くの部分だけの和集合＋5cm）を除く"""
@@ -217,12 +272,27 @@ def _minus_exist(G):
     return unary_union(out_) if out_ else Polygon()
 LANE = _minus_exist(unary_union(lane_polys).intersection(DATA).difference(COREB))
 LANE = unary_union([q for q in (LANE.geoms if hasattr(LANE, "geoms") else [LANE]) if isinstance(q, Polygon) and q.area > 2.0])
+# v39: 橋の下の道（橋の面の範囲 +0.5m に限る。道路の多角形（lanes_parts）は橋の面の下にも広がっているのに三角形が無いので、既存の面は引かない）
+from shapely.strtree import STRtree as _STR
+_bpl = [g for g in R.get("bridge_parts", []) if g is not None and not g.is_empty]; _bt = _STR(_bpl) if _bpl else None
+_ubl = []
+for g, t in segs[len(segs) - UBN:]:
+    if _bt is None: break
+    wd = max(width_of(t), 6.0)
+    near_ = [_bpl[i] for i in _bt.query(g.buffer(wd))]
+    if not near_: continue
+    q = g.buffer(wd / 2, cap_style=2, join_style=1).intersection(unary_union(near_).buffer(0.5))
+    if not q.is_empty and q.area > 2.0: _ubl.append(q)
+UBLANE = unary_union(_ubl) if _ubl else Polygon()
+print("v39 under-bridge lane area m2", round(UBLANE.area), flush=True)
+if not UBLANE.is_empty: LANE = unary_union([LANE, UBLANE]) if not LANE.is_empty else UBLANE
 WALK = (_minus_exist(unary_union(walk_polys).intersection(DATA).difference(COREB).difference(unary_union(lane_polys)))
         if walk_polys else Polygon())
 WALK = unary_union([q for q in (WALK.geoms if hasattr(WALK, "geoms") else [WALK]) if isinstance(q, Polygon) and q.area > 3.0 and q.buffer(-0.6).area > 0]) if not WALK.is_empty else Polygon()
 print("new lane area m2", round(LANE.area), "walk area m2", round(WALK.area), flush=True)
 
 # ---- HR / KIND（車道=路面、歩道=+0.15） ----
+UPN = []   # 移した「上の段」（升目の番号, 高さ, 区分）
 def raster_fill(poly, kind, dy):
     n = 0
     for q in (poly.geoms if hasattr(poly, "geoms") else [poly]):
@@ -232,18 +302,30 @@ def raster_fill(poly, kind, dy):
         i0 = max(0, i0); j0 = max(0, j0); i1 = min(HR.shape[1] - 1, i1); j1 = min(HR.shape[0] - 1, j1)
         jj, ii = np.mgrid[j0:j1 + 1, i0:i1 + 1]
         cx = GX0 + (ii + 0.5) * RES; cz = GZ0 + (jj + 0.5) * RES
-        ins = shapely.contains_xy(q, cx, cz) & ~np.isfinite(HR[jj, ii])
+        inq = shapely.contains_xy(q, cx, cz)
+        ins = inq & ~np.isfinite(HR[jj, ii])
         for j, i, x, z in zip(jj[ins], ii[ins], cx[ins], cz[ins]):
             HR[j, i] = y_road(x, z) + dy; KIND[j, i] = kind
         n += int(ins.sum())
+        if kind == 1:   # v39: 橋の面だけの升目 → 橋の面を「上の段」へ移し、地上の道を下の段（HR）にする
+            mv = inq & deck_own[jj, ii] & np.isfinite(HR[jj, ii])
+            for j, i, x, z in zip(jj[mv], ii[mv], cx[mv], cz[mv]):
+                yr = y_road(x, z) + dy
+                if float(HR[j, i]) - yr < 2.5: continue
+                UPN.append((j * HR.shape[1] + i, float(HR[j, i]), int(KIND[j, i]))); HR[j, i] = yr; KIND[j, i] = 1; deck_own[j, i] = False
     return n
 n1 = raster_fill(LANE, 1, 0.0); n2 = raster_fill(WALK, 2, 0.15) if not WALK.is_empty else 0
 print("cells lane", n1, "walk", n2, flush=True)
 def top_at(x, z, dy):
-    v = hr_bilinear(x, z)
-    return v if v is not None else y_road(x, z) + dy
+    v = hr_bilinear(x, z); yr = y_road(x, z) + dy
+    return v if (v is not None and abs(v - yr) < 1.5) else yr   # v39: 橋の面の高さを拾わない
 lt = grid_tris(LANE, lambda x, z: top_at(x, z, 0.0), 2.0)
 wt = grid_tris(WALK, lambda x, z: top_at(x, z, 0.15), 2.0) if not WALK.is_empty else np.zeros((0, 3))
+if UPN:
+    _u = R["upper"]; _a = np.array(UPN, dtype=np.float64)
+    R["upper"] = (np.concatenate([np.asarray(_u[0], np.int64), _a[:, 0].astype(np.int64)]), np.concatenate([np.asarray(_u[1], np.float32), _a[:, 1].astype(np.float32)]),
+                  np.concatenate([np.asarray(_u[2], np.uint8), _a[:, 2].astype(np.uint8)]))
+print("v39 upper cells moved", len(UPN), flush=True)
 R["tris"]["lane"] = np.concatenate([R["tris"]["lane"], lt]) if len(lt) else R["tris"]["lane"]
 if len(wt): R["tris"]["walk"] = np.concatenate([R["tris"]["walk"], wt])
 cb = curb_faces(WALK, lambda x, z: top_at(x, z, 0.15)) if not WALK.is_empty else np.zeros((0, 3))

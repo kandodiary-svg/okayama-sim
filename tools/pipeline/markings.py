@@ -158,7 +158,7 @@ def strip(line, width):
     return line.buffer(width / 2, cap_style=2, join_style=2)
 
 MAJOR = {"trunk", "primary", "secondary", "tertiary", "trunk_link", "primary_link", "secondary_link", "tertiary_link"}
-ROADS = MAJOR | {"unclassified", "residential"}
+ROADS = MAJOR | {"unclassified", "residential", "motorway", "motorway_link"}   # v39: 高速（PLATEAU の範囲の IC・本線・ランプ）にも車線の標示を付ける
 road_ways = [w for w in ways if w["tags"].get("highway") in ROADS and len(w["xy"]) >= 2]
 signals = np.array([[n["x"], n["z"]] for n in nodes if n["tags"].get("highway") == "traffic_signals" or n["tags"].get("railway") == "signal"])
 def near_signal(p, r=35):
@@ -301,7 +301,7 @@ for w in road_ways:
     n = lanes_num(t, "lanes")
     oneway = t.get("oneway") in ("yes", "1", "-1")
     if n is None:
-        if hw in MAJOR: n = 1 if oneway else 2
+        if hw in MAJOR or hw.startswith("motorway"): n = 1 if oneway else 2
         else: continue
     ln = LineString(w["xy"])
     if not zl(ln) or ln.length < 8: continue

@@ -350,6 +350,45 @@ print("signal approaches", nsig, "skipped side approaches", globals().get("n_ski
 # ---- 路面電車の軌道に重なる車線は除く（交差点の横断を除く）----
 def to3(p, up=False):
     return [[round(float(x), 2), round(h_at(x, z, up) + 0.02, 2), round(float(z), 2)] for x, z in p]
+def h_ref(x, z, yref):
+    """v39: アプリの車モード(hk)と同じ: 4 つの角それぞれで、下の段・上の段のうち yref に近い方を取って双一次補間"""
+    fx = (x - dm["x0"]) / dm["step"] - 0.5; fz = (z - dm["z0"]) / dm["step"] - 0.5
+    i = int(np.clip(math.floor(fx), 0, dm["nx"] - 2)); j = int(np.clip(math.floor(fz), 0, dm["nz"] - 2))
+    tx = min(1, max(0, fx - i)); tz = min(1, max(0, fz - j))
+    def v(jj, ii):
+        lo = DH[jj, ii]; u = UPH.get(jj * dm["nx"] + ii)
+        return u if (u is not None and abs(u - yref) < abs(lo - yref)) else lo
+    return float((v(j, i) * (1 - tx) + v(j, i + 1) * tx) * (1 - tz) + (v(j + 1, i) * (1 - tx) + v(j + 1, i + 1) * tx) * tz)
+def _lip(ys, ds, g=0.2):
+    """g-リプシッツ（上り下りの勾配が g 以下）に、上下の包絡線の平均でならす。段差は両側にまたがるなだらかな坂になる"""
+    n = len(ys)
+    if n < 3: return ys
+    s = np.r_[0.0, np.cumsum(ds)]
+    lo = ys.copy(); hi = ys.copy()
+    for i in range(1, n): lo[i] = min(lo[i], lo[i - 1] + g * ds[i - 1])
+    for i in range(n - 2, -1, -1): lo[i] = min(lo[i], lo[i + 1] + g * ds[i])
+    for i in range(1, n): hi[i] = max(hi[i], hi[i - 1] - g * ds[i - 1])
+    for i in range(n - 2, -1, -1): hi[i] = max(hi[i], hi[i + 1] - g * ds[i])
+    return (lo + hi) / 2
+def to3_follow(p, up=False):
+    """v39: 車線の高さ。最初の点は橋の区間なら上の段、そうでなければ下の段。以降は直前の高さに近い段を選び続ける
+    （橋の前後で急に上の段・下の段に飛び移って、車が持ち上がる・沈むのを防ぐ）。残った段差は勾配 20% 以下にならす"""
+    pts = np.asarray(p, float).reshape(-1, 2); n = len(pts)
+    if n == 0: return []
+    ys = np.empty(n); prev = h_at(pts[0, 0], pts[0, 1], up)
+    for i in range(n):
+        prev = h_ref(pts[i, 0], pts[i, 1], prev); ys[i] = prev
+    ds = np.hypot(*np.diff(pts, axis=0).T) if n > 1 else np.zeros(0)
+    if n > 2 and len(ds) and (np.abs(np.diff(ys)) / np.maximum(ds, 0.5)).max() > 0.2: ys = _lip(ys, np.maximum(ds, 0.01))
+    return [[round(float(pts[i, 0]), 2), round(float(ys[i]) + 0.02, 2), round(float(pts[i, 1]), 2)] for i in range(n)]
+def to3_between(p, ya, yb):
+    """交差点の接続線: 両端の高さ（接続する車線の端）の間をなめらかにつなぐ"""
+    pts = np.asarray(p, float).reshape(-1, 2); n = len(pts)
+    if n == 0: return []
+    ds = np.hypot(*np.diff(pts, axis=0).T) if n > 1 else np.zeros(0)
+    t = np.r_[0.0, np.cumsum(ds)]; t = t / t[-1] if n > 1 and t[-1] > 1e-6 else np.zeros(n)
+    t = t * t * (3 - 2 * t)
+    return [[round(float(pts[i, 0]), 2), round(float(ya + (yb - ya) * t[i]), 2), round(float(pts[i, 1]), 2)] for i in range(n)]
 def _isb(e):   # v32: 橋・高架の区間の車線は上の段の高さ
     t = edges[e]["tags"]; return t.get("bridge") not in (None, "no")
 def offroad(p, halfw=0.75):
@@ -410,10 +449,11 @@ def nm_id(e):
     if not n: return -1
     if n not in NAMES: NAMES.append(n)
     return NAMES.index(n)
+_lane_p = [to3_follow(ln["p"], _isb(ln["e"])) for ln in out_l]
 J = dict(
-    lanes=[dict(p=to3(ln["p"], _isb(ln["e"])), c=ln["cls"][0], v=SPEED[ln["cls"]], n=ln["n"], k=ln["k"], to=ln["tn"] and str(ln["tn"]),
-                fr=str(ln["fn"]), nm=nm_id(ln["e"]), sig=ln.get("sig")) for ln in out_l],
-    conns=[dict(a=idmap[c["a"]], b=idmap[c["b"]], p=to3(c["p"], _isb(out_l[idmap[c["a"]]]["e"]) and _isb(out_l[idmap[c["b"]]]["e"])), k=c["k"], v=round(c["v"]), node=str(c["node"])) for c in out_c],
+    lanes=[dict(p=_lane_p[_i], c=ln["cls"][0], v=SPEED[ln["cls"]], n=ln["n"], k=ln["k"], to=ln["tn"] and str(ln["tn"]),
+                fr=str(ln["fn"]), nm=nm_id(ln["e"]), sig=ln.get("sig")) for _i, ln in enumerate(out_l)],
+    conns=[dict(a=idmap[c["a"]], b=idmap[c["b"]], p=to3_between(c["p"], _lane_p[idmap[c["a"]]][-1][1], _lane_p[idmap[c["b"]]][0][1]), k=c["k"], v=round(c["v"]), node=str(c["node"])) for c in out_c],
     sig_nodes=[str(n) for n, g in node_sig.items() if g >= 0],
     names=NAMES,
 )

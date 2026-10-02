@@ -72,6 +72,11 @@ class Profiles:
             c_ = P[gp_[0]]
             ix_ = np.array(_tree.query_ball_point(c_, self.RAISE_R), np.int64)
             if len(ix_): ix_ = ix_[_gm[ix_]]
+            # v39: 橋につながる道（この節点を通る地上の way）の点だけを上げる。橋の下をくぐる別の道（山陽道など）まで上げてしまい、
+            #      橋の下の道が最大 8m 盛り上がっていた
+            if len(ix_):
+                _gw = np.array(sorted({i for i, k in L if lv[i] == "ground"}), np.int64)
+                ix_ = ix_[np.isin(self.pway[ix_], _gw)]
             if len(ix_) < 2: continue
             Q_ = P[ix_]; D_ = np.hypot(Q_[:, None, 0] - Q_[None, :, 0], Q_[:, None, 1] - Q_[None, :, 1])
             env_ = (Z0[ix_][None, :] - self.RAISE_G * D_).max(axis=1)

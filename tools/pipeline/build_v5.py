@@ -2047,7 +2047,7 @@ for w in ways:
                         sign_face.append(quad(a_ + off, b_ + off, h0, h1))
                         k = _rng.randrange(16); u0, v0 = (k % 4) / 4, (k // 4) / 4
                         uv_ = [[u0, v0], [u0 + 0.25, v0], [u0 + 0.25, v0 + 0.25], [u0, v0], [u0 + 0.25, v0 + 0.25], [u0, v0 + 0.25]]
-                        sign_face_uv.append(uv_ if off @ tg[i] > 0 else [[u0 + 0.25 - (x_ - u0), y_] for x_, y_ in uv_])
+                        sign_face_uv.append(uv_ if (off @ tg[i]) * sg > 0 else [[u0 + 0.25 - (x_ - u0), y_] for x_, y_ in uv_])   # v39: 面の向きは sg*tg。外向きの面が正しい向きになるよう sg も考慮（以前は sg=-1 側の看板の文字が全部鏡文字だった）
                     ring = [b_ + t2, b_ - t2, a_ - t2, a_ + t2]
                     sign_side.append(np.array(quad(ring[0], ring[1], h0, h1) + quad(ring[1], ring[0], h0, h1)))
                     n_sign += 1

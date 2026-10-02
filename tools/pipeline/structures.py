@@ -270,6 +270,23 @@ def _smooth_reach(A, B, Da, Db, k=7):
         Da[s:e] = Vs[:-1]; Db[s:e] = Vs[1:]
     return Da, Db
 
+def _limit_reach(A, B, Da, Db, k=1.0, lo=0.25):
+    """v39: 外縁の距離の変化を、外周に沿って 1m 進むごとに k m 以下に抑える（孤立した短い区間の片端だけ遠くへ伸びて、
+    背の高い細い三角形（トゲ）になるのを防ぐ）。値は下げるだけで、上げない"""
+    n = len(A)
+    if n < 1: return Da, Db
+    Ls = np.hypot(B[:, 0] - A[:, 0], B[:, 1] - A[:, 1])
+    brk = np.r_[True, np.hypot(A[1:, 0] - B[:-1, 0], A[1:, 1] - B[:-1, 1]) > 0.05]
+    st = np.flatnonzero(brk); en = np.r_[st[1:], n]
+    Da = Da.copy(); Db = Db.copy()
+    for s_, e_ in zip(st, en):
+        V = np.r_[Da[s_], Db[s_:e_]]; Lg = Ls[s_:e_]
+        for i in range(len(Lg)): V[i + 1] = min(V[i + 1], V[i] + k * Lg[i])
+        for i in range(len(Lg) - 1, -1, -1): V[i] = min(V[i], V[i + 1] + k * Lg[i])
+        V = np.maximum(V, np.minimum(lo, np.r_[Da[s_], Db[s_:e_]]))
+        Da[s_:e_] = V[:-1]; Db[s_:e_] = V[1:]
+    return Da, Db
+
 def cut_faces(parts_index, tiles, bridge_union, deck, ground_orig, S=1.0, min_h=0.3, maxd=12.0, log=print):
     """切土の法面: 道路（橋以外）の外周で、外の地形（下げる前）が道路の縁より高い所に、縁から勾配 S で上がって地形に当たるまでの面。
     地面の格子はこの面より下に下げてある（build_v5 の cut-slope cap）ので、4m 格子のギザギザは面の下に隠れる。戻り値: 三角形, 色"""
@@ -312,7 +329,7 @@ def cut_faces(parts_index, tiles, bridge_union, deck, ground_orig, S=1.0, min_h=
                 k = np.where(above.any(1), above.argmax(1), len(DS) - 1)
                 D = DS[k]; return D, t0 + S * D
             Da, ha = reach(A, ta); Db, hb = reach(B, tb)
-            Da, Db = _smooth_reach(A, B, Da, Db); ha = ta + S * Da; hb = tb + S * Db
+            Da, Db = _smooth_reach(A, B, Da, Db); Da, Db = _limit_reach(A, B, Da, Db); ha = ta + S * Da; hb = tb + S * Db
             need = (np.maximum(ha - ta, hb - tb) > min_h) & own
             if not need.any(): continue
             NA, NB = _miter_normals(A, B, nl)       # v35: 折れが緩やかな所は端点の向きを共通に（法面の外縁に割れ目を作らない）
