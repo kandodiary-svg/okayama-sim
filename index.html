@@ -114,6 +114,9 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .ui.cab .cabhint{ display:block; }
 .cabspeed{ display:none; position:absolute; right:12px; bottom:calc(58px + env(safe-area-inset-bottom,0px)); background:rgba(23,20,15,.86); border:1px solid var(--line); padding:6px 10px; border-radius:2px; font-variant-numeric:tabular-nums; }
 .cabspeed b{ font-size:22px; color:var(--amber); } .ui.cab .cabspeed{ display:block; }
+.ui.cab.hs .rack{ top:64px; left:auto; right:120px; width:350px; }   /* v39.3: 新幹線の運転台では、情報カードを左ミラーに重ならない位置（上・右寄り）へ */
+.ui.cab.hs .subtitle{ bottom:auto; top:134px; left:304px; right:130px; width:auto; transform:none; }                          /* 字幕を計器・レバー目盛りに重ねない */
+.ui.cab.hs .cabhint{ bottom:calc(54px + env(safe-area-inset-bottom,0px)); font-size:10px; opacity:.8; }
 /* 車モード */
 .carui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
 .carui.on{ display:block; }
@@ -4294,12 +4297,12 @@ const Cab = (() => {
   const addHsGauge = (th, y, rad, label, unit, max, ticks, red) => { { const b = bezel(th, y, 0.01, 0.01); b.geometry = new THREE.CircleGeometry(rad + 0.007, 32); } const cm = mkCanvasMat(256, 256); const m = new THREE.Mesh(new THREE.CircleGeometry(rad, 32), cm.m);
     const r = bandR(y) - 0.013; m.position.set(r * Math.sin(th), y, r * Math.cos(th) + HB.cz); m.rotation.order = "YXZ"; m.rotation.y = th - Math.PI; m.rotation.x = -HB.tilt; HS.add(m);
     const o = Object.assign(cm, { label, unit, max, ticks, red, last: null }); hsG.push(o); return o; };
-  const gHS = addHsGauge(Math.PI + 0.225, -0.17, 0.088, "速度計", "km/h", 320, 8, false);
-  const gMRh = addHsGauge(Math.PI + 0.385, -0.225, 0.043, "元空気溜", "kPa", 1000, 5, false);
-  const gBCh = addHsGauge(Math.PI + 0.385, -0.118, 0.043, "ブレーキシリンダ", "kPa", 500, 5, true);
+  const gHS = addHsGauge(Math.PI + 0.31, -0.17, 0.097, "速度計", "km/h", 320, 8, false);
+  const gMRh = addHsGauge(Math.PI + 0.485, -0.225, 0.043, "元空気溜", "kPa", 1000, 5, false);
+  const gBCh = addHsGauge(Math.PI + 0.485, -0.118, 0.043, "ブレーキシリンダ", "kPa", 500, 5, true);
   // 中央左: 速度・ATC の表示器 / 右: モニタ（ノッチ・次駅・ドア）
-  bezel(Math.PI + 0.025, -0.17, 0.19, 0.15); const dAtc = mkCanvasMat(256, 192); onBand(Math.PI + 0.025, -0.17, 0.18, 0.138, dAtc.m);
-  bezel(Math.PI - 0.262, -0.17, 0.25, 0.19); const dMon = mkCanvasMat(256, 192); onBand(Math.PI - 0.262, -0.17, 0.24, 0.18, dMon.m);
+  bezel(Math.PI + 0.04, -0.17, 0.26, 0.20).translateZ(0.008); const dAtc = mkCanvasMat(256, 192); onBand(Math.PI + 0.04, -0.17, 0.25, 0.188, dAtc.m).translateZ(0.008);   // 平面を円筒面に置くので、幅が広いほど端が面に埋まる → 手前へ 8mm   // v39.3: 速度・ATC の表示器を大きく
+  bezel(Math.PI - 0.31, -0.17, 0.30, 0.225).translateZ(0.010); const dMon = mkCanvasMat(256, 192); onBand(Math.PI - 0.31, -0.17, 0.29, 0.213, dMon.m).translateZ(0.010);   // v39.3: モニタも大きく
   // 右: スイッチ盤（つまみ・表示灯）
   onBand(Math.PI - 0.74, -0.15, 0.15, 0.13, HM.dark);
   const hsLamps = [];
@@ -4330,7 +4333,7 @@ const Cab = (() => {
     const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.30, 10), hitM); hit.position.set(0, 0.13, 0); piv.add(hit);
     return { piv, hit };
   }
-  const hsMC = makeLever(0.36, -0.74, "mc"), hsBV = makeLever(-0.36, -0.74, "bv");
+  const hsMC = makeLever(0.50, -0.74, "mc"), hsBV = makeLever(-0.50, -0.74, "bv");   // v39.3: 計器の前を横切らないよう外側へ
   // ノッチの目盛り板（ハンドルの横。手前に傾けて文字が読めるように）
   const PL_H = 0.27, PL_TILT = 1.0;
   function makePlate(x) {
@@ -4339,7 +4342,7 @@ const Cab = (() => {
     const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.082, 0.014), new THREE.MeshBasicMaterial({ color: 0xff9a1f, transparent: true, opacity: 0.55, depthTest: false })); mk.renderOrder = 5; mk.rotation.x = -PL_TILT; HS.add(mk);
     return Object.assign(cm, { mk, x });
   }
-  const plMC = makePlate(0.475), plBV = makePlate(-0.475);
+  const plMC = makePlate(0.585), plBV = makePlate(-0.585);
   function paintPlate(pl, labels, redLast) {
     const c = pl.c, g = c.getContext("2d"), w = c.width, h = c.height, n = labels.length; g.fillStyle = "#e9edf0"; g.fillRect(0, 0, w, h);
     g.textAlign = "center"; g.textBaseline = "middle"; g.font = "bold " + Math.min(34, Math.floor(h / n * 0.62)) + "px sans-serif";
@@ -4452,7 +4455,7 @@ const Cab = (() => {
     root.position.set(Math.sin(S.t * 13.1) * 0.0025 * sh, Math.sin(S.t * 17.3) * 0.003 * sh - (S.acc || 0) * 0.0012, 0);
   }
   function render(r) {
-    camC.aspect = camera.aspect; camC.fov = camera.fov; camC.updateProjectionMatrix();
+    camC.aspect = camera.aspect; camC.fov = camera.fov * (isHS ? 0.95 : 1); camC.updateProjectionMatrix();   // v39.3: 新幹線は運転台だけ少し拡大して計器を読みやすく（外の景色の画角は変えない）
     r.clearDepth(); r.render(sceneC, camC);
   }
   function screenPos() {   // テスト用: ハンドル位置の画面座標
@@ -4462,7 +4465,7 @@ const Cab = (() => {
   }
   function setNotches(np, nb, hs) {   // np: 力行ノッチ数、nb: 常用ブレーキ段数（非常はその次）、hs: 新幹線配置（マスコン右・ブレーキ弁左）
     MC_N = np; BV_N = nb + 1; MC_STEP = -1.44 / np; BV_STEP = -1.8 / BV_N;
-    isHS = !!hs; HS.visible = isHS; for (const ch of root.children) if (ch !== HS) ch.visible = !isHS; if (!isHS) root.position.set(0, 0, 0);
+    isHS = !!hs; { const u = document.getElementById("ui"); if(u) u.classList.toggle("hs", isHS); } HS.visible = isHS; for (const ch of root.children) if (ch !== HS) ch.visible = !isHS; if (!isHS) root.position.set(0, 0, 0);
     if (isHS) { const lm = []; for (let i = np; i >= 1; i--) lm.push(String(i)); lm.push("切"); paintPlate(plMC, lm, false);
       const lb = ["運"]; for (let i = 1; i <= nb; i++) lb.push(String(i)); lb.push("非"); paintPlate(plBV, lb, true); dAtc.key = ""; dMon.key = ""; hsG.forEach(o => o.last = null); }
     for(const [p, fn, n] of [[mcPlate, paintMC, np], [bvPlate, paintBV, BV_N]]){ const m = p.material.map, c = m.image; fn(c.getContext("2d"), c.width, c.height, n); m.needsUpdate = true; }
@@ -5309,7 +5312,7 @@ let _hudT=0;
 function layoutHud(){
   if(!S.running || performance.now()-_hudT<250) return; _hudT=performance.now();
   const m=document.querySelector("#ui .mission"), r=document.querySelector("#ui .rack"), mm=document.querySelector("#ui .minimap");
-  if(!m||!r) return; const top=m.offsetTop+m.offsetHeight+8; r.style.top=top+"px";
+  if(!m||!r) return; const top=m.offsetTop+m.offsetHeight+8; r.style.top=((S.view==="cab" && VEH().hs) ? 64 : top)+"px";   // 新幹線の運転台: 情報カードは上の段へ（ミラーに重ねない）
   if(mm) mm.style.top = S.view==="cab" ? "64px" : top+"px";
 }
 function onResize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
