@@ -3710,7 +3710,7 @@ function applyRoute(r, key, preview){
   S.P=mkPath(S.track); S.blockIv = Trams.ready ? Trams.intervals(S.P) : [];
   for(const q of S.blockIv) if(q.s0>8) S.signals.push({stop:q.s0-4, center:q.s0, block:q.b});
   S.signals.sort((a,b)=>a.stop-b.stop);
-  if(!preview){ S.pos=S.cum[0]; S.speed=0; S.acc=0; S.emergency=false; S.notch=0; S.doorOpen=true; S.stopIndex=1; S.sigIndex=0; S.score=1000; S.comfortHits=0; S.announced=new Set(); }
+  if(!preview){ S.pos=S.cum[0]; S.speed=0; S.acc=0; S.emergency=false; S.notch=0; S.mc=0; S.bv=0; S.doorOpen=true; S.stopIndex=1; S.sigIndex=0; S.score=1000; S.comfortHits=0; S.announced=new Set(); }
   else S.pos = S.cum[0]+40;
 }
 function idxAt(s){ let lo=0, hi=S.arc.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(S.arc[m]<=s) lo=m; else hi=m; } return lo; }
@@ -4760,7 +4760,7 @@ function targetAccel(){
     const k1 = V.hsK[0], k2 = V.hsK[1], F = V.hsA * (v <= k1 ? 1 : v <= k2 ? k1 / v : k1 * k2 / (v * v));
     a = F * (S.notch / V.np) * Math.max(0, Math.min(1, (V.vmax - v) / 4)); }
   else if(S.notch > 0){ a = V.acc[S.notch] * (v > kn ? kn / v : 1) * Math.max(0, Math.min(1, (V.vmax - v) / 4)); }
-  else if(S.notch < 0) a = -(V.bdec||B_DEC)[-S.notch];
+  else if(S.notch < 0){ const T = V.bdec||B_DEC; a = -(T[Math.min(-S.notch, T.length-1)] || 0); }   // 非常位置（段数+1）は表の範囲外 → 最大値で頭打ち（undefined→NaN で動かなくなるのを防ぐ）
   if(v > 0.05){ const dg=V.drag; a -= dg ? dg[0] + dg[1]*v + dg[2]*v*v : 0.05 + 0.0012*v + 0.00003*v*v; }
   const g = (pointAt(S.pos+4).y - pointAt(S.pos-4).y) / 8;
   if(v > 0.05 || a > 0) a -= 35.3 * g;
@@ -4779,13 +4779,14 @@ function atcUpdate(){      // 新幹線の ATC: 指示速度 = 現在の制限�
 function tick(dt){
   S.t += dt;
   if(VEH().hs && S.running) atcUpdate(); else if(S.atc){ S.atc = false; Snd.atc(false); }
-  const tgt = targetAccel();
+  let tgt = targetAccel(); if(!Number.isFinite(tgt)) tgt = 0;
+  if(!Number.isFinite(S.acc)) S.acc = 0; if(!Number.isFinite(S.speed)) S.speed = 0;
   const VJ = VEH(); const rate = VJ.hs ? ((tgt < S.acc) ? 2.4 : 1.5) : ((tgt < S.acc) ? 4.5 : 3.0);   // 加減速度の変化の速さ（km/h/s²）。新幹線は緩やか
   const prevAcc = S.acc;
   S.acc += Math.max(-rate*dt, Math.min(rate*dt, tgt - S.acc));
   S.speed = Math.max(0, Math.min(VEH().jr ? VEH().vmax + 2 : 50, S.speed + S.acc*dt));
   if(S.speed === 0 && S.acc < 0) S.acc = 0;
-  if(S.speed === 0 && S.emergency) S.emergency = false;
+  if(S.speed === 0 && S.emergency && S.bv < NB()+1) S.emergency = false;   // 非常ブレーキは停止後もハンドルを戻すまで保持（戻したら解除）
   $("accel").textContent = (S.acc>=0?"+":"") + S.acc.toFixed(1);
   const lim=limitAt(S.pos); { let nx=null; if(VEH().jr){ const i0=idxAt(S.pos), mi=Math.min(S.speedLim.length-1,i0+400); let m=lim; for(let i=i0+5;i<=mi;i+=5){ if(S.speedLim[i]<m){ m=S.speedLim[i]; nx=[m, S.arc[i]-S.pos]; } } } $("limit").textContent=nx?lim+"→"+nx[0]:lim; $("limit").title=nx?"あと "+Math.round(nx[1])+" m で制限 "+nx[0]+" km/h":""; }
   if(S.speed>lim+5){ S.score=Math.max(0,S.score-dt*8); if(performance.now()-lastWarn>1500){ setSubtitle("制限速度 "+lim+"km/h を超えています。"); lastWarn=performance.now(); } }
@@ -4931,7 +4932,7 @@ function applyHandles(){
   if(S.notch!==prev) Snd.notch(S.notch,prev); Snd.levers(S.mc, S.bv, NB()+1); updateNotchBar();
 }
 const NP=()=>VEH().np||4, NB=()=>VEH().nb||5;   // 力行ノッチ数・常用ブレーキ段数（新幹線は 13 / 7、非常はその次）
-function setMC(n){ n=Math.max(0,Math.min(NP(),n)); if(n>0 && S.doorOpen){ setSubtitle("ドアを閉めてから力行してください。"); n=0; } if(n>0 && S.bv>=NB()+1){ setSubtitle("非常ブレーキ中は力行できません。"); } S.mc=n; applyHandles(); }
+function setMC(n){ n=Math.max(0,Math.min(NP(),n)); if(n>0 && S.doorOpen){ setSubtitle("ドアを閉めてから力行してください。"); n=0; } if(n>0 && S.bv>=NB()+1){ setSubtitle("非常ブレーキ中は力行できません。ブレーキハンドル（↑）を戻してください。"); } else if(n>0 && S.bv>0 && S.speed<1){ setSubtitle("ブレーキがかかっています。ブレーキハンドル（↑）を戻すと力行できます。"); } S.mc=n; applyHandles(); }
 function setBV(n){ S.bv=Math.max(0,Math.min(NB()+1,n)); applyHandles(); }
 function setNotch(n){ if(n>0){ S.bv=0; setMC(n); } else if(n<0){ S.mc=0; setBV(-n); } else { S.mc=0; setBV(0); } }
 function powerUp(){ if(S.bv>0) setBV(S.bv-1); else setMC(S.mc+1); }
