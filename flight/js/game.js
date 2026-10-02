@@ -244,7 +244,7 @@ class Game{
     else if(ap.on&&ap.vertMode==="ALT"&&Math.abs(ap.alt-s.pos[1])>150&&!this.landed) h="MCP の高度を設定して FLCH（高度変更）を押すと上昇／降下します";
     else if(this.landed&&s.onGround&&s.gs>20) h="接地後：リバース（R 長押し）とブレーキ（Space / B 長押し）。オートブレーキ作動中";
     const tod=this.todInfo(); if(tod&&tod.msg&&!this.landed) h=tod.msg;
-    this.hintText=h; const he=$("hint"); if(he){ he.textContent=h; he.style.display=(this.hint&&h)?"block":"none"; }
+    this.hintText=h; const he=$("hint"); if(he){ he.textContent=h; he.style.display=(this.hint&&h&&!this.easyOn)?"block":"none"; }
   }
   todInfo(){
     const s=this.s, ap=this.c.ap; if(!this.destRwy||this.landed) return null; const re=this.ap.runwayEnd(this.destRwy.icao,this.destRwy.name); if(!re) return null;
@@ -280,6 +280,7 @@ class Game{
       case "Enter": this.toggleAP(); break;
       case "KeyY": this.c.assist=!this.c.assist; this.say(this.c.assist?"操縦補助 ON":"操縦補助 OFF（直接操縦）","#ffb11a",2); break;
       case "KeyT": this.timeScale=this.timeScale>=4?1:this.timeScale*2; this.say("時間 ×"+this.timeScale,"#fff",1.4); break;
+      case "KeyU": if(this.easy){ this.easy.toggle(); const b=$("bEasy"); if(b) b.classList.toggle("on",this.easy.on); } break;
       case "KeyH": this.hint=!this.hint; this.updateHints(); break;
       case "KeyN": this.ndRange=this.ndRange>=160?10:this.ndRange*2; this.hud.ndRange=this.ndRange; break;
       case "KeyM": this.audio&&this.audio.setMuted(!this.audio.muted); this.say(this.audio&&this.audio.muted?"消音":"音 ON","#fff",1); break;

@@ -25,6 +25,7 @@ function bindUI(game, hud, audio){
   $("pMenu").onclick=()=>{ $("pause").style.display="none"; game.state="menu"; game.paused=false; game.acft.root.visible=false; $("menu").style.display="flex"; showPlay(false); };
   function showPlay(on){ for(const id of ["mcp","topright","bar","thr","inst"]) $(id).style.display=on?(id==="mcp"||id==="topright"?"flex":"block"):"none"; if(on&&matchMedia("(pointer:coarse)").matches) $("touch").style.display="block"; if(!on) $("touch").style.display="none"; if(on) layout(); }
   // ---------------- ボタン ----------------
+  $("bEasy").onclick=()=>game.keyDown({code:"KeyU"}); if(game.easy) $("bEasy").classList.toggle("on",game.easy.on);
   $("bView").onclick=()=>game.cycleView(); $("bTime").onclick=()=>{ game.keyDown({code:"KeyT"}); $("bTime").textContent="時間 ×"+game.timeScale; };
   $("bSnd").onclick=()=>{ audio.start(); audio.setMuted(!audio.muted); $("bSnd").textContent=audio.muted?"音 OFF":"音 ON"; };
   $("bGear").onclick=()=>game.keyDown({code:"KeyG"}); $("bFlapUp").onclick=()=>game.keyDown({code:"KeyV"}); $("bFlapDn").onclick=()=>game.keyDown({code:"KeyF"});

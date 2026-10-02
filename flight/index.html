@@ -53,6 +53,16 @@ button.on{background:#12432b;border-color:var(--ok);color:#caffdb} button.arm{ba
 #knob{position:absolute;left:45px;top:45px;width:40px;height:40px;border-radius:50%;background:rgba(61,220,255,.45)}
 #tbtns{position:absolute;right:76px;bottom:16px;display:flex;gap:6px;pointer-events:auto;flex-wrap:wrap;max-width:200px;justify-content:flex-end}
 #tbtns button{padding:10px 12px;font-size:13px}
+#easy{position:fixed;right:8px;top:104px;width:min(285px,46vw);z-index:6;display:none;background:rgba(7,22,38,.80);border:1px solid #1f6fb5;border-radius:10px;padding:7px 9px;font-size:12.5px;line-height:1.35;pointer-events:none;box-shadow:0 2px 14px rgba(0,60,140,.35)}
+#easy .ez-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:5px} #easy .ez-h b{color:#58c4ff;font-size:13px} #easy .ez-h span{font-size:11.5px;color:#bcd}
+#easy .ez-t{display:flex;align-items:center;gap:9px;background:rgba(31,143,255,.16);border-radius:8px;padding:5px 8px;margin-bottom:5px}
+#easy .ez-arrow{font-size:26px;color:#58c4ff;line-height:1;width:30px;text-align:center;transition:transform .15s} #easy .ez-n{font-weight:700} #easy .ez-d{font-size:11.5px;color:#9cc}
+#easy .ez-r{display:flex;gap:7px;padding:4px 2px;border-top:1px solid rgba(120,170,220,.18)} #easy .ez-i{width:20px;text-align:center;font-size:15px}
+#easy .ez-l{font-size:10.5px;color:#8fb2cc;letter-spacing:.05em} #easy .ez-x{color:#e8f3ff} #easy .ez-s{font-size:11px;color:#9cc}
+#easy .ez-r.ok .ez-x{color:#8be6a8} #easy .ez-r.act{background:rgba(255,177,26,.10)} #easy .ez-r.act .ez-x{color:#ffd983;font-weight:600} #easy .ez-r.info .ez-x{color:#bfe6ff}
+#easy kbd{display:inline-block;min-width:16px;padding:0 5px;margin:0 1px;border:1px solid #6e8aa6;border-bottom-width:2px;border-radius:4px;background:#1b2a3a;color:#fff;font:600 11.5px ui-monospace,Menlo,monospace;text-align:center} #easy i{font-style:normal;color:#789;margin:0 1px}
+#easy .ez-f{font-size:10.5px;color:#789;text-align:right;margin-top:3px}
+@media (max-width:760px){#easy{font-size:11px;top:92px;width:48vw}}
 body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 @media (max-width:760px){#bar{max-width:30vw}}
 </style></head><body>
@@ -69,7 +79,8 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
     <button id="bALT">ALT</button><button id="bVS">V/S</button><button id="bFLCH" title="速度を保って上昇・降下">FLCH</button><button id="bAPPR" title="ILS進入 (I)">APPR</button><button id="bMACH" title="速度表示の切り替え">kt/M</button>
   </div>
 </div>
-<div id="topright"><span id="viewname" style="font-size:12px;opacity:.7;align-self:center"></span><button id="bView">視点 (C)</button><button id="bTime">時間 ×1</button><button id="bSnd">音</button><button id="bHelp">操作 (?)</button><button id="bPause">メニュー</button></div>
+<div id="topright"><span id="viewname" style="font-size:12px;opacity:.7;align-self:center"></span><button id="bEasy" title="かんたんモード：青いラインと操作ガイド (U)">かんたん (U)</button><button id="bView">視点 (C)</button><button id="bTime">時間 ×1</button><button id="bSnd">音</button><button id="bHelp">操作 (?)</button><button id="bPause">メニュー</button></div>
+<div id="easy"></div>
 <div id="hint"></div><div id="bigmsg"></div>
 <div id="bar">
   <button id="bGear">ギア (G)</button><button id="bFlapUp">フラップ− (V)</button><button id="bFlapDn">フラップ＋ (F)</button><button id="bSpoil">スポイラ (L)</button><button id="bAB">オートブレーキ (O)</button><button id="bPark">駐車ブレーキ (P)</button><button id="bBrake">ブレーキ</button><button id="bRev">逆噴射</button>
@@ -114,6 +125,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
     <b>Enter</b><span>オートパイロット ON/OFF。上のパネル（MCP）で 速度・方位・高度・昇降率 を設定</span>
     <b>I または J</b><span>ILS進入（APPR）。滑走路の延長線に乗っていると、ローカライザーとグライドスロープで自動進入・着陸します</span>
     <b>C</b><span>視点 コックピット／外から／客室の窓。ドラッグで見回し・周回、ホイールでズーム、ダブルクリックで戻す</span>
+    <b>U</b><span><b style="color:#58c4ff">かんたんモード</b>のオン／オフ。青いラインで進む道を示し、パネルに「いま押すキー」を表示します</span>
     <b>T</b><span>時間を速める ×1/×2/×4（地上近くでは自動で ×1） ／ <b>N</b> 地図(ND)の縮尺 ／ <b>H</b> ヒント表示 ／ <b>M</b> 消音 ／ <b>Y</b> 操縦補助 ON/OFF ／ <b>Esc</b> メニュー</span>
   </div>
   <p style="font-size:12px;opacity:.75;margin:10px 0 0">初期設定の「操縦補助」は、桿を離すと経路角とバンクを保つ機能です（Yキーで切ると素の操縦になります）。</p>
@@ -133,6 +145,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 <script src="js/aircraft.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/easy.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
