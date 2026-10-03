@@ -56,7 +56,7 @@ class Easy{
     if(dst&&!landedRoll) wps.push({x:dst.x,z:dst.z,name:"滑走路 "+dst.name,thr:true});
     if(!wps.length&&!dst) return null;
     // 最初の脚の始点
-    const B=wps[0]; let A;
+    const B=wps[0]||{x:dst.x+dst.ux*Math.min(2200,dst.L*0.8),z:dst.z+dst.uz*Math.min(2200,dst.L*0.8)}; let A;
     if(B.thr) A={x:dst.x-dst.ux*30000,z:dst.z-dst.uz*30000};
     else if(B===dep) A={x:dep.startX,z:dep.startZ};
     else if(this.idx>0&&rt[this.idx-1]) A=rt[this.idx-1]; else A=this.start;
