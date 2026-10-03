@@ -10,6 +10,12 @@ const LIVERIES=[
 ];
 const NOSE_TO_CG=13.5;   // 前脚から重心まで [m]
 function hash(i){ let x=Math.sin(i*127.1+311.7)*43758.5453; return x-Math.floor(x); }
+// 他の機体 k が、プレイヤーの通る範囲 swept（[x,z,r] の配列）に触れるか
+function hits(k,swept){
+  const mine=root.TAXI.footprint(k.x,k.z,k.dx,k.dz,[]); let hit=false;
+  for(const [x,z,r] of mine){ for(const q of swept){ if(Math.hypot(x-q[0],z-q[1])<r+q[2]+3){ hit=true; break; } } if(hit) break; }
+  k.hide=hit; return hit;
+}
 function pip(x,z,poly){ let c=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const a=poly[i],b=poly[j]; if((a[1]>z)!==(b[1]>z) && x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0]) c=!c; } return c; }
 
 // 1機分のモデルを「材質ごとの結合形状」に変換
@@ -46,7 +52,9 @@ function stands(data,P,apron){
   const out=[];
   for(const w of ways){
     if(w.t!=="parking_position") continue; const pts=w.g.map(p=>G.ll2xz(p[1],p[0])); if(pts.length<2) continue;
-    let L=0; for(let i=0;i<pts.length-1;i++) L+=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); if(L<20) continue;
+    let L=0; for(let i=0;i<pts.length-1;i++) L+=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); if(L<40) continue;
+    // 誘導路へ曲がっていく短い曲線（ターンの出口線）は駐機位置ではないので除く。まっすぐな線だけ使う
+    if(Math.hypot(pts[pts.length-1][0]-pts[0][0],pts[pts.length-1][1]-pts[0][1])/L<0.98) continue;
     // ターミナルに近い側の端を停止位置とみなし、そこへ向かう向きに機首を向ける
     let seq=pts; if(nearTerm(pts[0][0],pts[0][1])<nearTerm(pts[pts.length-1][0],pts[pts.length-1][1])) seq=pts.slice().reverse();
     const e=seq[seq.length-1]; let dx=0,dz=0,acc=0;
@@ -60,11 +68,12 @@ function stands(data,P,apron){
 class Parked{
   constructor(THREE,airports,terrain){ this.T=THREE; this.ap=airports; this.terrain=terrain; this.done={}; this.baked=null; this.res={}; this.recs={}; }
   // プレイヤーが出発するゲートの駐機機を隠す／戻す
-  reserve(icao,x,z,r){ this.res[icao]={x,z,r}; this.applyRes(icao); }
+  reserve(icao,x,z,r,swept){ this.res[icao]={x,z,r,swept:swept||null}; this.applyRes(icao); }
   release(icao){ if(!this.res[icao]) return; delete this.res[icao]; this.applyRes(icao); }
   applyRes(icao){
     const recs=this.recs[icao]; if(!recs) return; const r=this.res[icao]; const zero=new this.T.Matrix4().makeScale(0,0,0); const ims=new Set();
-    for(const k of recs){ const hide=!!r&&Math.hypot(k.x-r.x,k.z-r.z)<r.r; k.im.setMatrixAt(k.k,hide?zero:k.m); ims.add(k.im); }
+    for(const k of recs){ let hide=!!r&&Math.hypot(k.x-r.x,k.z-r.z)<r.r; if(!hide&&r&&r.swept) hide=hits(k,r.swept); k.im.setMatrixAt(k.k,hide?zero:k.m); ims.add(k.im); }
+    if(r&&r.swept) this.hidden=recs.filter(k=>k.hide).length;
     for(const im of ims) im.instanceMatrix.needsUpdate=true;
   }
   ensure(icao){
@@ -76,7 +85,7 @@ class Parked{
     const placed=[]; const cnt=LIVERIES.map(()=>[]);
     const cand=list.map((s,i)=>({s,i})).sort((p,q)=>p.s.stopDist-q.s.stopDist);
     for(const {s,i} of cand){
-      if(hash(i+(icao==="RJTT"?7:0))>(icao==="RJTT"?0.62:0.7)) continue;      // 空きスタンドも残す
+      if(hash(i+(icao==="RJTT"?7:0))>(icao==="RJTT"?0.62:0.9)) continue;      // 空きスタンドも残す
       let bad=false;
       for(const t of terms){ if(pip(s.x,s.z,t)) { bad=true; break; } }
       if(!bad){ const fx=s.x+s.dx*17, fz=s.z+s.dz*17, bx=s.x-s.dx*17, bz=s.z-s.dz*17; for(const t of terms){ if(pip(fx,fz,t)||pip(bx,bz,t)){ bad=true; break; } } }
@@ -95,7 +104,7 @@ class Parked{
           const hdg=Math.atan2(s.dx,-s.dz);          // 機首の真方位（北=−z, 東=+x）
           q.setFromAxisAngle(up,-hdg);
           const gy=this.terrain.heightAt(s.x,s.z)+0.12;      // 舗装面
-          pv.set(s.x-P[0],gy-b.minY,s.z-P[1]); m4.compose(pv,q,sc); im.setMatrixAt(k,m4); recs.push({x:s.x,z:s.z,im,k,m:m4.clone()});
+          pv.set(s.x-P[0],gy-b.minY,s.z-P[1]); m4.compose(pv,q,sc); im.setMatrixAt(k,m4); recs.push({x:s.x,z:s.z,dx:s.dx,dz:s.dz,im,k,m:m4.clone()});
         });
         im.instanceMatrix.needsUpdate=true; grp.add(im);
       }

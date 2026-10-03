@@ -101,7 +101,9 @@ class Game{
         const p0=plan.push.poses[0], fw=[Math.sin(p0.psi),-Math.cos(p0.psi)]; const x=p0.mx-fw[0]*TAXI.MAIN, z=p0.mz-fw[1]*TAXI.MAIN, h=T.heightAt(x,z);
         s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(p0.psi,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; s.onGround=true; F.derived(s);
         this.taxiPlan=plan; this.taxiPhase="push"; this.push={i:0,d:0,v:0,t:0}; this.takeoffRwy=e; this.route=baseRouteToTokyo().concat(this.finalRoutePart(o)); windFrom=e.hdg;
-        if(this.FS.pk) this.FS.pk.reserve("RJOB",x,z,30);
+        if(this.FS.pk){ const sw=[]; const cg=(mx,mz,psi)=>TAXI.footprint(mx-Math.sin(psi)*TAXI.MAIN,mz+Math.cos(psi)*TAXI.MAIN,Math.sin(psi),-Math.cos(psi),sw);
+          const po=plan.push.poses; for(let i=0;i<po.length;i+=3) cg(po[i].mx,po[i].mz,po[i].psi); const tx=plan.taxi; for(let i=0;i<tx.length;i+=3) cg(tx[i].x,tx[i].z,tx[i].psi);
+          this.FS.pk.reserve("RJOB",x,z,30,sw); }
         this.setMsg("プッシュバック中（Enter でスキップ）","#3ddcff",8);
         ap.alt=3000*FT; ap.hdg=e.hdg; ap.spd=250*KT; ap.vs=0; ap.spdIsMach=false;
       }

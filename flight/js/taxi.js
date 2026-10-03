@@ -45,7 +45,8 @@ function gateStand(data,gateRef){
   const gp=G.ll2xz(gate.p[1],gate.p[0]); let best=null,bd=1e18;
   for(const w of ways){
     if(w.t!=="parking_position") continue; let pts=w.g.map(p=>G.ll2xz(p[1],p[0])); if(pts.length<2) continue;
-    let L=0; for(let i=0;i<pts.length-1;i++) L+=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); if(L<20) continue;
+    let L=0; for(let i=0;i<pts.length-1;i++) L+=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); if(L<40) continue;
+    if(Math.hypot(pts[pts.length-1][0]-pts[0][0],pts[pts.length-1][1]-pts[0][1])/L<0.98) continue;
     if(nearTerm(pts[0][0],pts[0][1])<nearTerm(pts[pts.length-1][0],pts[pts.length-1][1])) pts=pts.slice().reverse();
     const e=pts[pts.length-1], d=Math.hypot(e[0]-gp[0],e[1]-gp[1]); if(d<bd){ bd=d; best={pts,e}; }
   }
@@ -167,5 +168,12 @@ class AutoTaxi{
   }
 }
 
-root.TAXI={ buildGraph, nearestVertex, dijkstra, gateStand, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
+// 機体の占める範囲を小さな円の並びで近似する（衝突の判定用）。x,z=重心、(dx,dz)=機首の向き。 out に [x,z,半径] を追加
+const FOOT=(function(){ const a=[]; for(let o=-17;o<=19;o+=4) a.push([o,0,3.3]);                 // 胴体
+  for(const l of [5,9,13,16.5]) for(const sg of [-1,1]) a.push([-1-0.4*l,sg*l,3.0]);                // 主翼（後退角つき）
+  for(const l of [3,6]) for(const sg of [-1,1]) a.push([-15.5-0.3*l,sg*l,2.5]);                      // 水平尾翼
+  return a; })();
+function footprint(x,z,dx,dz,out){ const rx=-dz, rz=dx; for(const [o,l,r] of FOOT) out.push([x+dx*o+rx*l,z+dz*o+rz*l,r]); return out; }
+
+root.TAXI={ footprint, buildGraph, nearestVertex, dijkstra, gateStand, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
 })(typeof window!=="undefined"?window:globalThis);
