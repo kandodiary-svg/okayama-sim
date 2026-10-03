@@ -161,7 +161,7 @@ class Game{
     let fuel=o.fuel; if(fuel==null){ if(spec.legacy) fuel=(mode0==="app"?(spec.dest.icao==="RJOB"?5200:2600):(mode0==="cruise"?3200:5200)); else if(mode0==="app") fuel=2600; }
     const s=F.createState({fuel:fuel!=null?fuel:5200}); this.s=s; const c=this.c, ap=c.ap, pilot=this.pilot;
     Object.assign(pilot,{pitch:0,roll:0,yaw:0,throttle:0,brake:0,parking:false,speedbrake:0,reverse:false,flapsTarget:0,gearTarget:1,trim:0,autobrake:0,spoilerArm:false});
-    ap.on=false; ap.athr=false; this.route=[]; ap.route=null; ap.wpIndex=0; ap.loc=null; ap.appr=false; this.apprState=null; this.landed=false; this.touchRep=null; this.firstThr=false; this.todPt=null; this.rwyFocus=null; this.takeoffRwy=null; this.takeoffRef=null; this.cruiseAlt=null;
+    ap.on=false; ap.athr=false; this.route=[]; ap.route=null; ap.wpIndex=0; ap.loc=null; ap.appr=false; this.apprState=null; this.landed=false; this.touchRep=null; this.firstThr=false; this.todPt=null; this.rwyFocus=null; this.takeoffRwy=null; this.takeoffRef=null; this.cruiseAlt=null; this.autoFlight=false; this.af=null;
     this.ndRange=20; this.vStall=null;
     // 天候（風）
     const wxo=this.wxOpts||{}; this.wx.windKt=({calm:0,light:8,cross:14,strong:22}[wxo.wind||"light"]); this.wx.jet=({calm:0,light:18,cross:22,strong:30}[wxo.wind||"light"]);
@@ -211,6 +211,7 @@ class Game{
     this.vsp={v1:Math.round(132+1.5*kv),vr:Math.round(135+1.5*kv),v2:Math.round(145+1.5*kv),vref:Math.round(135+1.3*kv)};
     ap.route=this.route; ap.wpIndex=0; this.stats.startFuel=s.fuel; this.stats.t0=this.t;
     this.state="fly"; this.pending=null; $("loadmsg").style.display="none"; this.acft.root.visible=true; this.applyView(this.view); this.sound("start");
+    if(mode==="cruise") this.startAutoFlight(true);   // 巡航中から: 最初からオート航行（降下〜ILS進入まで自動）
   }
   planGate(icao,rwy){
     const d=this.ap.data&&this.ap.data[icao]; if(!d) return null; const re=this.ap.runwayEnd(icao,rwy); if(!re) return null;
@@ -309,7 +310,7 @@ class Game{
     this.taxiTick(); if(this.taxiPhase==="taxi"&&s.parking&&pilot.throttle>0.04&&s.onGround){ pilot.parking=false; s.parking=false; this.say("パーキングブレーキ解除","#fff",1.4); }
     if(this.stats.liftoff&&this.taxiPhase){ this.taxiPhase=null; this.autoTaxi=null; }
     // 自動機能
-    this.autoLights(); this.apprAssist(dt); this.takeoffCalls(); this.computeWarnings(dt); this.updateHints();
+    this.autoLights(); this.autoFlightStep(dt); this.apprAssist(dt); this.takeoffCalls(); this.computeWarnings(dt); this.updateHints();
     // 失速速度（見かけの目安）
     this.vStall=Math.sqrt(2*s.mass*F.G/(1.225*F.AC.S*(F.flapParams(s.flaps)[1])))/KT*1.0;
     // 飛行機の見た目
@@ -355,6 +356,64 @@ class Game{
     const e=f.g.e; ap.loc={x:e.x,z:e.z,crs:e.hdg,h:f.g.h,gs:3*D2R,aim:300,name:f.icao+" "+f.name}; ap.on=true; ap.athr=true; ap.latMode="LOC"; ap.vertMode="GS"; ap.appr=true; ap.spdIsMach=false; this.apprState={icao:f.icao,name:f.name,e}; this.rwyFocus={icao:f.icao,name:f.name};
     ap.spd=Math.min(Math.max(s.cas,this.vsp.vref*KT),230*KT); this.pilot.autobrake=2; this.pilot.spoilerArm=true; this.say("進入モード ― "+this.apName(f.icao)+" 滑走路 "+f.name,"#3ddcff",3);
   }
+  // ---------------- オート航行（離陸後の上昇 → 巡航 → 降下 → ILS 進入を、経路に沿って自動で行う）----------------
+  startAutoFlight(quiet){
+    const ap=this.c.ap, s=this.s; if(this.state!=="fly") return false;
+    if(s.onGround){ this.say("離陸後に使えます","#ffb11a"); return false; }
+    if(!this.route.length||!this.destRwy){ this.say("経路がありません","#ffb11a"); return false; }
+    const rt=this.route; let k=Math.min(Math.max(0,ap.wpIndex||0),rt.length-1);
+    while(k<rt.length-1){ const a=rt[k], b=rt[k+1]; if((s.pos[0]-a.x)*(b.x-a.x)+(s.pos[2]-a.z)*(b.z-a.z)>0) k++; else break; }   // すでに通り過ぎた経由地は飛ばす
+    ap.on=true; ap.athr=true; ap.latMode="LNAV"; ap.route=rt; ap.wpIndex=k; ap.appr=false; ap.loc=null; this.apprState=null; this.c.legFrom=null;
+    if(ap.vertMode==="GS") ap.vertMode="ALT";
+    this.autoFlight=true; this.af={phase:null,sayT:0};
+    if(!quiet) this.say("オート航行 ON ― 上昇・巡航・降下・ILS進入まで自動（MCP を触ると手動に戻ります）","#38e06a",5);
+    this.syncMCP(); return true;
+  }
+  stopAutoFlight(msg){ if(!this.autoFlight) return; this.autoFlight=false; this.af=null; if(msg) this.say(msg,"#ffb11a",3); }
+  routeRemain(){   // いまの位置から経路を通って滑走路しきい値までの道のり
+    const rt=this.route, s=this.s, ap=this.c.ap; const re=this.ap.runwayEnd(this.destRwy.icao,this.destRwy.name); if(!re||!rt.length) return 0;
+    let i=Math.min(ap.wpIndex||0,rt.length-1); let L=Math.hypot(rt[i].x-s.pos[0],rt[i].z-s.pos[2]); for(let k=i;k<rt.length-1;k++) L+=Math.hypot(rt[k+1].x-rt[k].x,rt[k+1].z-rt[k].z);
+    const last=rt[rt.length-1]; return L+Math.hypot(re.e.x-last.x,re.e.z-last.z);
+  }
+  autoFlightStep(dt){
+    if(!this.autoFlight||this.state!=="fly") return; const s=this.s, ap=this.c.ap, p=this.pilot, af=this.af; const rt=this.route;
+    if(!ap.on||this.landed||s.onGround&&this.stats.liftoff&&s.gs<60){ this.autoFlight=false; return; }
+    if(ap.latMode==="LOC"||ap.vertMode==="GS"){ this.autoFlight=false; return; }       // ILS 進入に入ったら、あとは進入モードが担当
+    if(s.onGround||!rt.length||!this.destRwy) return;
+    const raFt=s.radAlt/FT, altFt=s.pos[1]/FT, cas=s.cas/KT; const re=this.ap.runwayEnd(this.destRwy.icao,this.destRwy.name); if(!re) return; const e=re.e;
+    const ph=af.phase; const setPh=(n,msg)=>{ if(af.phase!==n){ af.phase=n; if(msg) this.say(msg,"#3ddcff",3.5); } };
+    ap.latMode="LNAV"; ap.route=rt; ap.athr=true;
+    const lim=(i)=>F.AC.flapSpeeds[Math.max(0,Math.min(8,i))]/KT;
+    // ギア・フラップのかたづけ（離陸直後）
+    if(raFt>60&&s.vs>1&&p.gearTarget===1&&!af.descend){ p.gearTarget=0; this.say("ギア上げ","#38e06a"); }
+    const fi=Math.round(p.flapsTarget);
+    if(!af.descend&&fi>0&&raFt>700&&this.t>(af.flT||0)&&cas>(fi>1?lim(fi-1)-22:lim(1)-30)){ p.flapsTarget=fi-1; af.flT=this.t+4; }
+    // 降下を始める点: しきい値までの道のりが「降下に必要な距離」以下になったら
+    if(!af.descend){
+      if(!af.tgt){ let mt=0; for(let d=3000;d<=42000;d+=3000) mt=Math.max(mt,this.terrain.heightAt(e.x-e.ux*d,e.z-e.uz*d)); af.tgt=Math.max(re.h+880,mt+400); }
+      const drop=s.pos[1]-af.tgt; const need=Math.max(0,drop)/Math.tan(2.8*D2R)+9000;
+      if(drop>250&&this.routeRemain()<=need){ af.descend=true; }
+    }
+    const spdLim=lim(fi)-8;     // いまのフラップで出してよい速度
+    if(af.descend){
+      setPh("descend","オート航行 ― 降下開始");
+      ap.alt=af.tgt; ap.vertMode=(Math.abs(af.tgt-s.pos[1])<45)?"ALT":"FLCH"; if(ap.vertMode==="FLCH"&&Math.abs(af.tgt-s.pos[1])<45) ap.vertMode="ALT";
+      if(altFt>28500){ ap.spdIsMach=true; ap.mach=0.76; } else { ap.spdIsMach=false; ap.spd=Math.min((altFt>10500?280:250),spdLim)*KT; }
+      if(s.pos[1]-af.tgt<45&&ap.vertMode!=="ALT") ap.vertMode="ALT";
+    } else {
+      const cr=this.cruiseAlt||35000*FT;
+      if(s.pos[1]<cr-120){ setPh("climb",null); ap.alt=cr; if(ap.vertMode!=="FLCH") ap.vertMode="FLCH"; }
+      else { setPh("cruise","オート航行 ― 巡航"); ap.alt=cr; ap.vertMode="ALT"; }
+      if(altFt>26000){ ap.spdIsMach=true; ap.mach=0.78; }
+      else { ap.spdIsMach=false; const v=raFt<1500&&fi>0?this.vsp.v2+15:(altFt>10500?290:250); ap.spd=Math.min(v,spdLim)*KT; }
+    }
+    // 最終進入コースに乗ったら ILS 進入へ（経路の最後の脚に入り、滑走路の延長線の近くに来たとき）
+    if(ap.wpIndex>=rt.length-1&&rt.length>=1){
+      const g=this.approachGeometry(this.destRwy.icao,this.destRwy.name); if(g&&g.along>2500&&g.along<36000&&Math.abs(g.xt)<2600&&Math.abs(n180(s.psi-e.hdg))<35*D2R){
+        const f=this.findApproach(); if(f&&f.icao===this.destRwy.icao&&f.name===this.destRwy.name){ this.pressAPPR(); this.autoFlight=false; }
+      }
+    }
+  }
   apprAssist(dt){   // 進入中のギア・フラップ・速度を自動設定
     const s=this.s, ap=this.c.ap, pilot=this.pilot; if(!this.assistConfig||!ap.on||ap.latMode!=="LOC"||!this.apprState||s.onGround) return;
     const g=this.approachGeometry(this.apprState.icao,this.apprState.name); if(!g) return; const d=g.along; const vref=this.vsp.vref+4;
@@ -391,7 +450,7 @@ class Game{
     else if(s.onGround&&!this.stats.liftoff&&!this.landed){ if(p.throttle<0.1) h="スロットルを上げて離陸滑走（Shift / PageUp / 数字キー 9）。パーキングブレーキは自動で外れます"; else if(cas<this.vsp.vr) h="加速中。滑走路中心線は自動で維持されます。VR（"+this.vsp.vr+" kt）で操縦桿を引く（↓ / S）"; else h="操縦桿を引いて機首を約 10° 上げる"; }
     else if(this.stats.liftoff&&!this.landed&&s.gear>0.5&&raFt>30&&s.vs>0) h="正の上昇率 → ギア上げ（G）";
     else if(!this.landed&&s.gear<0.5&&s.flaps>0.5&&altFt>1500&&cas>180) h="フラップ上げ（V でフラップを一段ずつ引き上げ）";
-    else if(!ap.on&&!s.onGround&&altFt>1500&&!this.landed) h="Enter キーでオートパイロット（AP）。上の MCP で高度・速度・方位を設定。LNAV で目的地方面へ自動航行";
+    else if(!ap.on&&!s.onGround&&altFt>1500&&!this.landed) h="Enter キーで「オート航行」（上昇→巡航→降下→ILS進入まで経路に沿って自動）。自分で飛ばすなら上の MCP で高度・速度・方位を設定";
     else if(ap.on&&ap.vertMode==="ALT"&&Math.abs(ap.alt-s.pos[1])>150&&!this.landed) h="MCP の高度を設定して FLCH（高度変更）を押すと上昇／降下します";
     else if(this.landed&&s.onGround&&s.gs>20) h="接地後：リバース（R 長押し）とブレーキ（Space / B 長押し）。オートブレーキ作動中";
     const tod=this.todInfo(); if(tod&&tod.msg&&!this.landed) h=tod.msg;
@@ -463,9 +522,9 @@ class Game{
     const dz=v=>Math.abs(v)<0.1?0:v; this.padRoll=dz(g.axes[0]||0); this.padPitch=dz(g.axes[1]||0); this.padYaw=dz(g.axes[2]||0); this.padBrake=(g.buttons[6]&&g.buttons[6].value)||0;
     if(g.axes[3]!=null&&Math.abs(g.axes[3])>0.15) this.pilot.throttle=clamp(this.pilot.throttle-g.axes[3]*0.012,0,1);
     const bt=(i,k)=>{ const on=g.buttons[i]&&g.buttons[i].pressed; if(on&&!this["pb"+i]) this.keyDown({code:k,shiftKey:false}); this["pb"+i]=!!on; }; bt(0,"KeyG"); bt(1,"KeyF"); bt(2,"KeyV"); bt(3,"KeyC"); bt(4,"KeyA"); bt(5,"KeyJ"); }
-  toggleAP(){ const ap=this.c.ap, s=this.s; if(!ap.on){ ap.on=true; ap.athr=this.route.length>0&&!s.onGround?ap.athr:false; if(s.onGround) { ap.on=false; this.say("離陸後に使えます","#ffb11a"); return; }
+  toggleAP(manualOnly){ const ap=this.c.ap, s=this.s; if(!manualOnly&&!ap.on&&!s.onGround&&this.route.length&&this.destRwy&&this.startAutoFlight()) return; if(!ap.on){ ap.on=true; ap.athr=this.route.length>0&&!s.onGround?ap.athr:false; if(s.onGround) { ap.on=false; this.say("離陸後に使えます","#ffb11a"); return; }
       ap.latMode=(ap.latMode==="LNAV"&&this.route.length)?"LNAV":"HDG"; if(ap.latMode==="HDG") ap.hdg=s.psi; ap.vertMode="ALT"; ap.alt=Math.round(s.pos[1]/(100*FT))*100*FT; if(!ap.athr){ ap.spd=Math.max(s.cas,150*KT); ap.athr=true; } this.say("オートパイロット ON","#38e06a"); }
-    else { ap.on=false; ap.athr=false; this.say("オートパイロット OFF","#ffb11a"); } this.syncMCP(); }
+    else { ap.on=false; ap.athr=false; this.autoFlight=false; this.say("オートパイロット OFF","#ffb11a"); } this.syncMCP(); }
   cycleView(){ const order=["cockpit","chase","window"]; this.applyView(order[(order.indexOf(this.view)+1)%order.length]); }
   applyView(v){ this.view=v; this.look.yaw=(v==="window"?1.15:0); this.look.pitch=(v==="window"?-0.12:0); this.camZoom=1; document.body.classList.toggle("v-cockpit",v==="cockpit"); document.body.classList.toggle("v-window",v==="window"); document.body.classList.toggle("v-chase",v==="chase"); this.acft.root.visible=(v!=="cockpit"); const vb=$("viewname"); if(vb) vb.textContent={cockpit:"コックピット",chase:"外から",window:"客室の窓"}[v]; }
   pauseMenu(){ this.paused=true; $("pause").style.display="flex"; }

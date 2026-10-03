@@ -24,12 +24,24 @@ function compute(c, s, pilot, env, dt){
     // 横
     if(ap.latMode==="HDG"){ const e=norm180(ap.hdg-s.psi); apPhi=clamp(e*1.6,-25*D2R,25*D2R); }
     else if(ap.latMode==="LNAV" && ap.route && ap.wpIndex<ap.route.length){
-      const wp=ap.route[ap.wpIndex], dx=wp.x-s.pos[0], dz=wp.z-s.pos[2]; const dist=Math.hypot(dx,dz);
-      const brg=Math.atan2(dx,-dz); // 北=0 東=+
-      const turnR=s.gs*s.gs/(G*Math.tan(25*D2R)); const reach=Math.max(1500,turnR*0.9);
-      if(dist<reach && ap.wpIndex<ap.route.length-1){ ap.wpIndex++; }
-      let e=norm180(brg-s.psi); apPhi=clamp(e*1.4,-25*D2R,25*D2R);
-      ap.status="→ "+(wp.name||("WP"+ap.wpIndex))+" "+(dist/1852).toFixed(0)+"NM";
+      // 経路追従: 「いまの脚（前の経由地→次の経由地）」の線に乗るように飛ぶ。脇を通り過ぎても周回しない
+      const rt=ap.route; let i=ap.wpIndex; let wp=rt[i];
+      if(c.lnRt!==rt||c.lnI!==i||!c.legFrom){ c.lnRt=rt; c.lnI=i; c.legFrom=(i>0)?{x:rt[i-1].x,z:rt[i-1].z}:{x:s.pos[0],z:s.pos[2]}; }
+      const gsp=Math.max(60,s.gs); const turnR=gsp*gsp/(G*Math.tan(25*D2R));
+      let lx=wp.x-c.legFrom.x, lz=wp.z-c.legFrom.z; let L=Math.hypot(lx,lz); if(L<1){ lx=Math.sin(s.psi); lz=-Math.cos(s.psi); L=1; }
+      let ux=lx/L, uz=lz/L; let rx=s.pos[0]-c.legFrom.x, rz=s.pos[2]-c.legFrom.z; let along=rx*ux+rz*uz, xt=rx*(-uz)+rz*ux;
+      const dist=Math.hypot(wp.x-s.pos[0],wp.z-s.pos[2]);
+      if(i<rt.length-1){   // 次の経由地へ: 曲がり始める手前（旋回の分だけ早め）か、通り過ぎたら切り替える
+        const nx=rt[i+1].x-wp.x, nz=rt[i+1].z-wp.z; const nl=Math.hypot(nx,nz)||1; const dang=Math.abs(Math.atan2(ux*(nz/nl)-uz*(nx/nl), ux*(nx/nl)+uz*(nz/nl)));
+        const lead=clamp(turnR*Math.tan(Math.min(dang,2.6)/2),0,14000)+400;
+        if((L-along)<lead||dist<900){ ap.wpIndex=++i; c.lnI=i; c.legFrom={x:wp.x,z:wp.z}; wp=rt[i]; lx=wp.x-c.legFrom.x; lz=wp.z-c.legFrom.z; L=Math.hypot(lx,lz)||1; ux=lx/L; uz=lz/L; rx=s.pos[0]-c.legFrom.x; rz=s.pos[2]-c.legFrom.z; along=rx*ux+rz*uz; xt=rx*(-uz)+rz*ux; }
+      }
+      const course=Math.atan2(ux,-uz); const trk=(s.gs>30)?Math.atan2(s.vel[0],-s.vel[2]):s.psi;
+      let des;
+      if(along<-1500||Math.abs(xt)>14000){ des=Math.atan2(wp.x-s.pos[0],-(wp.z-s.pos[2])); }   // 脚から遠い・脚の手前: 経由地へ直行
+      else des=course+clamp(-xt/(gsp*40),-0.75,0.75);                                          // 脚に乗る（ずれが大きいほど深い角度で寄せる）
+      apPhi=clamp(norm180(des-trk)*1.6,-25*D2R,25*D2R);
+      ap.xtk=xt; ap.status="→ "+(wp.name||("WP"+ap.wpIndex))+" "+(dist/1852).toFixed(0)+"NM";
     } else if(ap.latMode==="LOC" && ap.loc){
       const L=ap.loc; // L: {x,z,crs(rad), } 滑走路しきい値と進入方位
       const relx=s.pos[0]-L.x, relz=s.pos[2]-L.z; const fx=Math.sin(L.crs), fz=-Math.cos(L.crs);   // 進入方向（滑走路に向かう向き）

@@ -48,22 +48,23 @@ function bindUI(game, hud, audio){
   // ---------------- MCP ----------------
   const rep=(el,fn)=>{ let t=null,i=null; const stop=()=>{ clearTimeout(t); clearInterval(i); }; el.addEventListener("pointerdown",e=>{ e.preventDefault(); fn(1); let n=0; t=setTimeout(()=>{ i=setInterval(()=>{ n++; fn(n>12?10:(n>5?5:1)); },90); },450); }); ["pointerup","pointerleave","pointercancel"].forEach(ev=>el.addEventListener(ev,stop)); };
   document.querySelectorAll("#mcp .pm button").forEach(b=>{ const k=b.dataset.k, d=+b.dataset.d; rep(b,(mul)=>adjust(k,d,mul)); });
-  function adjust(k,d,mul){ const a=ap(), s=game.s; mul=mul||1;
+  function adjust(k,d,mul){ const a=ap(), s=game.s; mul=mul||1; manual();
     if(k==="spd"){ if(a.spdIsMach){ a.mach=clamp((a.mach||0.78)+d*0.01*(mul>1?1:1),0.4,0.84); } else a.spd=clamp(a.spd/KT+d*mul,120,340)*KT; }
     else if(k==="hdg"){ a.hdg=((a.hdg/D2R+d*mul)%360+360)%360*D2R; if(a.on&&a.latMode!=="HDG"&&a.latMode!=="LOC"){ a.latMode="HDG"; } }
     else if(k==="alt"){ a.alt=clamp(Math.round(a.alt/FT/100)*100+d*100*(mul>1?5:1),0,41000)*FT; }
     else if(k==="vs"){ a.vs=clamp(Math.round(a.vs/FT*60/100)*100+d*100*(mul>1?5:1),-3000,3000)*FT/60; if(a.on&&a.vertMode!=="VS"&&a.vertMode!=="GS") a.vertMode="VS"; }
     sync(); }
+  const manual=()=>{ if(game.autoFlight) game.stopAutoFlight("オート航行を解除（手動の設定に切り替えました）"); };
   const need=()=>{ if(game.state!=="fly") return false; if(game.s.onGround){ game.say("離陸後に使えます","#ffb11a"); return false; } return true; };
   $("bAP").onclick=()=>{ if(game.state==="fly") game.toggleAP(); };
-  $("bAT").onclick=()=>{ if(!need()) return; const a=ap(); a.athr=!a.athr; if(a.athr&&!a.on){ /* 推力だけ自動 */ a.on=true; a.latMode="HDG"; a.hdg=game.s.psi; a.vertMode="ALT"; a.alt=Math.round(game.s.pos[1]/FT/100)*100*FT; } sync(); };
-  $("bLNAV").onclick=()=>{ if(!need()) return; const a=ap(); if(!game.route.length){ game.say("経路がありません","#ffb11a"); return; } a.on=true; a.latMode="LNAV"; a.route=game.route; if(a.vertMode==="GS") a.vertMode="ALT"; if(!a.athr){ a.athr=true; a.spd=Math.max(game.s.cas,160*KT); } sync(); };
-  $("bHDG").onclick=()=>{ if(!need()) return; const a=ap(); if(!a.on){ game.toggleAP(); } a.latMode="HDG"; if(a.hdg==null) a.hdg=game.s.psi; if(!game.hdgTouched){ a.hdg=game.s.psi; } sync(); };
-  $("bALT").onclick=()=>{ if(!need()) return; const a=ap(); if(!a.on) game.toggleAP(); a.vertMode="ALT"; sync(); };
-  $("bVS").onclick=()=>{ if(!need()) return; const a=ap(); if(!a.on) game.toggleAP(); a.vs=Math.round(game.s.vs/FT*60/100)*100*FT/60; a.vertMode="VS"; sync(); };
-  $("bFLCH").onclick=()=>{ if(!need()) return; const a=ap(), s=game.s; if(!a.on) game.toggleAP(); a.vertMode="FLCH"; a.athr=true; if(s.pos[1]>7600){ a.spdIsMach=true; a.mach=a.mach||0.78; } else { a.spdIsMach=false; a.spd=Math.min(Math.max(a.spd,200*KT),s.pos[1]<3050?250*KT:290*KT); } sync(); };
+  $("bAT").onclick=()=>{ if(!need()) return; manual(); const a=ap(); a.athr=!a.athr; if(a.athr&&!a.on){ /* 推力だけ自動 */ a.on=true; a.latMode="HDG"; a.hdg=game.s.psi; a.vertMode="ALT"; a.alt=Math.round(game.s.pos[1]/FT/100)*100*FT; } sync(); };
+  $("bLNAV").onclick=()=>{ if(!need()) return; manual(); const a=ap(); if(!game.route.length){ game.say("経路がありません","#ffb11a"); return; } a.on=true; a.latMode="LNAV"; a.route=game.route; if(a.vertMode==="GS") a.vertMode="ALT"; if(!a.athr){ a.athr=true; a.spd=Math.max(game.s.cas,160*KT); } sync(); };
+  $("bHDG").onclick=()=>{ if(!need()) return; manual(); const a=ap(); if(!a.on){ game.toggleAP(true); } a.latMode="HDG"; if(a.hdg==null) a.hdg=game.s.psi; if(!game.hdgTouched){ a.hdg=game.s.psi; } sync(); };
+  $("bALT").onclick=()=>{ if(!need()) return; manual(); const a=ap(); if(!a.on) game.toggleAP(true); a.vertMode="ALT"; sync(); };
+  $("bVS").onclick=()=>{ if(!need()) return; manual(); const a=ap(); if(!a.on) game.toggleAP(true); a.vs=Math.round(game.s.vs/FT*60/100)*100*FT/60; a.vertMode="VS"; sync(); };
+  $("bFLCH").onclick=()=>{ if(!need()) return; manual(); const a=ap(), s=game.s; if(!a.on) game.toggleAP(true); a.vertMode="FLCH"; a.athr=true; if(s.pos[1]>7600){ a.spdIsMach=true; a.mach=a.mach||0.78; } else { a.spdIsMach=false; a.spd=Math.min(Math.max(a.spd,200*KT),s.pos[1]<3050?250*KT:290*KT); } sync(); };
   $("bAPPR").onclick=()=>{ if(game.state==="fly") game.pressAPPR(); sync(); };
-  $("bMACH").onclick=()=>{ const a=ap(), s=game.s; if(a.spdIsMach){ a.spdIsMach=false; a.spd=Math.max(150*KT,s.cas); } else { a.spdIsMach=true; a.mach=clamp(s.mach,0.5,0.82); } sync(); };
+  $("bMACH").onclick=()=>{ const a=ap(), s=game.s; manual(); if(a.spdIsMach){ a.spdIsMach=false; a.spd=Math.max(150*KT,s.cas); } else { a.spdIsMach=true; a.mach=clamp(s.mach,0.5,0.82); } sync(); };
   function sync(){
     const a=ap(), s=game.s; if(game.state==="menu"||game.state==="loading") return;
     $("vspd").textContent=a.spdIsMach?"."+String(Math.round((a.mach||0.78)*100)):String(Math.round(a.spd/KT)); $("lblspd").textContent=a.spdIsMach?"マッハ MACH":"速度 SPD(kt)";

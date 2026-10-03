@@ -40,7 +40,7 @@ class Easy{
   // ---- 経路（水平）: 現在の脚に沿い、ずれていればそこへ戻る ----
   buildPath(){
     const g=this.game, s=g.s, X=s.pos[0], Z=s.pos[2]; const dst=this.dest();
-    if(this.routeRef!==g.route){ this.routeRef=g.route; this.idx=0; this.start={x:X,z:Z}; this.depDone=false; }
+    if(this.routeRef!==g.route){ this.routeRef=g.route; this.idx=0; this.start={x:X,z:Z}; this.depDone=false; this.base0=s.onGround?T_h(g,X,Z):s.pos[1]; this.anchor=null; this.segMin=0; }
     const wps=[]; const rt=g.route||[];
     // 離陸直後は滑走路の延長線をまっすぐ
     const tr=g.takeoffRwy; let dep=null;
@@ -48,6 +48,7 @@ class Easy{
       const along=(X-tr.x)*tr.ux+(Z-tr.z)*tr.uz; if(g.stats.liftoff&&(along>L+300||s.radAlt>450)) this.depDone=true; }
     // 通過した経由地を飛ばす
     while(this.idx<rt.length){ const w=rt[this.idx]; const dd=Math.hypot(w.x-X,w.z-Z); let pass=dd<6000;
+      { const nx=this.idx<rt.length-1?rt[this.idx+1]:(dst?{x:dst.x,z:dst.z}:null); if(nx&&!(dep&&!this.depDone)&&(X-w.x)*(nx.x-w.x)+(Z-w.z)*(nx.z-w.z)>0&&dd<60000) pass=true; }   // 経由地の横を通り過ぎた（脇を通っても戻らせない）
       if(dst&&(w.name==="進入開始点"||w.name==="最終進入点")){ const dp=Math.hypot(X-dst.x,Z-dst.z), dw=Math.hypot(w.x-dst.x,w.z-dst.z); if(dp<dw+500) pass=true; }
       if(pass&&!dep) this.idx++; else if(pass&&dep&&this.depDone) this.idx++; else break; }
     if(dep&&!this.depDone) wps.push(dep);
@@ -73,6 +74,28 @@ class Easy{
     // 累積長
     const cum=[0]; for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
     return {pts,cum,off,Lc,nrm,thrIdx,thrLen:thrIdx>=0?cum[thrIdx]:cum[cum.length-1],total:cum[cum.length-1],next:landedRoll?null:wps[0],dst,dep:!!(dep&&!this.depDone)};
+  }
+  // ---- 空中に固定したゲート用の経路（経路の出発点から最後まで。機体の位置では動かない）----
+  anchorPath(){
+    const g=this.game, rt=g.route||[], tr=g.takeoffRwy, dst=this.dest(); const dk=dst?dst.icao+dst.name:"";
+    if(this.anchor&&this.anchor.rt===rt&&this.anchor.tr===tr&&this.anchor.dk===dk) return this.anchor;
+    const pts=[]; const add=(x,z)=>{ const l=pts[pts.length-1]; if(!l||Math.hypot(x-l[0],z-l[1])>1) pts.push([x,z]); };
+    if(tr){ const rw=g.takeoffRef?g.ap.runwayEnd(g.takeoffRef.icao,g.takeoffRef.name):null; const L=rw?rw.r.L:3000; add(tr.x,tr.z); add(tr.x+tr.ux*(L+2800),tr.z+tr.uz*(L+2800)); }
+    else if(this.start) add(this.start.x,this.start.z);
+    for(const w of rt) add(w.x,w.z);
+    let thrIdx=-1; if(dst){ add(dst.x,dst.z); thrIdx=pts.length-1; const o=Math.min(2200,dst.L*0.8); add(dst.x+dst.ux*o,dst.z+dst.uz*o); }
+    if(pts.length<2) pts.push([pts[0][0]+1,pts[0][1]]);
+    const cum=[0]; for(let i=1;i<pts.length;i++) cum.push(cum[i-1]+Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]));
+    this.anchor={rt,tr,dk,pts,cum,total:cum[cum.length-1],thrLen:thrIdx>=0?cum[thrIdx]:1e12,dst,hasTr:!!tr};
+    this.segMin=0; return this.anchor;
+  }
+  anchorAt(A,sd){ const {pts,cum}=A; sd=clamp(sd,0,A.total); let i=1; while(i<pts.length-1&&cum[i]<sd) i++; const a=pts[i-1], b=pts[i]; const l=Math.max(1e-6,cum[i]-cum[i-1]); const u=clamp((sd-cum[i-1])/l,0,1); let tx=b[0]-a[0], tz=b[1]-a[1]; const tl=Math.hypot(tx,tz)||1; return {x:a[0]+(b[0]-a[0])*u,z:a[1]+(b[1]-a[1])*u,tx:tx/tl,tz:tz/tl}; }
+  anchorAlt(A,sd,gh){   // 高さ: 巡航高度／出発点からの 5° 上昇／しきい値へ向かう 3° 降下
+    const g=this.game; let alt=g.cruiseAlt||CRUISE_ALT;
+    if(A.dst){ if(sd>A.thrLen) alt=Math.min(alt,A.dst.h+4); else alt=Math.min(alt,A.dst.h+15+(A.thrLen-sd)*GLIDE_TAN); }
+    const climbS=A.hasTr?1800:0; alt=Math.min(alt,(this.base0!=null?this.base0:0)+Math.max(0,sd-climbS)*CLIMB_TAN);
+    if((!A.dst||A.thrLen-sd>30000)&&sd>climbS+500) alt=Math.max(alt,gh+300);
+    return alt;
   }
   at(P,sd){   // 経路上の点（ずれの補正つき）
     const {pts,cum}=P; sd=clamp(sd,0,P.total); let i=1; while(i<pts.length-1&&cum[i]<sd) i++;
@@ -100,10 +123,14 @@ class Easy{
     this.ground.count=0; this.tIdx=0;
     const s=g.s, cam=g.cam; const P=this.buildPath(); if(!P){ this.gates.count=0; this.line.count=0; return; }
     const onG=!!s.onGround, ap=g.c.ap; const base=onG?T_h(g,s.pos[0],s.pos[2]):s.pos[1];
-    // ゲートの位置
-    let sd=140, step=380, n=0; const T=this.T, m4=this.m4, q=this.q, pv=this.pv, sv=this.sv, dir=this.dir; const pos=[]; let gc=0, lc=0;
-    const ys=[];
-    while(sd<=P.total&&n<MAXN){ const p=this.at(P,sd); const a=this.altProfile(P,p,sd,base,onG); const gh=g.terrain.heightAt(p.x,p.z); const y=Math.max(a,gh+27); pos.push({x:p.x,y,z:p.z,tx:p.tx,tz:p.tz,sd}); n++; sd+=step; if(sd>3500) step=Math.min(3200,step*1.13); }
+    // ゲートの位置（空中に固定。経路の上に一定間隔で置き、機体が近づくと順に現れて、通り過ぎると消える）
+    const A=this.anchorPath(); const T=this.T, m4=this.m4, q=this.q, pv=this.pv, sv=this.sv, dir=this.dir; const pos=[]; let gc=0, lc=0;
+    const STEP=380; let sAir=0;
+    { let bd=1e18, bi=this.segMin||0; for(let i=Math.max(0,this.segMin||0);i<A.pts.length-1;i++){ const a0=A.pts[i], b0=A.pts[i+1]; const dx=b0[0]-a0[0], dz=b0[1]-a0[1], l2=dx*dx+dz*dz||1; const t=clamp(((s.pos[0]-a0[0])*dx+(s.pos[2]-a0[1])*dz)/l2,0,1); const d=Math.hypot(s.pos[0]-(a0[0]+dx*t),s.pos[2]-(a0[1]+dz*t)); if(d<bd-1){ bd=d; bi=i; sAir=A.cum[i]+t*Math.sqrt(l2); } } this.segMin=bi; }
+    const sList=[]; for(let k=Math.max(1,Math.ceil((sAir+140)/STEP)); sList.length<MAXN; k++){ const sk=k*STEP; if(sk>A.total) break; if(sk-sAir>3600&&(k%8)) continue; sList.push(sk); }
+    let prevS=null;
+    for(const sk of sList){ const p=this.anchorAt(A,sk); const gh=g.terrain.heightAt(p.x,p.z); const y=Math.max(this.anchorAlt(A,sk,gh),gh+27); const ps=prevS!=null?prevS:Math.max(0,sk-STEP); const pp=this.anchorAt(A,ps); const pgh=g.terrain.heightAt(pp.x,pp.z); const py=Math.max(this.anchorAlt(A,ps,pgh),pgh+27);
+      pos.push({x:p.x,y,z:p.z,tx:p.tx,tz:p.tz,prev:{x:pp.x,y:py,z:pp.z}}); prevS=sk; }
     const th=(x,y,z,mx)=>{ const d=Math.hypot(x-cam.x,y-cam.y,z-cam.z); return clamp(d*0.0042,0.9,mx||5); };
     for(let i=0;i<pos.length;i++){
       const p=pos[i], rx=p.x-cam.x, rz=p.z-cam.z; const t=th(p.x,p.y,p.z); const hd=Math.atan2(p.tx,-p.tz);
@@ -116,7 +143,7 @@ class Easy{
       sv.set(t,H+t,t); pv.set(rx+cx*W/2,p.y,rz+cz*W/2); m4.compose(pv,q,sv); this.gates.setMatrixAt(gc++,m4);
       pv.set(rx-cx*W/2,p.y,rz-cz*W/2); m4.compose(pv,q,sv); this.gates.setMatrixAt(gc++,m4);
       // 中心線（前のゲートへ）
-      const pr=i>0?pos[i-1]:{x:s.pos[0]+s.fwd[0]*40,y:onG?base+20:s.pos[1]-2,z:s.pos[2]+s.fwd[2]*40};
+      const pr=p.prev;
       dir.set(p.x-pr.x,p.y-pr.y,p.z-pr.z); const len=dir.length(); if(len>1){ dir.multiplyScalar(1/len); q.setFromUnitVectors(this.zax,dir); const tl=th((p.x+pr.x)/2,(p.y+pr.y)/2,(p.z+pr.z)/2,14)*1.2; sv.set(tl,tl,len); pv.set((p.x+pr.x)/2-cam.x,(p.y+pr.y)/2,(p.z+pr.z)/2-cam.z); m4.compose(pv,q,sv); this.line.setMatrixAt(lc++,m4); }
     }
     this.gates.count=gc; this.line.count=lc; this.gates.instanceMatrix.needsUpdate=true; this.line.instanceMatrix.needsUpdate=true;
@@ -205,7 +232,7 @@ class Easy{
       else rows.push({ico:"⚙",lab:"スロットル",st:"ok",txt:"離陸推力。加速中…"});
       const vr=g.vsp.vr; if(cas>=vr-4) rows.push({ico:"↕",lab:"高さ",st:"act",txt:"いま！ 操縦桿を引いて機首を上げる "+kc("↓","S")+"（約10°）"}); else rows.push({ico:"↕",lab:"高さ",st:"ok",txt:"VR（"+vr+" kt）になったら "+kc("↓","S")+" で引く（いま "+Math.round(cas)+" kt）"});
     } else if(apOn&&!g.landed){
-      rows.push({ico:"🤖",lab:"オートパイロット",st:"ok",txt:"作動中（自動で飛んでいます）。自分で操縦するには "+kc("Enter")+" で解除"});
+      { const af=g.autoFlight&&g.af?({climb:"上昇中",cruise:"巡航中",descend:"降下中"}[g.af.phase]||""):""; rows.push({ico:"🤖",lab:g.autoFlight?"オート航行":"オートパイロット",st:"ok",txt:(g.autoFlight?"自動で目的地の滑走路まで飛んでいます"+(af?"（"+af+"）":"")+"。":"作動中（自動で飛んでいます）。")+"自分で操縦するには "+kc("Enter")+" か MCP のボタンで解除"}); }
     } else if(raFt<40&&!onG&&final&&D<3500){
       rows.push({ico:"🛬",lab:"フレア",st:"act",txt:"操縦桿を少し引いて "+kc("↓","S")+"、スロットルを絞る "+kc("End")+"（アイドル）"});
     } else {
