@@ -44,7 +44,7 @@ class Easy{
     const wps=[]; const rt=g.route||[];
     // 離陸直後は滑走路の延長線をまっすぐ
     const tr=g.takeoffRwy; let dep=null;
-    if(tr&&!this.depDone){ const rw=g.ap.runwayEnd("RJOB","07"); const L=rw?rw.r.L:3000; dep={x:tr.x+tr.ux*(L+2800),z:tr.z+tr.uz*(L+2800),name:"滑走路の延長線",startX:tr.x,startZ:tr.z};
+    if(tr&&!this.depDone){ const rw=g.takeoffRef?g.ap.runwayEnd(g.takeoffRef.icao,g.takeoffRef.name):null; const L=rw?rw.r.L:3000; dep={x:tr.x+tr.ux*(L+2800),z:tr.z+tr.uz*(L+2800),name:"滑走路の延長線",startX:tr.x,startZ:tr.z};
       const along=(X-tr.x)*tr.ux+(Z-tr.z)*tr.uz; if(g.stats.liftoff&&(along>L+300||s.radAlt>450)) this.depDone=true; }
     // 通過した経由地を飛ばす
     while(this.idx<rt.length){ const w=rt[this.idx]; const dd=Math.hypot(w.x-X,w.z-Z); let pass=dd<6000;
@@ -85,7 +85,7 @@ class Easy{
   // ---- 高さの基準線 ----
   altProfile(P,p,sd,base,onGround){
     const dst=P.dst, g=this.game, T=g.terrain; const gh=T.heightAt(p.x,p.z);
-    let alt=CRUISE_ALT;
+    let alt=g.cruiseAlt||CRUISE_ALT;
     if(dst){ if(sd>P.thrLen) alt=Math.min(alt,dst.h+4); else alt=Math.min(alt,dst.h+15+p.D*GLIDE_TAN); }
     const climbS=onGround?1800:0; alt=Math.min(alt,base+Math.max(0,sd-climbS)*CLIMB_TAN);
     if((!dst||p.D>30000)&&!onGround&&base-gh>250) alt=Math.max(alt,gh+300);
@@ -157,7 +157,7 @@ class Easy{
     const cte=(mx-P[i0].x)*Math.cos(P[i0].psi)+(mz-P[i0].z)*Math.sin(P[i0].psi);
     let vref=P[i0].v; const sLook=P[i0].s+Math.max(15,v*3); for(let k=i0;k<n&&P[k].s<sLook;k++) vref=Math.min(vref,P[k].v); const vtk=vref/KT;
     const phase=g.taxiPhase==="push"?"プッシュバック中":(remain<250?"滑走路へ進入":"地上走行（誘導路）");
-    const next={name:"滑走路07 離陸位置",dist:remain};
+    const next={name:"滑走路"+((g.takeoffRef&&g.takeoffRef.name)||"")+" 離陸位置",dist:remain};
     if(g.taxiPhase==="push"){
       rows.push({ico:"🚜",lab:"プッシュバック",st:"ok",txt:"トーイングカーが機体を後ろへ押しています。そのまま待つ（"+kc("Enter")+" でスキップ）"});
     } else if(g.autoTaxi){

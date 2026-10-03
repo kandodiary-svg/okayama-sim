@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>岡山空港発 フライトシミュレーター（試作）</title>
+<title>日本の空港 フライトシミュレーター（試作）</title>
 <style>
 :root{--ac:#3ddcff;--ok:#38e06a;--warn:#ffb11a;--bad:#ff3b30;--pnk:#ff5ad8}
 html,body{margin:0;height:100%;background:#0b1118;color:#e8eef5;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
@@ -43,7 +43,7 @@ button.on{background:#12432b;border-color:var(--ok);color:#caffdb} button.arm{ba
 .scn label:hover{border-color:#4a7aa0} .scn input{display:none} .scn input:checked+div{color:var(--ac)} .scn label:has(input:checked){border-color:var(--ac);background:#0f2432}
 .scn b{display:block;font-size:14px;margin-bottom:2px} .scn span{font-size:11.5px;opacity:.75;line-height:1.4}
 .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:8px 0}
-.opts div{font-size:12px} .opts select{width:100%;margin-top:3px;background:#0d1620;color:#e8eef5;border:1px solid #2b3d50;border-radius:7px;padding:6px;font:inherit}
+.opts div.wide{grid-column:1/-1} .opts div{font-size:12px} .opts select{width:100%;margin-top:3px;background:#0d1620;color:#e8eef5;border:1px solid #2b3d50;border-radius:7px;padding:6px;font:inherit}
 .go{display:flex;gap:8px;justify-content:flex-end;margin-top:10px} .go button{font-size:15px;padding:9px 20px;background:#14507a;border-color:#3d8fc4}
 #end .ok{color:var(--ok);font-weight:700} #end .bad{color:#ff7a70;font-weight:700} #end table{border-collapse:collapse;margin:8px 0;font-size:13px} #end td{padding:4px 12px 4px 0;border-bottom:1px solid #223}
 #end .btns{display:flex;gap:8px;margin-top:10px} #end button{padding:8px 16px;font-size:14px}
@@ -91,18 +91,23 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 <div id="load"><div class="t">読み込み中…</div><div class="s" id="lmsg"></div></div>
 
 <div class="panel" id="menu"><div class="card">
-  <h1>✈ 岡山空港発 フライトシミュレーター</h1>
+  <h1>✈ 日本の空港 フライトシミュレーター</h1>
   <p style="margin:-4px 0 10px;font-size:12.5px"><a href="../" style="color:#9fc4ff">← 岡山シミュレーター（路面電車・新幹線など）へ戻る</a></p>
   <div class="sub">試作版 ／ 機体は B737-800 クラスの架空塗装機 ／ 地形は国土地理院、東京23区の建物は国土交通省 PLATEAU のデータ</div>
   <div class="scn" id="scnList">
-    <label><input type="radio" name="scn" value="rjob_gate" checked><div><b>① 岡山桃太郎空港のゲートから出発 → 羽田へ</b><span>ターミナルのゲートからプッシュバック → 誘導路を走って（自動タキシーも可）→ 離陸〜羽田着陸まで通して</span></div></label>
-    <label><input type="radio" name="scn" value="rjob_to"><div><b>①′ 岡山桃太郎空港の滑走路から離陸 → 羽田へ</b><span>滑走路07の端から（地上走行を省略）。離陸〜上昇〜巡航〜羽田進入・着陸</span></div></label>
-    <label><input type="radio" name="scn" value="cruise"><div><b>② 巡航中から羽田へ（名古屋付近・約35,000ft）</b><span>オートパイロットで降下〜進入〜着陸を体験</span></div></label>
-    <label><input type="radio" name="scn" value="rjtt_app"><div><b>③ 羽田空港へ進入・着陸</b><span>最終進入の約30km手前から。滑走路は下で選べます</span></div></label>
-    <label><input type="radio" name="scn" value="rjob_app"><div><b>④ 岡山桃太郎空港へ進入・着陸（RWY25）</b><span>最終進入の約22km手前から</span></div></label>
+    <label><input type="radio" name="scn" value="gate" checked><div><b>① ゲートから出発（プッシュバック → タキシー → 離陸 → 着陸まで通して）</b><span>ターミナルのゲートからプッシュバックし、誘導路を走って（自動タキシーも可）離陸。目的地の空港まで</span></div></label>
+    <label><input type="radio" name="scn" value="rwy"><div><b>② 滑走路から離陸（地上走行を省略）</b><span>滑走路の端から。離陸〜上昇〜巡航〜進入・着陸</span></div></label>
+    <label><input type="radio" name="scn" value="cruise"><div><b>③ 巡航中から着陸</b><span>約30,000ft の巡航中から。オートパイロットで降下〜進入〜着陸を体験</span></div></label>
+    <label><input type="radio" name="scn" value="app"><div><b>④ 進入・着陸だけ</b><span>最終進入の約26km手前から。到着空港と滑走路を選べます</span></div></label>
+  </div>
+  <div class="opts routes">
+    <div class="wide">おすすめ路線<select id="oPreset"></select></div>
+    <div id="rowFrom">出発空港<select id="oFrom"></select></div>
+    <div id="rowFromRwy">出発滑走路<select id="oFromRwy"></select></div>
+    <div id="rowDest">到着空港<select id="oDest"></select></div>
+    <div id="rowRwy">到着滑走路<select id="oRwy"></select></div>
   </div>
   <div class="opts">
-    <div>羽田の使用滑走路<select id="oRwy"><option value="16L">16L（北から・都心上空）</option><option value="16R">16R（北から・都心上空）</option><option value="34L">34L（南から・東京湾上）</option><option value="34R">34R（南から・東京湾上）</option><option value="22">22（海側・南西から）</option><option value="05">05</option></select></div>
     <div>時刻<select id="oHour"><option value="7">朝（7:00）</option><option value="14" selected>昼（14:00）</option><option value="17.6">夕方（17:35）</option><option value="19.4">日没後（19:25）</option><option value="21">夜（21:00）</option></select></div>
     <div>天気<select id="oCloud"><option value="clear">快晴</option><option value="fair" selected>晴れ（雲少なめ）</option><option value="cloudy">曇り（雲多め）</option></select></div>
     <div>風<select id="oWind"><option value="calm">無風</option><option value="light" selected>弱い向かい風</option><option value="cross">横風（約14kt）</option><option value="strong">強い風（約22kt）</option></select></div>

@@ -25,7 +25,7 @@ class AirLights{
     const H=(x,z)=>this.A.terrain.heightAt(x,z);
     const add=(x,z,c,sz,dx,dz,ph,dayI,dy)=>{ pos.push(x-P[0],H(x,z)+(dy==null?0.35:dy),z-P[1]); col.push(c[0],c[1],c[2]); size.push(sz); ex.push(dx||0,dz||0,ph==null?-1:ph,dayI==null?0.5:dayI); };
     const WHITE=[1,0.96,0.86], AMBER=[1,0.62,0.12], GREEN=[0.1,1,0.35], RED=[1,0.1,0.06], BLUE=[0.12,0.3,1], YEL=[1,0.8,0.2];
-    a.papi=[];
+    a.papi=[]; a.alsOSM=this.A.data[a.icao].nodes.some(n=>n.t==="nav:als");
     for(const r of a.runways){
       const hw=r.w/2, rx=-r.uz, rz=r.ux;           // A→B の右
       const at=(t,s)=>[r.ax+r.ux*t+rx*s, r.az+r.uz*t+rz*s];
@@ -38,7 +38,7 @@ class AirLights{
         for(let k=-10;k<=10;k++){ const s=k*(hw*0.95)/10; const p=at(t0,s); add(p[0],p[1],GREEN,0.7,-ox,-oz,-1,0.55); add(p[0],p[1],RED,0.6,ox,oz,-1,0.35); }
         // 進入灯
         const outx=-ox, outz=-oz;
-        if(a.icao==="RJOB"){ /* OSM の点を使う（下で追加） */ }
+        if(a.alsOSM){ /* OSM の点を使う（下で追加） */ }
         else {
           for(let d=30; d<=900; d+=30){ const ph=((900-d)/900)*0.5; const cx=end.x+outx*d, cz=end.z+outz*d; add(cx,cz,WHITE,0.85,0,0,ph,0.65,6.0); if(d%150===0||d===300){ for(const s of [-1,1]){ for(let m=1;m<=3;m++){ add(cx+(-outz)*s*m*1.5,cz+outx*s*m*1.5,WHITE,0.7,0,0,-1,0.5,6.0); } } } }
           for(const s of [-1,1]) for(let m=1;m<=5;m++){ const d=300; const cx=end.x+outx*d+(-outz)*s*m*2.0, cz=end.z+outz*d+outx*s*m*2.0; add(cx,cz,WHITE,0.7,0,0,-1,0.5,6.0); }
@@ -53,8 +53,8 @@ class AirLights{
         a.papi.push({r,i,end,units,gs:3.0*D2R,hThr:i===0?r.hA:r.hB,px,pz,lx,lz});
       }
     }
-    // RJOB: OSM の進入灯
-    if(a.icao==="RJOB"){ const d=this.A.data.RJOB; const als=d.nodes.filter(n=>n.t==="nav:als"); for(const n of als){ const p=G.ll2xz(n.p[1],n.p[0]); // しきい値からの距離でフラッシュ位相
+    // OSM に進入灯の点があれば、それを使う
+    if(a.alsOSM){ const d=this.A.data[a.icao]; const als=d.nodes.filter(n=>n.t==="nav:als"); for(const n of als){ const p=G.ll2xz(n.p[1],n.p[0]); // しきい値からの距離でフラッシュ位相
         let ph=-1; let best=1e9; for(const r of a.runways) for(const e of r.ends){ const dd=Math.hypot(p[0]-e.x,p[1]-e.z); if(dd<best){ best=dd; ph=Math.max(0,(1-Math.min(1,dd/900))*0.5); } } add(p[0],p[1],WHITE,0.85,0,0,ph,0.65,5.0); } }
     // 誘導路: 縁灯（青）・中心線灯（緑）
     for(const sg of a.taxi){

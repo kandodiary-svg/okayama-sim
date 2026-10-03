@@ -2,10 +2,10 @@
    ここは「表示」だけ。値は game.js が view オブジェクトで渡す。単位は表示用に kt / ft / fpm / 磁方位。 */
 (function(root){
 "use strict";
-const D2R=Math.PI/180, KT=0.514444, FT=0.3048, MAGVAR=7.5;
+const D2R=Math.PI/180, KT=0.514444, FT=0.3048, MV=()=>root.MAGVAR_NOW||7.5;
 const clamp=(x,a,b)=>x<a?a:x>b?b:x;
 const n180=a=>{ a=((a+180)%360+360)%360-180; return a; };
-const mag=(trueRad)=>(((trueRad/D2R)+MAGVAR)%360+360)%360;
+const mag=(trueRad)=>(((trueRad/D2R)+MV())%360+360)%360;
 const COL={ sky:"#2f6fd0", sky2:"#5aa0ec", gnd:"#7b5a2e", gnd2:"#4d3819", w:"#f4f6f8", g:"#38e06a", m:"#ff5ad8", c:"#3ddcff", a:"#ffb11a", r:"#ff3b30", bg:"#0a0f14", dim:"#8a97a6", panel:"#11181f" };
 function txt(x,t,px,py,col,size,al,font){ x.fillStyle=col; x.font=(font||"")+" "+size+"px ui-monospace,Menlo,Consolas,'DejaVu Sans Mono',monospace"; x.textAlign=al||"left"; x.textBaseline="middle"; x.fillText(t,px,py); }
 
@@ -88,7 +88,7 @@ class Hud{
     const hd=mag(s.psi), tk=s.gs>8?mag(Math.atan2(s.vel[0],-s.vel[2])):hd; const xh=u=>150+n180(u-hd)*3.4;
     x.strokeStyle="#cfd6de"; x.fillStyle="#cfd6de"; x.lineWidth=1.5; x.font="11px ui-monospace,Menlo,monospace"; x.textAlign="center";
     for(let u=Math.floor(hd/5)*5-35;u<=hd+35;u+=5){ const xx=xh(((u%360)+360)%360); x.beginPath(); x.moveTo(xx,258); x.lineTo(xx,u%10===0?270:264); x.stroke(); if(u%10===0){ const nn=(((u%360)+360)%360)/10; let lb=String(Math.round(nn)).padStart(2,"0"); if(nn===0) lb="N"; else if(nn===9) lb="E"; else if(nn===18) lb="S"; else if(nn===27) lb="W"; x.fillText(lb,xx,281); } }
-    const hb=ap.hdg/D2R+MAGVAR; if(ap.on&&ap.latMode==="HDG"){ const xx=clamp(xh(((hb%360)+360)%360),44,256); x.fillStyle=COL.m; x.beginPath(); x.moveTo(xx,258); x.lineTo(xx-6,264); x.lineTo(xx+6,264); x.closePath(); x.fill(); }
+    const hb=ap.hdg/D2R+MV(); if(ap.on&&ap.latMode==="HDG"){ const xx=clamp(xh(((hb%360)+360)%360),44,256); x.fillStyle=COL.m; x.beginPath(); x.moveTo(xx,258); x.lineTo(xx-6,264); x.lineTo(xx+6,264); x.closePath(); x.fill(); }
     x.restore();
     x.fillStyle="#000"; x.strokeStyle="#cfd6de"; x.strokeRect(124,288,52,15); txt(x,String(Math.round(hd)%360).padStart(3,"0")+"°",150,296,"#fff",13,"center","bold");
     x.strokeStyle=COL.a; x.lineWidth=2; x.beginPath(); x.moveTo(150,258); x.lineTo(150,252); x.stroke();

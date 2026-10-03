@@ -1,21 +1,34 @@
 /* 画面部品の組み立て: メニュー・MCP（オートパイロット操作盤）・ボタン・スロットル・タッチ操作・コックピット枠・計器の配置。 */
 (function(root){
 "use strict";
-const D2R=Math.PI/180, KT=0.514444, FT=0.3048, MAGVAR=7.5;
+const D2R=Math.PI/180, KT=0.514444, FT=0.3048, MV=()=>root.MAGVAR_NOW||7.5;
 const $=id=>document.getElementById(id);
 const clamp=(x,a,b)=>x<a?a:x>b?b:x;
 function bindUI(game, hud, audio){
   const ap=()=>game.c.ap;
   // ---------------- メニュー ----------------
   const scn=()=>document.querySelector("input[name=scn]:checked").value;
-  const syncRwy=()=>{ $("oRwy").disabled=(scn()==="rjob_app"); };
-  document.querySelectorAll("input[name=scn]").forEach(e=>e.onchange=syncRwy); syncRwy();
+  // 空港・滑走路の選択肢（読み込んだ空港データから作る）
+  const ORDER=["RJOB","RJTT","RJAA","RJCC","RJOO","RJBB","RJGG","RJFF","ROAH","RJSS","RJOA","RJFK"];
+  const aps=Object.values(game.ap.ap).sort((a,b)=>(ORDER.indexOf(a.icao)+99)%99-(ORDER.indexOf(b.icao)+99)%99);
+  const fillAp=el=>{ el.innerHTML=aps.map(a=>"<option value='"+a.icao+"'>"+a.info.name+" "+a.icao+"</option>").join(""); };
+  const fillRwy=(el,icao,lab)=>{ const a=game.ap.ap[icao]; let h="<option value='auto'>"+lab+"</option>"; if(a) for(const r of a.runways) for(const e of r.ends) h+="<option value='"+e.name+"'>"+e.name+"（"+Math.round(r.L)+" m）</option>"; el.innerHTML=h; };
+  fillAp($("oFrom")); fillAp($("oDest"));
+  const PRESETS=[["RJOB","RJTT","岡山 → 羽田（デフォルト）"],["RJTT","RJCC","羽田 → 新千歳（札幌）"],["RJTT","RJFF","羽田 → 福岡"],["RJTT","ROAH","羽田 → 那覇"],["RJTT","RJOO","羽田 → 伊丹（大阪）"],["RJTT","RJOA","羽田 → 広島"],["RJTT","RJFK","羽田 → 鹿児島"],["RJTT","RJOB","羽田 → 岡山"],["RJCC","RJTT","新千歳 → 羽田"],["RJFF","RJTT","福岡 → 羽田"],["ROAH","RJTT","那覇 → 羽田"],["RJOO","RJCC","伊丹 → 新千歳"],["RJBB","ROAH","関西 → 那覇"],["RJGG","RJCC","中部 → 新千歳"],["RJAA","RJFF","成田 → 福岡"],["RJSS","RJOO","仙台 → 伊丹"],["RJFF","ROAH","福岡 → 那覇"],["RJOB","RJCC","岡山 → 新千歳"]].filter(p=>game.ap.ap[p[0]]&&game.ap.ap[p[1]]);
+  $("oPreset").innerHTML="<option value=''>（自分で選ぶ）</option>"+PRESETS.map((p,i)=>"<option value='"+i+"'>"+p[2]+"</option>").join("");
+  const syncRoute=()=>{ const m=scn(); const useFrom=(m!=="app"), useFR=(m==="gate"||m==="rwy");
+    $("rowFrom").style.display=useFrom?"":"none"; $("rowFromRwy").style.display=useFR?"":"none";
+    if($("oFromRwy").dataset.ap!==$("oFrom").value){ fillRwy($("oFromRwy"),$("oFrom").value,"自動（目的地の方向）"); $("oFromRwy").dataset.ap=$("oFrom").value; }
+    if($("oRwy").dataset.ap!==$("oDest").value){ fillRwy($("oRwy"),$("oDest").value,"自動（進入方向に合う滑走路）"); $("oRwy").dataset.ap=$("oDest").value; } };
+  $("oFrom").value="RJOB"; $("oDest").value="RJTT";
+  document.querySelectorAll("input[name=scn]").forEach(e=>e.onchange=syncRoute); $("oFrom").onchange=()=>{ $("oPreset").value=""; syncRoute(); }; $("oDest").onchange=()=>{ $("oPreset").value=""; syncRoute(); };
+  $("oPreset").onchange=()=>{ const v=$("oPreset").value; if(v==="") return; const p=PRESETS[+v]; $("oFrom").value=p[0]; $("oDest").value=p[1]; syncRoute(); };
+  syncRoute();
   $("bStart").onclick=()=>{
-    audio.start(); const id=scn(); const o={id,hour:+$("oHour").value,cloud:$("oCloud").value,wx:{wind:$("oWind").value},rwy:$("oRwy").value};
-    if(id==="rjob_to"||id==="rjob_gate"||id==="cruise") o.dest={icao:"RJTT",rwy:$("oRwy").value};
-    if(id==="rjtt_app") o.dest={icao:"RJTT",rwy:$("oRwy").value};
-    if(id==="rjob_app") o.dest={icao:"RJOB",rwy:"25"};
-    game.destRwy=o.dest||null; game.startScenario(o); showPlay(true); setTimeout(layout,0);
+    audio.start(); const id=scn(); const o={id,hour:+$("oHour").value,cloud:$("oCloud").value,wx:{wind:$("oWind").value}};
+    o.dest={icao:$("oDest").value,rwy:$("oRwy").value}; if(id!=="app") o.from={icao:$("oFrom").value,rwy:$("oFromRwy").value};
+    if(id!=="app"&&o.from.icao===o.dest.icao&&id!=="cruise"){ /* 同じ空港への往復も可（離陸して戻る） */ }
+    game.startScenario(o); showPlay(true); setTimeout(layout,0);
   };
   $("bHelp2").onclick=()=>{ $("help").style.display="flex"; }; $("bHelp").onclick=()=>{ $("help").style.display="flex"; game.paused=true; }; $("hClose").onclick=()=>{ $("help").style.display="none"; if($("pause").style.display!=="flex") game.paused=false; };
   addEventListener("keydown",e=>{ if(e.key==="?"||e.key==="/"&&e.shiftKey){ $("help").style.display=$("help").style.display==="flex"?"none":"flex"; } });
@@ -54,7 +67,7 @@ function bindUI(game, hud, audio){
   function sync(){
     const a=ap(), s=game.s; if(game.state==="menu"||game.state==="loading") return;
     $("vspd").textContent=a.spdIsMach?"."+String(Math.round((a.mach||0.78)*100)):String(Math.round(a.spd/KT)); $("lblspd").textContent=a.spdIsMach?"マッハ MACH":"速度 SPD(kt)";
-    $("vhdg").textContent=String(Math.round((a.hdg/D2R+MAGVAR+360)%360)).padStart(3,"0"); $("valt").textContent=String(Math.round(a.alt/FT/100)*100);
+    $("vhdg").textContent=String(Math.round((a.hdg/D2R+MV()+360)%360)).padStart(3,"0"); $("valt").textContent=String(Math.round(a.alt/FT/100)*100);
     const vs=Math.round(a.vs/FT*60/100)*100; $("vvs").textContent=(vs>=0?"+":"")+vs;
     const set=(id,on,cls)=>{ const b=$(id); b.classList.toggle("on",!!on); };
     set("bAP",a.on); set("bAT",a.on&&a.athr); set("bLNAV",a.on&&a.latMode==="LNAV"); set("bHDG",a.on&&a.latMode==="HDG"); set("bALT",a.on&&a.vertMode==="ALT"); set("bVS",a.on&&a.vertMode==="VS"); set("bFLCH",a.on&&a.vertMode==="FLCH"); set("bAPPR",a.on&&a.latMode==="LOC");

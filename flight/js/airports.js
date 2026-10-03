@@ -4,15 +4,8 @@
 (function(root){
 "use strict";
 const G=root.GEO, D2R=Math.PI/180;
-// 滑走路（真方位は座標から計算する。番号は磁方位=真方位+7.5°西偏）
-const RWY={
-  RJOB:[{id:"07/25",A:["07",34.750014,133.84135],B:["25",34.763833,133.869443],w:45}],
-  RJTT:[{id:"16R/34L",A:["34L",35.536629,139.785642],B:["16R",35.55998,139.769068],w:60},
-        {id:"04/22",A:["04",35.549002,139.761264],B:["22",35.567404,139.777063],w:60},
-        {id:"05/23",A:["05",35.523996,139.803471],B:["23",35.540536,139.82205],w:60},
-        {id:"16L/34R",A:["34R",35.539712,139.805119],B:["16L",35.565866,139.786559],w:60}]
-};
-const INFO={ RJOB:{name:"岡山桃太郎空港",ref:[34.7569,133.8553],taxiW:23,hw:0}, RJTT:{name:"東京国際空港（羽田）",ref:[35.5494,139.7798],taxiW:30} };
+// 滑走路・空港名・基準点は data/airports.json の各空港の meta から読む（tools/build_airports2.py が作る）
+const DEFAULT_TAXI_W=23;
 const MAGVAR=7.5;   // 西偏 [度]
 function ring2xz(g){ return g.map(p=>G.ll2xz(p[1],p[0])); }
 function pip(x,z,poly){ let c=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const a=poly[i],b=poly[j]; if((a[1]>z)!==(b[1]>z) && x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0]) c=!c; } return c; }
@@ -23,12 +16,12 @@ class Airports{
     this.T=THREE; this.scene=scene; this.data=data; this.terrain=terrain; this.sky=sky; this.B=B; this.ap={};
     this.tint=terrain.tint;      // 昼夜の明るさ（地形と共有）
     this.group=new THREE.Group(); scene.add(this.group);
-    for(const icao of Object.keys(RWY)) this.setupAirport(icao);
+    for(const icao of Object.keys(data)) if(data[icao].meta) this.setupAirport(icao);
   }
   // ---------- 諸元 ----------
   setupAirport(icao){
-    const a=this.ap[icao]={icao,info:INFO[icao],runways:[],built:false,group:null,ref:G.ll2xz(INFO[icao].ref[0],INFO[icao].ref[1]),ways:[],polys:[],taxi:[],apron:[]};
-    for(const r of RWY[icao]){
+    const M=this.data[icao].meta; const a=this.ap[icao]={icao,info:{name:M.name,short:M.short||M.name,taxiW:M.taxiW||DEFAULT_TAXI_W,R:M.R||3800},meta:M,runways:[],built:false,group:null,ref:G.ll2xz(M.ref[0],M.ref[1]),ways:[],polys:[],taxi:[],apron:[]};
+    for(const r of M.rwys){
       const pa=G.ll2xz(r.A[1],r.A[2]), pb=G.ll2xz(r.B[1],r.B[2]); const dx=pb[0]-pa[0], dz=pb[1]-pa[1], L=Math.hypot(dx,dz);
       const hdg=Math.atan2(dx,-dz), ux=dx/L, uz=dz/L;
       a.runways.push({id:r.id,icao,w:r.w,L,hdg,ux,uz,ax:pa[0],az:pa[1],bx:pb[0],bz:pb[1],names:[r.A[0],r.B[0]],
@@ -59,7 +52,7 @@ class Airports{
   prepare(cam){
     for(const a of Object.values(this.ap)){
       if(a.built) continue; const d=Math.hypot(cam.x-a.ref[0],cam.z-a.ref[1]); if(d>45000) continue;
-      const R=a.icao==="RJTT"?6800:3800; let ok=this.terrain.ensureDem(a.ref[0],a.ref[1],R);
+      const R=a.info.R; let ok=this.terrain.ensureDem(a.ref[0],a.ref[1],R);
       for(const r of a.runways){ ok=this.terrain.ensureDem(r.ax,r.az,300)&&ok; ok=this.terrain.ensureDem(r.bx,r.bz,300)&&ok; }
       if(ok&&this.fixElevations(a.icao)) this.build(a.icao);
     }
@@ -90,7 +83,7 @@ class Airports{
       const mat=new T.MeshBasicMaterial({map:tex,color:this.tint,fog:true}); const m=new T.Mesh(geo,mat); m.frustumCulled=false; grp.add(m); a.rwMeshes.push(m);
     }
     // --- 誘導路 ---
-    const tw=INFO[icao].taxiW; const segs=[];     // 誘導路の線分（kindAt 用 & 灯火用）
+    const tw=a.info.taxiW; const segs=[];     // 誘導路の線分（kindAt 用 & 灯火用）
     for(const w of d.ways){
       if(w.t!=="taxiway"&&w.t!=="taxilane") continue;
       const pts=ring2xz(w.g); if(pts.length<2) continue; const W=parseFloat(w.width)||(w.t==="taxilane"?18:tw);
@@ -234,6 +227,6 @@ class Airports{
     }
   }
 }
-Airports.MAGVAR=MAGVAR; Airports.RWY=RWY; Airports.INFO=INFO;
+Airports.MAGVAR=MAGVAR;
 root.Airports=Airports;
 })(typeof window!=="undefined"?window:globalThis);

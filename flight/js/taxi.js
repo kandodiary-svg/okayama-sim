@@ -37,23 +37,33 @@ function dijkstra(g,s,t){
 
 // ---------- ゲート（スタンド） ----------
 // 駐機位置の線のうちターミナルに近い側の端を停止位置とし、機首はそこへ向ける（parked.js と同じ決め方）
-function gateStand(data,gateRef){
-  const ways=data.ways||[]; const terms=[];
-  for(const w of ways){ if(w.t==="terminal"||w.t==="hangar"||w.t==="jet_bridge") terms.push(w.g.map(p=>G.ll2xz(p[1],p[0]))); }
-  const nearTerm=(x,z)=>{ let b=1e12; for(const t of terms) for(const q of t){ const d=(q[0]-x)**2+(q[1]-z)**2; if(d<b) b=d; } return Math.sqrt(b); };
-  const gate=(data.nodes||[]).find(n=>n.t==="gate"&&String(n.ref)===String(gateRef)); if(!gate) return null;
-  const gp=G.ll2xz(gate.p[1],gate.p[0]); let best=null,bd=1e18;
-  for(const w of ways){
+function nearTermFn(data){
+  const terms=[]; for(const w of (data.ways||[])){ if(w.t==="terminal"||w.t==="hangar"||w.t==="jet_bridge") terms.push(w.g.map(p=>G.ll2xz(p[1],p[0]))); }
+  return (x,z)=>{ let b=1e12; for(const t of terms) for(const q of t){ const d=(q[0]-x)**2+(q[1]-z)**2; if(d<b) b=d; } return Math.sqrt(b); };
+}
+// 直線の駐機位置（スタンド）の一覧。ターミナルに近い側の端が停止位置
+function standsOf(data){
+  const nearTerm=nearTermFn(data); const out=[];
+  for(const w of (data.ways||[])){
     if(w.t!=="parking_position") continue; let pts=w.g.map(p=>G.ll2xz(p[1],p[0])); if(pts.length<2) continue;
     let L=0; for(let i=0;i<pts.length-1;i++) L+=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); if(L<40) continue;
     if(Math.hypot(pts[pts.length-1][0]-pts[0][0],pts[pts.length-1][1]-pts[0][1])/L<0.98) continue;
     if(nearTerm(pts[0][0],pts[0][1])<nearTerm(pts[pts.length-1][0],pts[pts.length-1][1])) pts=pts.slice().reverse();
-    const e=pts[pts.length-1], d=Math.hypot(e[0]-gp[0],e[1]-gp[1]); if(d<bd){ bd=d; best={pts,e}; }
+    out.push({pts,e:pts[pts.length-1],ref:w.ref||null});
   }
-  if(!best) return null; const seq=best.pts, e=best.e; let dx=0,dz=0,acc=0;
+  return out;
+}
+function standGeom(best,gp){
+  const seq=best.pts, e=best.e; let dx=0,dz=0,acc=0;
   for(let i=seq.length-1;i>0&&acc<12;i--){ const ax=seq[i-1][0],az=seq[i-1][1],bx=seq[i][0],bz=seq[i][1]; dx+=bx-ax; dz+=bz-az; acc+=Math.hypot(bx-ax,bz-az); }
   const l=Math.hypot(dx,dz); dx/=l; dz/=l;
-  return {stop:e, dx, dz, hdg:Math.atan2(dx,-dz), start:seq[0], gate:gp};
+  return {stop:e, dx, dz, hdg:Math.atan2(dx,-dz), start:seq[0], gate:gp||e};
+}
+function gateStand(data,gateRef){
+  const gate=(data.nodes||[]).find(n=>n.t==="gate"&&String(n.ref)===String(gateRef)); if(!gate) return null;
+  const gp=G.ll2xz(gate.p[1],gate.p[0]); let best=null,bd=1e18;
+  for(const c of standsOf(data)){ const d=Math.hypot(c.e[0]-gp[0],c.e[1]-gp[1]); if(d<bd){ bd=d; best=c; } }
+  return best?standGeom(best,gp):null;
 }
 
 // ---------- 経路の整形 ----------
@@ -94,7 +104,7 @@ function annotate(pts,o){
 // ---------- ゲート出発の計画 ----------
 // rwy: runwayEnd(...).e （x,z,ux,uz,hdg）。 戻り値: {stand, push:{poses,len}, taxi:[...], lineup}
 function planDeparture(data,gateRef,rwy,opt){
-  opt=opt||{}; const g=buildGraph(data); const st=gateStand(data,gateRef); if(!st) return null;
+  opt=opt||{}; const g=opt.graph||buildGraph(data); const st=opt.stand||gateStand(data,gateRef); if(!st) return null;
   const sv=nearestVertex(g,st.start[0],st.start[1]);
   // 目的: 滑走路の中心線上にある誘導路の端（滑走端に近いもの）
   const u=[rwy.ux,rwy.uz]; let goal=-1,gt=1e18;
@@ -111,7 +121,7 @@ function planDeparture(data,gateRef,rwy,opt){
   // プッシュバック: 主脚中心 M は、駐機線を後ろへまっすぐ → 半径 Rt の円弧で誘導路の向きへ
   const Rt=opt.pushR||38; const dF=[-fx,-fz]; const cr=bx*dF[1]-bz*dF[0], dt=bx*dF[0]+bz*dF[1]; const th=Math.atan2(Math.abs(cr),dt), sg=cr>0?1:-1; const T=Rt*Math.tan(th/2);
   const M0=[st.stop[0]-st.dx*WB, st.stop[1]-st.dz*WB];     // 前脚が停止位置にあるときの主脚中心
-  const L1=Math.hypot(I[0]-M0[0],I[1]-M0[1])-T; if(L1<5) return null;
+  const L1=Math.hypot(I[0]-M0[0],I[1]-M0[1])-T; if(!isFinite(L1)||L1<5||L1>300||!isFinite(sI)||sI<0) return null;
   const poses=[]; const add=(m,psi)=>poses.push({mx:m[0],mz:m[1],psi});
   const ds=1; for(let d=0;d<=L1;d+=ds) add([M0[0]+bx*d,M0[1]+bz*d], st.hdg);
   const P1=[M0[0]+bx*L1, M0[1]+bz*L1];
@@ -130,6 +140,19 @@ function planDeparture(data,gateRef,rwy,opt){
   const sm=smoothPath(pts,opt.R||45,2);
   const taxi=annotate(sm,{vmax:opt.vmax||9,vend:0});
   return {stand:st, graph:g, I, psiF, push:{poses,len:poses.length*ds,L1,arc:arcLen,Rt}, taxi, goalVertex:goal, rwyT:tl};
+}
+
+// ゲートを指定しないとき: 使えるスタンドを順に試し、地上走行距離が中くらいのものを選ぶ（見つからなければ null）
+function autoPlan(data,rwy,opt){
+  opt=opt||{}; const g=buildGraph(data); const all=standsOf(data); if(!all.length) return null;
+  const nearTerm=nearTermFn(data); const cand=all.map(c=>({c,t:nearTerm(c.e[0],c.e[1])})).filter(q=>q.t<140);
+  const pool=(cand.length?cand:all.map(c=>({c,t:0}))).map(q=>q.c);
+  const step=Math.max(1,Math.floor(pool.length/16)); const ok=[];
+  for(let pass=0;pass<2&&ok.length<3;pass++) for(let i=pass?1:0;i<pool.length&&ok.length<10;i+=pass?1:step){
+    let p=null; try{ p=planDeparture(data,null,rwy,Object.assign({},opt,{graph:g,stand:standGeom(pool[i])})); }catch(e){ p=null; }
+    if(p&&p.taxi.length>40&&p.push.L1>=8){ let km=0; const end=p.taxi[p.taxi.length-1].s; for(const q of p.taxi) if(q.s<end-3&&q.k>km) km=q.k; if(km<=0.06) ok.push(p); }   // 急すぎる曲がり（半径 約16m 未満）は自動走行で外れるので除く
+  }
+  if(!ok.length) return null; ok.sort((a,b)=>a.taxi[a.taxi.length-1].s-b.taxi[b.taxi.length-1].s); return ok[ok.length>>1];
 }
 
 // 経路上で主脚中心に最も近い点（前回位置の近くだけ探す）
@@ -175,5 +198,5 @@ const FOOT=(function(){ const a=[]; for(let o=-17;o<=19;o+=4) a.push([o,0,3.3]);
   return a; })();
 function footprint(x,z,dx,dz,out){ const rx=-dz, rz=dx; for(const [o,l,r] of FOOT) out.push([x+dx*o+rx*l,z+dz*o+rz*l,r]); return out; }
 
-root.TAXI={ footprint, buildGraph, nearestVertex, dijkstra, gateStand, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
+root.TAXI={ footprint, buildGraph, nearestVertex, dijkstra, gateStand, standsOf, autoPlan, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
 })(typeof window!=="undefined"?window:globalThis);

@@ -82,10 +82,10 @@ class Parked{
     if(!this.baked) this.baked=LIVERIES.map(L=>bake(T,new Aircraft(T,{livery:L})));
     const {list,terms}=stands(data,P,a.apron);
     // 重なり・建物との干渉を避けて選ぶ（決まった乱数なので毎回同じ配置）
-    const placed=[]; const cnt=LIVERIES.map(()=>[]);
+    const placed=[]; const cnt=LIVERIES.map(()=>[]); const NS=list.length, dens=NS<=20?0.9:(NS>=150?0.62:0.9-(NS-20)*(0.28/130));
     const cand=list.map((s,i)=>({s,i})).sort((p,q)=>p.s.stopDist-q.s.stopDist);
     for(const {s,i} of cand){
-      if(hash(i+(icao==="RJTT"?7:0))>(icao==="RJTT"?0.62:0.9)) continue;      // 空きスタンドも残す
+      if(hash(i+(list.length>60?7:0))>dens) continue;      // 空きスタンドも残す
       let bad=false;
       for(const t of terms){ if(pip(s.x,s.z,t)) { bad=true; break; } }
       if(!bad){ const fx=s.x+s.dx*17, fz=s.z+s.dz*17, bx=s.x-s.dx*17, bz=s.z-s.dz*17; for(const t of terms){ if(pip(fx,fz,t)||pip(bx,bz,t)){ bad=true; break; } } }

@@ -31,7 +31,7 @@ async function init(){
     const cam=game.cam; pm.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
     sky.update(cam,dt); scene.fog.color.copy(sky.fogColor);
     const tc=sky.tintCol; terrain.tint.setRGB(tc[0],tc[1],tc[2]); terrain.nlK.value=Math.max(0,sky.night-0.2)*1.0;
-    lm.update(cam,game.t); terrain.update(cam,frustum); bld.update(cam,frustum); ap.prepare(cam); pk.ensure("RJOB"); pk.ensure("RJTT"); ap.update(cam,frustum);
+    lm.update(cam,game.t); terrain.update(cam,frustum); bld.update(cam,frustum); ap.prepare(cam); for(const k in ap.ap) pk.ensure(k); ap.update(cam,frustum);
     const s=game.s; const pp=(game.state==="fly"||game.state==="crashed")?{x:s.pos[0],y:s.pos[1],z:s.pos[2]}:null;
     lights.update(cam,dt,camera.fov*D2R,renderer.domElement.height,pp);
     renderer.render(scene,camera);
@@ -42,7 +42,11 @@ async function init(){
   document.getElementById("load").style.display="none";
   game.state="menu"; document.getElementById("menu").style.display="flex";
   // 試験用: ?scn=rjob_to&view=chase で自動開始
-  if(q.get("scn")){ const o={id:q.get("scn"),hour:+q.get("h")||14,cloud:q.get("cloud")||"fair",wx:{wind:q.get("wind")||"light"},rwy:q.get("rwy")||"16L"}; if(o.id==="rjob_to"||o.id==="rjob_gate"||o.id==="cruise"||o.id==="rjtt_app") o.dest={icao:"RJTT",rwy:o.rwy}; if(o.id==="rjob_app") o.dest={icao:"RJOB",rwy:"25"}; game.destRwy=o.dest||null; game.view=q.get("view")||"chase"; document.getElementById("menu").style.display="none"; game.startScenario(o); ui.showPlay(true); }
+  // ?scn=gate|rwy|cruise|app&from=RJTT&frwy=34R&to=RJCC&rwy=01L （旧: rjob_gate / rjob_to / rjtt_app …）
+  if(q.get("scn")){ const o={id:q.get("scn"),hour:+q.get("h")||14,cloud:q.get("cloud")||"fair",wx:{wind:q.get("wind")||"light"}};
+    if(q.get("to")||q.get("from")){ o.dest={icao:q.get("to")||"RJTT",rwy:q.get("rwy")||"auto"}; if(q.get("from")) o.from={icao:q.get("from"),rwy:q.get("frwy")||"auto"}; }
+    else o.rwy=q.get("rwy")||"16L";
+    game.view=q.get("view")||"chase"; document.getElementById("menu").style.display="none"; game.startScenario(o); ui.showPlay(true); }
   requestAnimationFrame(frame);
 }
 init().catch(e=>{ console.error(e); const l=document.getElementById("lmsg"); if(l) l.textContent="エラー: "+e.message; });

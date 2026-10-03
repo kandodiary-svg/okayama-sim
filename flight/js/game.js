@@ -2,11 +2,11 @@
    座標は x=東, z=南(北が -z), y=海抜高度[m]。方位は真方位（rad）で持ち、表示のときだけ磁方位（+7.5°）にする。 */
 (function(root){
 "use strict";
-const G=root.GEO, F=root.FDM, C=root.FCS, D2R=Math.PI/180, KT=F.KT, FT=0.3048, NM=1852, MAGVAR=7.5;
+const G=root.GEO, F=root.FDM, C=root.FCS, D2R=Math.PI/180, KT=F.KT, FT=0.3048, NM=1852, MV=()=>root.MAGVAR_NOW||7.5;
 const clamp=F.clamp, n180=a=>((a+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;
 const $=id=>document.getElementById(id);
-const TAXI=root.TAXI, GATE_REF="3", NOSE_X=13.0;   // 出発ゲート（岡山桃太郎空港 3 番）
-const magDeg=r=>(((r/D2R)+MAGVAR)%360+360)%360;
+const TAXI=root.TAXI, GATE_REF="3", NOSE_X=13.0;   // 岡山桃太郎空港は 3 番ゲート固定。ほかの空港は自動でゲートを選ぶ
+const magDeg=r=>(((r/D2R)+MV())%360+360)%360;
 const fmtClock=h=>{ const hh=Math.floor(h)%24, mm=Math.floor((h%1)*60); return String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0"); };
 
 // ---------------- 経路（地名だけの簡略経路。実在の航空路・手順ではない） ----------------
@@ -66,74 +66,157 @@ class Game{
     const p=this.startPoint(o); this.cam.x=p.x; this.cam.z=p.z; this.cam.y=p.alt+80; this.loadHold=p;
     $("menu").style.display="none"; $("end").style.display="none"; $("loadmsg").style.display="block"; $("loadmsg").textContent="地形・空港を読み込み中…";
   }
-  startPoint(o){
+  // ---- シナリオの正規化: {mode: gate|rwy|app|cruise, from:{icao,rwy}, dest:{icao,rwy}} ----
+  rwyList(icao){ const a=this.ap.ap[icao]; const out=[]; if(!a) return out; for(const r of a.runways) for(const e of r.ends) out.push({name:e.name,L:r.L}); return out; }
+  apName(icao){ const a=this.ap.ap[icao]; return (a&&a.info&&a.info.short)||icao; }
+  // 滑走路を自動で選ぶ: 離陸なら目的地の方向へ、着陸なら進入してくる方向へ向く滑走路（短い滑走路は避ける）
+  rankRwy(icao,tx,tz,arrive){
+    const list=this.rwyList(icao); if(!list.length) return [];
+    const maxL=Math.max(...list.map(q=>q.L)); const out=[];
+    for(const q of list){ const e=this.ap.runwayEnd(icao,q.name).e; const dx=tx-e.x, dz=tz-e.z, d=Math.hypot(dx,dz)||1; let c=(dx*e.ux+dz*e.uz)/d; if(arrive) c=-c;
+      out.push({name:q.name,sc:c+(q.L>=Math.min(2000,maxL*0.9)?0.3:-1)+0.1*q.L/maxL}); }
+    return out.sort((a,b)=>b.sc-a.sc).map(q=>q.name);
+  }
+  pickRwy(icao,want,tx,tz,arrive){
+    const list=this.rwyList(icao); if(!list.length) return want; if(want&&want!=="auto"&&list.some(q=>q.name===want)) return want;
+    return this.rankRwy(icao,tx,tz,arrive)[0];
+  }
+  resolveSpec(o){
+    const id=o.id; let mode=o.mode, from=o.from?Object.assign({},o.from):null, dest=o.dest?Object.assign({},o.dest):null;
+    if(id==="rjob_gate"){ mode="gate"; from={icao:"RJOB",rwy:"07"}; }
+    else if(id==="rjob_to"){ mode="rwy"; from={icao:"RJOB",rwy:"07"}; }
+    else if(id==="rjob_app"){ mode="app"; dest={icao:"RJOB",rwy:"25"}; }
+    else if(id==="rjtt_app"){ mode="app"; dest={icao:"RJTT",rwy:o.rwy||"16L"}; }
+    else if(id==="cruise"&&!from){ mode="cruise"; from=null; }
+    else if(id==="gate"||id==="rwy"||id==="app"||id==="cruise") mode=id;
+    if(!dest) dest={icao:"RJTT",rwy:o.rwy||"16L"};
+    const A=this.ap; const refOf=icao=>{ const a=A.ap[icao]; return a?a.ref:[0,0]; };
+    const spec={mode,from,dest,legacy:!!(id==="rjob_gate"||id==="rjob_to"||id==="rjob_app"||id==="rjtt_app"||(id==="cruise"&&!o.from))};
+    if(mode==="gate"||mode==="rwy"){
+      const dr=refOf(dest.icao); const wantAuto=!from.rwy||from.rwy==="auto";
+      if(mode==="gate"&&wantAuto){   // 自動のときは、ゲートからの誘導路が作れる滑走路を優先する
+        const rank=this.rankRwy(from.icao,dr[0],dr[1],false); let found=null;
+        for(const nm of rank){ const pl=this.planGate(from.icao,nm); if(pl){ found={nm,pl}; break; } }
+        if(found){ from.rwy=found.nm; spec.plan=found.pl; } else from.rwy=rank[0];
+      } else from.rwy=this.pickRwy(from.icao,from.rwy,dr[0],dr[1],false);
+      const e=A.runwayEnd(from.icao,from.rwy).e; spec.dep=e;
+      // 到着滑走路: 出発地から来る方向に合わせる
+      dest.rwy=this.pickRwy(dest.icao,dest.rwy,e.x,e.z,true);
+    } else if(mode==="app"){
+      const r=refOf(dest.icao); dest.rwy=this.pickRwy(dest.icao,dest.rwy,r[0]-1e5,r[1],true);
+    } else {
+      const from2=from||{icao:"RJOO"}; const r0=from?refOf(from.icao):G.ll2xz(GEO_WPT.nagoya[0],GEO_WPT.nagoya[1]); dest.rwy=this.pickRwy(dest.icao,dest.rwy,r0[0],r0[1],true);
+    }
+    if(mode==="gate"){ if(!spec.plan){ const plan=this.planGate(from.icao,from.rwy); if(plan) spec.plan=plan; } if(!spec.plan){ spec.mode="rwy"; spec.noGate=true; } }
+    return spec;
+  }
+  startScenario(o){
+    this.sceneId=o; this.state="loading"; this.paused=false; this.ended=false; this.stats={}; this.log={}; this.pending=o; this.wxOpts=o.wx||{}; this.loadT=0;
+    this.startHour=o.hour!=null?o.hour:14; this.sky.setHour(this.startHour); this.sky.cover=({clear:0.08,fair:0.35,cloudy:0.7}[o.cloud||"fair"]); this.sky.cloudBase=o.cloud==="cloudy"?1500:2000;
+    this.sky.turb=0; this.wx.turbBase=({clear:0.0,fair:0.12,cloudy:0.3}[o.cloud||"fair"]);
+    this.c=C.create(); this.acft.root.visible=false; this.msgQ=[]; this.setMsg("");
+    this.spec=this.resolveSpec(o); this.destRwy={icao:this.spec.dest.icao,name:this.spec.dest.rwy};
+    // 開始地点付近の地形・空港をあらかじめ読み込ませる
+    const p=this.startPoint(this.spec); this.cam.x=p.x; this.cam.z=p.z; this.cam.y=p.alt+80; this.loadHold=p;
+    $("menu").style.display="none"; $("end").style.display="none"; $("loadmsg").style.display="block"; $("loadmsg").textContent="地形・空港を読み込み中…";
+  }
+  cruiseStart(spec){   // 巡航開始位置: 出発地から目的地へ向かう直線上で、最終進入点の手前
+    const A=this.ap, d=spec.dest; const e=A.runwayEnd(d.icao,d.rwy).e; const f=[e.x-e.ux*42000,e.z-e.uz*42000];
+    if(!spec.from) { const p=G.ll2xz(GEO_WPT.nagoya[0],GEO_WPT.nagoya[1]); return {x:p[0],z:p[1],alt:10668,R:Math.hypot(p[0]-f[0],p[1]-f[1])+42000}; }
+    const a=A.ap[spec.from.icao].ref; const D=Math.hypot(a[0]-f[0],a[1]-f[1])||1; const R=Math.min(230000,0.65*D);
+    const x=f[0]+(a[0]-f[0])/D*R, z=f[1]+(a[1]-f[1])/D*R; const h=A.runwayEnd(d.icao,d.rwy).h||0;
+    return {x,z,alt:clamp(h+(R-45000)*0.045,3000,10668),R:R+42000};
+  }
+  startPoint(spec){
     const A=this.ap;
-    if(o.id==="rjob_to"){ const re=A.runwayEnd("RJOB","07"); return {x:re.e.x,z:re.e.z,alt:240}; }
-    if(o.id==="rjob_gate"){ const st=this.gateStand(); return st?{x:st.stop[0],z:st.stop[1],alt:240}:this.startPoint({id:"rjob_to"}); }
-    if(o.id==="rjob_app"){ const re=A.runwayEnd("RJOB","25"); return {x:re.e.x-re.e.ux*3000,z:re.e.z-re.e.uz*3000,alt:600}; }
-    if(o.id==="cruise"){ const w=GEO_WPT.nagoya, p=G.ll2xz(w[0],w[1]); return {x:p[0],z:p[1],alt:9500}; }
-    if(o.id==="rjtt_app"){ const re=A.runwayEnd("RJTT",o.rwy||"16L"); return {x:re.e.x-re.e.ux*28000,z:re.e.z-re.e.uz*28000,alt:900}; }
+    if(spec.mode==="gate"&&spec.plan){ const st=spec.plan.stand; return {x:st.stop[0],z:st.stop[1],alt:(A.runwayEnd(spec.from.icao,spec.from.rwy).h||0)+30}; }
+    if(spec.mode==="gate"||spec.mode==="rwy"){ const re=A.runwayEnd(spec.from.icao,spec.from.rwy); return {x:re.e.x,z:re.e.z,alt:(re.h||0)+30}; }
+    if(spec.mode==="app"){ const re=A.runwayEnd(spec.dest.icao,spec.dest.rwy); return {x:re.e.x-re.e.ux*3000,z:re.e.z-re.e.uz*3000,alt:(re.h||0)+600}; }
+    if(spec.mode==="cruise"){ const c=this.cruiseStart(spec); return {x:c.x,z:c.z,alt:c.alt}; }
     return {x:0,z:0,alt:1000};
   }
   ready(dt){   // 読み込み完了の判定
-    const o=this.pending; if(!o) return false; const A=this.ap; this.loadT+=dt;
-    const icaoNeed=(o.id==="rjob_to"||o.id==="rjob_gate"||o.id==="rjob_app")?"RJOB":(o.id==="rjtt_app"?"RJTT":null);
+    const o=this.pending; if(!o) return false; const A=this.ap; this.loadT+=dt; const sp=this.spec;
+    const icaoNeed=(sp.mode==="gate"||sp.mode==="rwy")?sp.from.icao:(sp.mode==="app"?sp.dest.icao:null);
     const loaded=this.terrain.settled();
     if(icaoNeed){ const a=A.ap[icaoNeed]; if(!a.built) return this.loadT>120; return loaded||this.loadT>30; }
     return loaded||this.loadT>6;
   }
+  // 出発地から目的地までの経路（地名だけの簡略経路。実在の航空路・手順ではない）
+  routeFor(spec,depE){
+    const A=this.ap, d=spec.dest; const re=A.runwayEnd(d.icao,d.rwy).e; const pt=(dd,name)=>({x:re.x-re.ux*dd,z:re.z-re.uz*dd,name});
+    const fin=[pt(42000,"進入開始点"),pt(19000,"最終進入点")];
+    if(spec.from&&spec.from.icao==="RJOB"&&d.icao==="RJTT") return baseRouteToTokyo().concat(fin);
+    const out=[]; const a=depE?[depE.x,depE.z]:[A.ap[spec.from.icao].ref[0],A.ap[spec.from.icao].ref[1]];
+    const f=[fin[0].x,fin[0].z]; const D=Math.hypot(f[0]-a[0],f[1]-a[1])||1; const cs=((f[0]-a[0])*re.ux+(f[1]-a[1])*re.uz)/D;
+    if(cs<0.35){   // 進入方向と逆側から来る場合は、横から回り込んで最終進入コースに入る
+      const nx=-re.uz, nz=re.ux; const mk=sg=>[re.x-re.ux*60000+nx*sg*45000, re.z-re.uz*60000+nz*sg*45000];
+      const p1=mk(1), p2=mk(-1); const p=(Math.hypot(p1[0]-a[0],p1[1]-a[1])<Math.hypot(p2[0]-a[0],p2[1]-a[1]))?p1:p2; out.push({x:p[0],z:p[1],name:"進入経路"});
+    }
+    return out.concat(fin);
+  }
+  routeLen(route,s){ let L=0,px=s[0],pz=s[1]; for(const w of route){ L+=Math.hypot(w.x-px,w.z-pz); px=w.x; pz=w.z; } return L; }
   placeAircraft(o){
-    const A=this.ap, T=this.terrain; const s=F.createState({fuel:o.fuel!=null?o.fuel:5200}); this.s=s; const c=this.c, ap=c.ap, pilot=this.pilot;
+    const A=this.ap, T=this.terrain; const spec=this.spec; const mode0=spec.mode;
+    let fuel=o.fuel; if(fuel==null){ if(spec.legacy) fuel=(mode0==="app"?(spec.dest.icao==="RJOB"?5200:2600):(mode0==="cruise"?3200:5200)); else if(mode0==="app") fuel=2600; }
+    const s=F.createState({fuel:fuel!=null?fuel:5200}); this.s=s; const c=this.c, ap=c.ap, pilot=this.pilot;
     Object.assign(pilot,{pitch:0,roll:0,yaw:0,throttle:0,brake:0,parking:false,speedbrake:0,reverse:false,flapsTarget:0,gearTarget:1,trim:0,autobrake:0,spoilerArm:false});
-    ap.on=false; ap.athr=false; this.route=[]; ap.route=null; ap.wpIndex=0; ap.loc=null; ap.appr=false; this.apprState=null; this.landed=false; this.touchRep=null; this.firstThr=false; this.todPt=null;
-    const mass=F.AC.emptyMass+F.AC.payload+s.fuel; const kv=(mass-50000)/1000;
-    this.vsp={v1:Math.round(132+1.5*kv),vr:Math.round(135+1.5*kv),v2:Math.round(145+1.5*kv),vref:Math.round(135+1.3*kv)};
+    ap.on=false; ap.athr=false; this.route=[]; ap.route=null; ap.wpIndex=0; ap.loc=null; ap.appr=false; this.apprState=null; this.landed=false; this.touchRep=null; this.firstThr=false; this.todPt=null; this.rwyFocus=null; this.takeoffRwy=null; this.takeoffRef=null; this.cruiseAlt=null;
     this.ndRange=20; this.vStall=null;
     // 天候（風）
     const wxo=this.wxOpts||{}; this.wx.windKt=({calm:0,light:8,cross:14,strong:22}[wxo.wind||"light"]); this.wx.jet=({calm:0,light:18,cross:22,strong:30}[wxo.wind||"light"]);
     this.wx.turb=this.wx.turbBase||0; this.env.turb=this.wx.turb;
     const setAir=(x,z,alt,hdgTrue,cas,thr,flaps,gear)=>{ s.pos=[x,alt,z]; const a=F.atmos(alt); const tas=cas*KT/Math.sqrt(a.sigma); s.q=F.eulerToQ(hdgTrue,2.5*D2R,0); F.derived(s); s.vel=[s.fwd[0]*tas,0,s.fwd[2]*tas]; s.thr=[thr,thr]; pilot.throttle=thr; s.flaps=s.flapsTarget=flaps; pilot.flapsTarget=flaps; s.gear=s.gearTarget=gear; pilot.gearTarget=gear; F.derived(s); this.s.onGround=false; };
-    let windFrom=null, scene=o.id;
-    this.push=null; this.autoTaxi=null; this.taxiPhase=null; this.taxiPlan=null; if(this.FS.pk) this.FS.pk.release("RJOB");
-    if(scene==="rjob_gate"){
-      const re=A.runwayEnd("RJOB","07"), e=re.e; const plan=this.planGate(); if(!plan){ scene="rjob_to"; }
-      else {
-        const p0=plan.push.poses[0], fw=[Math.sin(p0.psi),-Math.cos(p0.psi)]; const x=p0.mx-fw[0]*TAXI.MAIN, z=p0.mz-fw[1]*TAXI.MAIN, h=T.heightAt(x,z);
-        s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(p0.psi,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; s.onGround=true; F.derived(s);
-        this.taxiPlan=plan; this.taxiPhase="push"; this.push={i:0,d:0,v:0,t:0}; this.takeoffRwy=e; this.route=baseRouteToTokyo().concat(this.finalRoutePart(o)); windFrom=e.hdg;
-        if(this.FS.pk){ const sw=[]; const cg=(mx,mz,psi)=>TAXI.footprint(mx-Math.sin(psi)*TAXI.MAIN,mz+Math.cos(psi)*TAXI.MAIN,Math.sin(psi),-Math.cos(psi),sw);
-          const po=plan.push.poses; for(let i=0;i<po.length;i+=3) cg(po[i].mx,po[i].mz,po[i].psi); const tx=plan.taxi; for(let i=0;i<tx.length;i+=3) cg(tx[i].x,tx[i].z,tx[i].psi);
-          this.FS.pk.reserve("RJOB",x,z,30,sw); }
-        this.setMsg("プッシュバック中（Enter でスキップ）","#3ddcff",8);
-        ap.alt=3000*FT; ap.hdg=e.hdg; ap.spd=250*KT; ap.vs=0; ap.spdIsMach=false;
-      }
-    }
-    if(scene==="rjob_to"){
-      const re=A.runwayEnd("RJOB","07"), e=re.e; const d=60; const x=e.x+e.ux*d, z=e.z+e.uz*d, h=T.heightAt(x,z);
-      s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(e.hdg,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; F.derived(s);
-      this.route=baseRouteToTokyo().concat(this.finalRoutePart(o)); windFrom=e.hdg; this.takeoffRwy=e; this.setMsg("離陸準備完了。スロットルを上げて離陸滑走（Shift / PageUp）","#ffb11a",8);
+    let windFrom=null, mode=mode0;
+    this.push=null; this.autoTaxi=null; this.taxiPhase=null; this.taxiPlan=null; if(this.FS.pk) for(const k of Object.keys(A.ap)) this.FS.pk.release(k);
+    const dest=spec.dest;
+    const fuelFor=(Lm)=>{ const cap=79000*0.97-F.AC.emptyMass-F.AC.payload; return Math.round(Math.min(Math.max(3500,2500+3.4*Lm/1000),cap,14000)/100)*100; };
+    if(mode==="gate"){
+      const e=spec.dep, plan=spec.plan; const p0=plan.push.poses[0], fw=[Math.sin(p0.psi),-Math.cos(p0.psi)]; const x=p0.mx-fw[0]*TAXI.MAIN, z=p0.mz-fw[1]*TAXI.MAIN, h=T.heightAt(x,z);
+      s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(p0.psi,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; s.onGround=true; F.derived(s);
+      this.taxiPlan=plan; this.taxiPhase="push"; this.push={i:0,d:0,v:0,t:0}; this.takeoffRwy=e; this.takeoffRef={icao:spec.from.icao,name:spec.from.rwy}; windFrom=e.hdg;
+      if(this.FS.pk){ const sw=[]; const cg=(mx,mz,psi)=>TAXI.footprint(mx-Math.sin(psi)*TAXI.MAIN,mz+Math.cos(psi)*TAXI.MAIN,Math.sin(psi),-Math.cos(psi),sw);
+        const po=plan.push.poses; for(let i=0;i<po.length;i+=3) cg(po[i].mx,po[i].mz,po[i].psi); const tx=plan.taxi; for(let i=0;i<tx.length;i+=3) cg(tx[i].x,tx[i].z,tx[i].psi);
+        this.FS.pk.reserve(spec.from.icao,x,z,30,sw); }
+      this.setMsg("プッシュバック中（Enter でスキップ）","#3ddcff",8);
       ap.alt=3000*FT; ap.hdg=e.hdg; ap.spd=250*KT; ap.vs=0; ap.spdIsMach=false;
-    } else if(scene==="rjob_app"){
-      const re=A.runwayEnd("RJOB","25"), e=re.e; const hdg=e.hdg; setAir(e.x-e.ux*22000,e.z-e.uz*22000,re.h+900,hdg,200,0.35,0,1); pilot.gearTarget=0; s.gear=s.gearTarget=0;
-      this.route=[{x:e.x-e.ux*19000,z:e.z-e.uz*19000,name:"最終進入点"}]; windFrom=hdg; ap.alt=re.h+900; ap.hdg=hdg; ap.spd=200*KT; this.engageBasic(); this.rwyFocus={icao:"RJOB",name:"25"};
-    } else if(scene==="cruise"){
-      const w=GEO_WPT.nagoya, p=G.ll2xz(w[0],w[1]); const hdg=Math.atan2(G.ll2xz(35.36,138.73)[0]-p[0], -(G.ll2xz(35.36,138.73)[1]-p[1]));
-      s.fuel=o.fuel!=null?o.fuel:3200; setAir(p[0],p[1],10668,hdg,260,0.62,0,0); ap.spdIsMach=true; ap.mach=0.78; ap.spd=270*KT; ap.alt=10668; ap.vertMode="ALT";
-      this.route=baseRouteToTokyo().slice(3).concat(this.finalRoutePart(o)); this.route.forEach(()=>{}); windFrom=270*D2R; this.engageBasic(true);
-    } else if(scene==="rjtt_app"){
-      const re=A.runwayEnd("RJTT",o.rwy||"16L"), e=re.e; const hdg=e.hdg; this.rwyFocus={icao:"RJTT",name:e.name};
-      s.fuel=o.fuel!=null?o.fuel:2600; setAir(e.x-e.ux*28000,e.z-e.uz*28000,3000*FT,hdg,220,0.4,0,0); ap.alt=3000*FT; ap.hdg=hdg; ap.spd=220*KT; ap.spdIsMach=false;
-      this.route=[{x:e.x-e.ux*19000,z:e.z-e.uz*19000,name:"最終進入点"}]; windFrom=hdg; this.engageBasic();
+      this.route=this.routeFor(spec,e);
+    } else if(mode==="rwy"){
+      const e=spec.dep; const d=60; const x=e.x+e.ux*d, z=e.z+e.uz*d, h=T.heightAt(x,z);
+      s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(e.hdg,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; F.derived(s);
+      this.route=this.routeFor(spec,e); windFrom=e.hdg; this.takeoffRwy=e; this.takeoffRef={icao:spec.from.icao,name:spec.from.rwy};
+      this.setMsg(spec.noGate?"この空港はゲート・誘導路のデータが足りないため、滑走路から開始します。スロットルを上げて離陸滑走（Shift / PageUp）":"離陸準備完了。スロットルを上げて離陸滑走（Shift / PageUp）","#ffb11a",8);
+      ap.alt=3000*FT; ap.hdg=e.hdg; ap.spd=250*KT; ap.vs=0; ap.spdIsMach=false;
+    } else if(mode==="app"){
+      const re=A.runwayEnd(dest.icao,dest.rwy), e=re.e; const hdg=e.hdg; const dist=spec.legacy&&dest.icao==="RJOB"?22000:(spec.legacy?28000:26000);
+      let alt=spec.legacy?(dest.icao==="RJOB"?re.h+900:3000*FT):re.h+900; if(!spec.legacy){ let mh=0; for(let k=2000;k<=dist;k+=1500){ mh=Math.max(mh,T.heightAt(e.x-e.ux*k,e.z-e.uz*k)); } alt=Math.max(alt,mh+450); }
+      const cas=spec.legacy&&dest.icao==="RJOB"?200:220; setAir(e.x-e.ux*dist,e.z-e.uz*dist,alt,hdg,cas,0.38,0,0); pilot.gearTarget=0; s.gear=s.gearTarget=0;
+      this.route=[{x:e.x-e.ux*19000,z:e.z-e.uz*19000,name:"最終進入点"}]; windFrom=hdg; ap.alt=alt; ap.hdg=hdg; ap.spd=cas*KT; ap.spdIsMach=false; this.engageBasic(); this.rwyFocus={icao:dest.icao,name:dest.rwy};
+    } else if(mode==="cruise"){
+      const cs=this.cruiseStart(spec); const e=A.runwayEnd(dest.icao,dest.rwy).e;
+      this.route=spec.from?this.routeFor(spec,null):baseRouteToTokyo().slice(3).concat(this.finalRoutePart(o));
+      let tgt=this.route.length?this.route[0]:{x:e.x-e.ux*42000,z:e.z-e.uz*42000}; if(!spec.from){ const w=G.ll2xz(35.36,138.73); tgt={x:w[0],z:w[1]}; }
+      const hdg=Math.atan2(tgt.x-cs.x,-(tgt.z-cs.z));
+      s.fuel=fuel!=null?fuel:Math.max(2200,Math.round((1800+3.4*cs.R/1000)/100)*100); setAir(cs.x,cs.z,cs.alt,hdg,260,0.62,0,0); ap.spdIsMach=true; ap.mach=0.78; ap.spd=270*KT; ap.alt=cs.alt; ap.vertMode="ALT";
+      windFrom=270*D2R; this.engageBasic(true);
     }
+    if(mode==="gate"||mode==="rwy"){ if(o.fuel==null&&!spec.legacy) s.fuel=fuelFor(this.routeLen(this.route,[spec.dep.x,spec.dep.z])); }
+    // 巡航高度の目安（距離が短い路線では低くする）
+    { const st=[s.pos[0],s.pos[2]]; const Lr=(mode==="app")?0:this.routeLen(this.route,st)+(this.takeoffRwy?0:0);
+      const capH=(Lr-30000)/30.5; this.cruiseAlt=(mode==="app")?35000*FT:(mode==="cruise")?Math.max(s.pos[1],6000*FT):clamp(Math.floor(capH/FT/1000)*1000,4000,35000)*FT; if(spec.legacy&&(mode==="gate"||mode==="rwy")) this.cruiseAlt=35000*FT; }
     // 風（滑走路に合わせた風向き）
     const wk=this.wx.windKt*KT; let wf=windFrom!=null?windFrom:270*D2R; const wxw=wxo.wind||"light"; if(wxw==="cross") wf+=60*D2R; else if(wxw==="light"||wxw==="strong") wf+=8*D2R; this.wx.dirFrom=wf; this.wx.speed=wk;
     this.updateWind();
+    const mass=F.AC.emptyMass+F.AC.payload+s.fuel; const kv=(mass-50000)/1000;
+    this.vsp={v1:Math.round(132+1.5*kv),vr:Math.round(135+1.5*kv),v2:Math.round(145+1.5*kv),vref:Math.round(135+1.3*kv)};
     ap.route=this.route; ap.wpIndex=0; this.stats.startFuel=s.fuel; this.stats.t0=this.t;
     this.state="fly"; this.pending=null; $("loadmsg").style.display="none"; this.acft.root.visible=true; this.applyView(this.view); this.sound("start");
   }
-  gateStand(){ const d=this.ap.data&&this.ap.data.RJOB; return d?TAXI.gateStand(d,GATE_REF):null; }
-  planGate(){ const d=this.ap.data&&this.ap.data.RJOB; if(!d) return null; const re=this.ap.runwayEnd("RJOB","07"); try{ return TAXI.planDeparture(d,GATE_REF,re.e); }catch(err){ console.error(err); return null; } }
-  finalRoutePart(o){ const dest=o.dest||{icao:"RJTT",rwy:o.rwy||"16L"}; const A=this.ap; const re=A.runwayEnd(dest.icao,dest.rwy); if(!re) return []; const e=re.e; const pt=(d,name)=>({x:e.x-e.ux*d,z:e.z-e.uz*d,name}); this.destRwy={icao:dest.icao,name:dest.rwy}; return [pt(42000,"進入開始点"),pt(19000,"最終進入点")]; }
+  planGate(icao,rwy){
+    const d=this.ap.data&&this.ap.data[icao]; if(!d) return null; const re=this.ap.runwayEnd(icao,rwy); if(!re) return null;
+    try{ let p=null; if(icao==="RJOB"&&rwy==="07") p=TAXI.planDeparture(d,GATE_REF,re.e); if(!p) p=TAXI.autoPlan(d,re.e); return p; }catch(err){ console.error(err); return null; }
+  }
+  finalRoutePart(o){ const dest=this.spec?this.spec.dest:(o.dest||{icao:"RJTT",rwy:o.rwy||"16L"}); const A=this.ap; const re=A.runwayEnd(dest.icao,dest.rwy); if(!re) return []; const e=re.e; const pt=(d,name)=>({x:e.x-e.ux*d,z:e.z-e.uz*d,name}); return [pt(42000,"進入開始点"),pt(19000,"最終進入点")]; }
   engageBasic(cruise){ const ap=this.c.ap; ap.on=true; ap.athr=true; ap.latMode=this.route.length>0&&cruise?"LNAV":"HDG"; ap.vertMode=cruise?"ALT":"ALT"; if(!cruise){ ap.alt=Math.round(this.s.pos[1]/(100*FT))*100*FT; } }
   updateWind(){
     const s=this.s, wx=this.wx; const hAGL=Math.max(0,s.pos[1]); const f=clamp(hAGL/9000,0,1);
@@ -144,6 +227,7 @@ class Game{
   // ---------------- 毎フレーム ----------------
   frame(dt){
     this.t+=dt;
+    if(this.state==='fly'||this.state==='crashed'){ const ll=G.xz2ll(this.s.pos[0],this.s.pos[2]); root.MAGVAR_NOW=clamp(4.9+0.24*(ll[0]-26),4,10); }   // 磁気偏角の近似（西偏。那覇 約5° 〜 札幌 約9°）
     if(this.state==="loading"){ this.pollLoad(dt); this.updateEnvironment(); return; }
     if(this.state!=="fly"&&this.state!=="crashed") { this.updateEnvironment(); return; }
     if(!this.paused) this.simulate(dt);
@@ -269,7 +353,7 @@ class Game{
       ap.vertMode="ALT"; ap.latMode="HDG"; ap.hdg=s.psi; ap.alt=Math.max(s.pos[1],this.s.pos[1]); this.say("進入モード解除","#ffb11a"); return; }
     const f=this.findApproach(); if(!f){ this.say("進入コースに乗っていません（滑走路の延長線の前方 60km 以内、方位 ±35° 以内）","#ffb11a",4); return; }
     const e=f.g.e; ap.loc={x:e.x,z:e.z,crs:e.hdg,h:f.g.h,gs:3*D2R,aim:300,name:f.icao+" "+f.name}; ap.on=true; ap.athr=true; ap.latMode="LOC"; ap.vertMode="GS"; ap.appr=true; ap.spdIsMach=false; this.apprState={icao:f.icao,name:f.name,e}; this.rwyFocus={icao:f.icao,name:f.name};
-    ap.spd=Math.min(Math.max(s.cas,this.vsp.vref*KT),230*KT); this.pilot.autobrake=2; this.pilot.spoilerArm=true; this.say("進入モード ― "+(f.icao==="RJTT"?"羽田":"岡山")+" 滑走路 "+f.name,"#3ddcff",3);
+    ap.spd=Math.min(Math.max(s.cas,this.vsp.vref*KT),230*KT); this.pilot.autobrake=2; this.pilot.spoilerArm=true; this.say("進入モード ― "+this.apName(f.icao)+" 滑走路 "+f.name,"#3ddcff",3);
   }
   apprAssist(dt){   // 進入中のギア・フラップ・速度を自動設定
     const s=this.s, ap=this.c.ap, pilot=this.pilot; if(!this.assistConfig||!ap.on||ap.latMode!=="LOC"||!this.apprState||s.onGround) return;
@@ -307,7 +391,7 @@ class Game{
     else if(s.onGround&&!this.stats.liftoff&&!this.landed){ if(p.throttle<0.1) h="スロットルを上げて離陸滑走（Shift / PageUp / 数字キー 9）。パーキングブレーキは自動で外れます"; else if(cas<this.vsp.vr) h="加速中。滑走路中心線は自動で維持されます。VR（"+this.vsp.vr+" kt）で操縦桿を引く（↓ / S）"; else h="操縦桿を引いて機首を約 10° 上げる"; }
     else if(this.stats.liftoff&&!this.landed&&s.gear>0.5&&raFt>30&&s.vs>0) h="正の上昇率 → ギア上げ（G）";
     else if(!this.landed&&s.gear<0.5&&s.flaps>0.5&&altFt>1500&&cas>180) h="フラップ上げ（V でフラップを一段ずつ引き上げ）";
-    else if(!ap.on&&!s.onGround&&altFt>1500&&!this.landed) h="Enter キーでオートパイロット（AP）。上の MCP で高度・速度・方位を設定。LNAV で羽田方面へ自動航行";
+    else if(!ap.on&&!s.onGround&&altFt>1500&&!this.landed) h="Enter キーでオートパイロット（AP）。上の MCP で高度・速度・方位を設定。LNAV で目的地方面へ自動航行";
     else if(ap.on&&ap.vertMode==="ALT"&&Math.abs(ap.alt-s.pos[1])>150&&!this.landed) h="MCP の高度を設定して FLCH（高度変更）を押すと上昇／降下します";
     else if(this.landed&&s.onGround&&s.gs>20) h="接地後：リバース（R 長押し）とブレーキ（Space / B 長押し）。オートブレーキ作動中";
     const tod=this.todInfo(); if(tod&&tod.msg&&!this.landed) h=tod.msg;
@@ -417,7 +501,7 @@ class Game{
   // ---------------- 計器へ渡すデータ ----------------
   hudView(){
     const s=this.s, c=this.c, ap=c.ap; const F2=F; const a=F2.atmos(s.pos[1]);
-    let windTxt=(((this.wx.curDir||0)/D2R+MAGVAR+360)%360).toFixed(0).padStart(3,"0")+"/"+Math.round((this.wx.curSpd||0)/KT);
+    let windTxt=(((this.wx.curDir||0)/D2R+MV()+360)%360).toFixed(0).padStart(3,"0")+"/"+Math.round((this.wx.curSpd||0)/KT);
     // 次の経由地
     let nextWp=null; if(ap.latMode==="LNAV"&&this.route.length&&ap.wpIndex<this.route.length){ const w=this.route[ap.wpIndex]; const d=Math.hypot(w.x-s.pos[0],w.z-s.pos[2]); const eta=s.gs>30?Math.round(d/s.gs/60)+" 分":""; nextWp={name:w.name,dist:d,eta}; }
     // ILS 表示
@@ -425,10 +509,10 @@ class Game{
     if(ap.loc&&(ap.latMode==="LOC")){ const L=ap.loc; const relx=s.pos[0]-L.x, relz=s.pos[2]-L.z; const fx=Math.sin(L.crs), fz=-Math.cos(L.crs); const dist=-(relx*fx+relz*fz); const xt=relx*(-fz)+relz*fx; const locA=Math.atan2(xt,Math.max(300,dist)); const gsAlt=L.h+Math.tan(L.gs)*(Math.max(0,dist)+(L.aim||300)); const gsA=Math.atan2(s.pos[1]-gsAlt,Math.max(300,dist+300)); ils={name:L.name||"ILS",dist:Math.max(0,dist)/NM,loc:-locA/(1.25*D2R)*1.0*(-1)*(-1),gs:Math.abs(gsA)<6*D2R?gsA/(0.35*D2R):null}; ils.loc=locA/(1.25*D2R); ils.gs=gsA/(0.35*D2R); }
     else if(this.rwyFocus&&!s.onGround){ const g=this.approachGeometry(this.rwyFocus.icao,this.rwyFocus.name); if(g&&g.along>0&&g.along<60000){ const L=g.e; const locA=Math.atan2(g.xt,Math.max(300,g.along)); const gsAlt=g.h+Math.tan(3*D2R)*(g.along+300); const gsA=Math.atan2(s.pos[1]-gsAlt,Math.max(300,g.along+300)); if(Math.abs(locA)<12*D2R) ils={name:this.rwyFocus.icao+" "+this.rwyFocus.name,dist:g.along/NM,loc:locA/(1.25*D2R),gs:gsA/(0.35*D2R)}; } }
     const tod=this.todInfo(); const mach=s.mach; const machCas=(()=>{ if(!(ap.spdIsMach&&ap.mach)) return 0; const m=ap.mach, pt=a.p*Math.pow(1+0.2*m*m,3.5), qc=pt-a.p; return 340.294*Math.sqrt(5*(Math.pow(qc/101325+1,2/7)-1))/KT; })();
-    let destInfo=null; if(this.destRwy){ const re=this.ap.runwayEnd(this.destRwy.icao,this.destRwy.name); if(re){ const d=Math.hypot(s.pos[0]-re.e.x,s.pos[2]-re.e.z); destInfo=(this.destRwy.icao==="RJTT"?"羽田 ":"岡山 ")+(d/NM).toFixed(0)+"NM"; } }
+    let destInfo=null; if(this.destRwy){ const re=this.ap.runwayEnd(this.destRwy.icao,this.destRwy.name); if(re){ const d=Math.hypot(s.pos[0]-re.e.x,s.pos[2]-re.e.z); destInfo=(this.apName(this.destRwy.icao)+" ")+(d/NM).toFixed(0)+"NM"; } }
     const fe=this.fieldElev();
     let finalLine=null; const rwy=this.rwyFocus||this.destRwy; if(rwy){ const re=this.ap.runwayEnd(rwy.icao,rwy.name); if(re){ const e=re.e; finalLine=[e.x-e.ux*40000,e.z-e.uz*40000,e.x,e.z]; } }
-    const apts=[]; for(const a of Object.values(this.ap.ap)){ apts.push({name:a.icao==="RJTT"?"羽田":"岡山",x:a.ref[0],z:a.ref[1],rw:a.runways.map(r=>[r.ax,r.az,r.bx,r.bz])}); }
+    const apts=[]; for(const a of Object.values(this.ap.ap)){ apts.push({name:this.apName(a.icao),x:a.ref[0],z:a.ref[1],rw:a.runways.map(r=>[r.ax,r.az,r.bx,r.bz])}); }
     const phase=(s.onGround&&!this.landed&&!this.stats.liftoff)?"takeoff":((ap.latMode==="LOC"||s.flaps>3.5||(this.apprState))?"approach":"cruise");
     return { s, ap, assist:c.assist, route:this.route, wpIndex:ap.wpIndex, nextWp, ils, todPt:this.todPt, todTxt:tod?tod.text:null, destInfo, windTxt, machTxt:"M"+mach.toFixed(2).replace(/^0/,""), machCas, vs_:this.vsp, vStall:this.vStall, phase, fieldElevFt:fe, apts, finalLine,
       gsCap:c.gsCap, autobrake:this.pilot.autobrake, spoilerArm:this.pilot.spoilerArm, warn:this.warn, clock:fmtClock(this.sky.hour), msg:this.state==="crashed"?"破損":"" , showAltBug:true };
@@ -446,7 +530,7 @@ class Game{
       h="<h2>着陸しました</h2><p class='ok'>"+grade+"</p><table>"+
       "<tr><td>接地の降下率</td><td>"+Math.round(r.fpm||0)+" fpm（"+(r.vs||0).toFixed(1)+" m/s）</td></tr>"+
       "<tr><td>接地速度</td><td>"+Math.round(r.cas||0)+" kt（対気）</td></tr>"+
-      (r.rwy?"<tr><td>滑走路</td><td>"+(r.icao==="RJTT"?"羽田":"岡山")+" RWY "+r.rwy+"（"+(r.onRwy?"滑走路上":"滑走路外！")+"）</td></tr><tr><td>接地位置</td><td>しきい値から "+Math.round(r.dist)+" m ／ 中心線から "+(r.lat>=0?"右":"左")+" "+Math.abs(r.lat).toFixed(0)+" m</td></tr>":"")+
+      (r.rwy?"<tr><td>滑走路</td><td>"+this.apName(r.icao)+" RWY "+r.rwy+"（"+(r.onRwy?"滑走路上":"滑走路外！")+"）</td></tr><tr><td>接地位置</td><td>しきい値から "+Math.round(r.dist)+" m ／ 中心線から "+(r.lat>=0?"右":"左")+" "+Math.abs(r.lat).toFixed(0)+" m</td></tr>":"")+
       "<tr><td>使った燃料</td><td>"+Math.round(used)+" kg</td></tr></table>"; }
     h+="<div class='btns'><button id='endRetry'>もう一度（同じ条件）</button><button id='endMenu'>メニューへ</button></div>"; e.firstElementChild.innerHTML=h; e.style.display="flex";
     $("endRetry").onclick=()=>{ e.style.display="none"; this.startScenario(this.sceneId); }; $("endMenu").onclick=()=>{ e.style.display="none"; this.state="menu"; $("menu").style.display="flex"; this.acft.root.visible=false; if(this.ui) this.ui.showPlay(false); };
