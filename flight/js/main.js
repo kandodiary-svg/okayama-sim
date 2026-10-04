@@ -13,6 +13,7 @@ async function init(){
   Object.assign(FS,{renderer,scene,camera});
   msg("データ索引を読み込み中…");
   const [tiles,bidx,apd]=await Promise.all([fetch("data/tiles.json").then(r=>r.json()),fetch("data/bld_index.json").then(r=>r.json()),fetch("data/airports.json").then(r=>r.json())]);
+  for(const d of Object.values(apd)){ try{ TAXI.addVirtualStands(d); }catch(e){ console.error(e); } }   // 駐機位置データが少ない空港にゲートを補う
   const sky=FS.sky=new Sky(T,scene,renderer);
   scene.fog=new T.FogExp2(sky.fogColor,1/52000);
   const terrain=FS.terrain=new Terrain(T,scene,"data/",tiles,{maxActive:+q.get("act")||8});

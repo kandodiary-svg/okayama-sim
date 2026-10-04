@@ -97,7 +97,7 @@ class Airports{
       if(pts[0][0]===pts[pts.length-1][0]&&pts[0][1]===pts[pts.length-1][1]) pts.pop();
       this.poly(pav,pts,[0.55,0.55,0.55],0.08,H,P); a.apron.push(pts); }
     // --- 駐機位置の誘導線 ---
-    for(const w of d.ways){ if(w.t!=="parking_position") continue; const pts=ring2xz(w.g); if(pts.length<2) continue; this.ribbon(paint,pts,0.28,[0.95,0.80,0.12],0.145,H,P,true); }
+    for(const w of d.ways){ if(w.t!=="parking_position"||w.v===1) continue; const pts=ring2xz(w.g); if(pts.length<2) continue; this.ribbon(paint,pts,0.28,[0.95,0.80,0.12],0.145,H,P,true); }
     // --- 停止線（誘導路が滑走路に入る手前） ---
     const holds=d.nodes.filter(n=>n.t==="holding_position"); const hmark=[];
     for(const n of holds){ const p=G.ll2xz(n.p[1],n.p[0]); let best=1e9,bs=null;
@@ -195,7 +195,7 @@ class Airports{
         const a0=tri[0],b1=tri[1],c0=tri[2]; const cy=(zs[b1]-zs[a0])*(xs[c0]-xs[a0])-(xs[b1]-xs[a0])*(zs[c0]-zs[a0]);
         for(let t=0;t<tri.length;t+=3){ if(cy>0) idx.push(b0+tri[t],b0+tri[t+1],b0+tri[t+2]); else idx.push(b0+tri[t],b0+tri[t+2],b0+tri[t+1]); } nv+=n; } };
     for(const w of d.ways){
-      if(w.t==="terminal"||w.t==="hangar"){ const pts=ring2xz(w.g); const h=parseFloat(w.height)||(w.t==="terminal"?20:14); add(pts,h,w.t==="terminal"?[0.80,0.82,0.85]:[0.74,0.75,0.77],w.t==="terminal"?2.0:3.0); }
+      if(w.t==="terminal"||w.t==="hangar"){ const pts=ring2xz(w.g); const glass=w.t==="terminal"&&!/貨物|cargo/i.test(w.name||""); const h=parseFloat(w.height)||(w.t==="terminal"?20:14); add(pts,h,glass?[0.80,0.82,0.85]:[0.74,0.75,0.77],glass?2.0:3.0); }   // 名前に「貨物」を含む棟は、ガラスでなく金属壁
       else if(w.t==="tower"||w.t==="aircraft_control"){ this.addTower(add,ring2xz(w.g),parseFloat(w.height),H); }
     }
     for(const n of d.nodes){ if(n.t!=="tower") continue; const q=G.ll2xz(n.p[1],n.p[0]); this.addTower(add,[[q[0]-2.5,q[1]-2.5],[q[0]+2.5,q[1]-2.5],[q[0]+2.5,q[1]+2.5],[q[0]-2.5,q[1]+2.5]],NaN,H); }

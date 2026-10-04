@@ -53,6 +53,95 @@ function standsOf(data){
   }
   return out;
 }
+
+// ---------- 仮想スタンド ----------
+// OSM に駐機位置（parking_position）が無い/少ない空港のために、スタンドを補う。実際の地図データから作る:
+//  A) 行き止まりの誘導レーン（ターミナルの近くで終わっているもの）をそのままスタンドとして使う
+//  B) ターミナルの壁に垂直に伸ばした線が、エプロンの上を通って誘導路に届くものをスタンドにする（建物・ジェットブリッジに当たらない場所だけ）
+// 追加した線は v:1（A）/ v:2（B）の印を付けた parking_position として data.ways に足す（standsOf・グラフ・駐機機が自然に使う）
+const ringPts=(w)=>{ const p=w.g.map(q=>G.ll2xz(q[1],q[0])); return p; };
+const polyIn=(x,z,poly)=>{ let c=false; for(let i=0,j=poly.length-1;i<poly.length;j=i++){ const a=poly[i],b=poly[j]; if((a[1]>z)!==(b[1]>z) && x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0]) c=!c; } return c; };
+// 半直線 O+s·n（s>=0）と線分 AB の交点の s
+function rayHit(ox,oz,nx,nz,ax,az,bx,bz){
+  const ex=bx-ax, ez=bz-az, den=nx*ez-nz*ex; if(Math.abs(den)<1e-9) return null;
+  const s=((ax-ox)*ez-(az-oz)*ex)/den, t=((ax-ox)*nz-(az-oz)*nx)/den; if(s<0||t<0||t>1) return null; return {s,t};
+}
+function segDist(p,q,a,b){   // 線分 pq と ab の距離（交差していれば 0）
+  const ps=(x,z,u,v,w,y)=>{ const dx=w-u,dz=y-v,l2=dx*dx+dz*dz; let t=l2?((x-u)*dx+(z-v)*dz)/l2:0; t=t<0?0:t>1?1:t; return Math.hypot(u+dx*t-x,v+dz*t-z); };
+  const h=rayHit(p[0],p[1],q[0]-p[0],q[1]-p[1],a[0],a[1],b[0],b[1]); if(h&&h.s<=1) return 0;
+  return Math.min(ps(p[0],p[1],a[0],a[1],b[0],b[1]),ps(q[0],q[1],a[0],a[1],b[0],b[1]),ps(a[0],a[1],p[0],p[1],q[0],q[1]),ps(b[0],b[1],p[0],p[1],q[0],q[1]));
+}
+function addVirtualStands(data,opt){
+  opt=opt||{}; if(!data||data.vsDone) return 0; data.vsDone=true;
+  const ways=data.ways||[]; if(!ways.length) return 0;
+  const real=standsOf(data); if(real.length>=(opt.min||6)) return 0;
+  const toLL=(p)=>{ const q=G.xz2ll(p[0],p[1]); return [q[1],q[0]]; };
+  const add=[]; let nA=0,nB=0;
+  const gates=(data.nodes||[]).filter(n=>n.t==="gate").map(n=>G.ll2xz(n.p[1],n.p[0]));
+  const nearTerm=nearTermFn(data);
+  // --- A) 行き止まりレーン ---
+  const g=buildGraph(data);
+  for(const w of ways){
+    if(w.t!=="taxilane"&&w.t!=="taxiway") continue; const pts=ringPts(w); if(pts.length<2) continue;
+    for(const rev of [false,true]){
+      const q=rev?pts.slice().reverse():pts, e=q[q.length-1]; const vi=nearestVertex(g,e[0],e[1]); if(vi<0||g.E[vi].length!==1) continue;   // 他とつながっていない端だけ
+      let near=nearTerm(e[0],e[1])<=70; if(!near) for(const gp of gates) if(Math.hypot(gp[0]-e[0],gp[1]-e[1])<=45){ near=true; break; }
+      if(!near) continue;
+      let k=q.length-1, L=0, best=-1;
+      for(let i=q.length-2;i>=0&&L<130;i--){ L+=Math.hypot(q[i+1][0]-q[i][0],q[i+1][1]-q[i][1]); const ch=Math.hypot(e[0]-q[i][0],e[1]-q[i][1]); if(ch/L<0.985) break; if(L>=40) best=i; }
+      if(best<0) continue;
+      add.push({t:"parking_position",v:1,g:q.slice(best).map(toLL)}); nA++;
+    }
+  }
+  // --- B) ターミナルの壁から垂直に ---
+  if(real.length+nA<(opt.min||6)){
+    const terms=[], blds=[], bridges=[], aprons=[];
+    for(const w of ways){ if(w.t==="terminal") terms.push(ringPts(w)); if(w.t==="terminal"||w.t==="hangar") blds.push(ringPts(w)); if(w.t==="jet_bridge") bridges.push(ringPts(w)); if(w.t==="apron") aprons.push(ringPts(w)); }
+    const lanes=[]; ways.forEach((w,wi)=>{ if(w.t!=="taxiway"&&w.t!=="taxilane") return; const p=ringPts(w); for(let i=0;i<p.length-1;i++) lanes.push({wi,i,a:p[i],b:p[i+1]}); });
+    const have=[]; for(const c of real) have.push([c.pts[0],c.e]); for(const w of add){ const p=w.g.map(q=>G.ll2xz(q[1],q[0])); have.push([p[0],p[p.length-1]]); }
+    const STOP=24, MINLEN=70, MAXLEN=300, SPACE=46, WING=16;
+    const bhit=(ox,oz,nx,nz,maxs)=>{ for(const b of blds){ for(let i=0;i<b.length-1;i++){ const h=rayHit(ox,oz,nx,nz,b[i][0],b[i][1],b[i+1][0],b[i+1][1]); if(h&&h.s>0.6&&h.s<maxs) return h.s; } } return null; };
+    const cands=[];
+    for(const T of terms){
+      if(T.length<4) continue; let A2=0; for(let i=0;i<T.length-1;i++) A2+=T[i][0]*T[i+1][1]-T[i+1][0]*T[i][1];
+      for(let i=0;i<T.length-1;i++){
+        const a=T[i], b=T[i+1], len=Math.hypot(b[0]-a[0],b[1]-a[1]); if(len<30) continue; const ux=(b[0]-a[0])/len, uz=(b[1]-a[1])/len;
+        let nx=uz, nz=-ux; if(polyIn((a[0]+b[0])/2+nx*1.5,(a[1]+b[1])/2+nz*1.5,T)){ nx=-nx; nz=-nz; }
+        const k=Math.max(1,Math.floor((len-20)/50)+1), t0=(len-(k-1)*50)/2;
+        for(let j=0;j<k;j++){ const t=t0+j*50; cands.push({x:a[0]+ux*t, z:a[1]+uz*t, nx, nz}); }
+      }
+    }
+    for(const c of cands){
+      const ox=c.x+c.nx*0.6, oz=c.z+c.nz*0.6; let d=1e18, hit=null;
+      for(const L of lanes){ const h=rayHit(ox,oz,c.nx,c.nz,L.a[0],L.a[1],L.b[0],L.b[1]); if(h&&h.s<d){ d=h.s; hit=Object.assign({},L,{t:h.t}); } }
+      const R=opt.dbg; if(R) R.n=(R.n||0)+1; if(!hit||d<MINLEN||d>MAXLEN){ if(R){ const k=!hit?'nohit':(d<MINLEN?'short':'long'); R[k]=(R[k]||0)+1; if(R.list&&hit) R.list.push([Math.round(d)]); } continue; }
+      let sd0=STOP;
+      if(aprons.length){   // エプロンに入る所から 20m 奥を停止位置にする（壁とエプロンの間が空いている空港用）
+        let ent=-1; for(let s2=0;s2<=d;s2+=2){ const px=ox+c.nx*s2, pz=oz+c.nz*s2; let on=false; for(const ap of aprons) if(polyIn(px,pz,ap)){ on=true; break; } if(on){ ent=s2; break; } }
+        if(ent<0||ent>110){ if(R) R.apron=(R.apron||0)+1; continue; } sd0=Math.max(STOP,ent+20); if(d-sd0<45){ if(R) R.short2=(R.short2||0)+1; continue; }
+      }
+      const sx=c.x+c.nx*sd0, sz=c.z+c.nz*sd0;
+      if(bhit(ox,oz,c.nx,c.nz,d)!==null){ if(R) R.bld=(R.bld||0)+1; continue; }
+      let bad=false; for(const sd of [-WING,WING]){ const px=ox-c.nz*sd, pz=oz+c.nx*sd; if(bhit(px,pz,c.nx,c.nz,d)!==null){ bad=true; break; } }
+      if(bad){ if(R) R.wing=(R.wing||0)+1; continue; }
+      // ジェットブリッジが機体の中心線に重ならない
+      const e1=[sx+c.nx*14,sz+c.nz*14];
+      for(const br of bridges){ for(let i=0;i<br.length-1;i++) if(segDist([c.x,c.z],e1,br[i],br[i+1])<6){ bad=true; break; } if(bad) break; }
+      if(bad){ if(R) R.bridge=(R.bridge||0)+1; continue; }
+      const J=[ox+c.nx*d, oz+c.nz*d], S=[sx,sz];
+      for(const h of have){ if(segDist(J,S,h[0],h[1])<SPACE){ bad=true; break; } }
+      if(bad){ if(R) R.space=(R.space||0)+1; continue; }
+      have.push([J,S]); add.push({t:"parking_position",v:2,g:[toLL(J),toLL(S)],_hit:hit,_J:J}); nB++;
+    }
+    // 誘導路の線に、つなぎ目の頂点を足す（線の見た目は変わらない）
+    const byWay=new Map(); for(const w of add){ if(!w._hit) continue; const h=w._hit; if(!byWay.has(h.wi)) byWay.set(h.wi,[]); byWay.get(h.wi).push({i:h.i,t:h.t,p:w._J}); }
+    for(const [wi,list] of byWay){ list.sort((a,b)=>b.i-a.i||b.t-a.t); const wg=ways[wi].g; for(const q of list){ const A=wg[q.i], B=wg[q.i+1]; const pa=G.ll2xz(A[1],A[0]), pb=G.ll2xz(B[1],B[0]); if(Math.hypot(q.p[0]-pa[0],q.p[1]-pa[1])<2.5||Math.hypot(q.p[0]-pb[0],q.p[1]-pb[1])<2.5) continue; wg.splice(q.i+1,0,toLL(q.p)); } }
+    for(const w of add){ delete w._hit; delete w._J; }
+  }
+  for(const w of add) ways.push(w);
+  data.vs={A:nA,B:nB};
+  return add.length;
+}
 function standGeom(best,gp){
   const seq=best.pts, e=best.e; let dx=0,dz=0,acc=0;
   for(let i=seq.length-1;i>0&&acc<12;i--){ const ax=seq[i-1][0],az=seq[i-1][1],bx=seq[i][0],bz=seq[i][1]; dx+=bx-ax; dz+=bz-az; acc+=Math.hypot(bx-ax,bz-az); }
@@ -172,17 +261,32 @@ function planArrival(data,e,pose,c,opt){
   const D=dijkAll(g,sv); const cand=[];
   for(let i=0;i<g.V.length;i++){ const dx=g.V[i][0]-e.x, dz=g.V[i][1]-e.z; const t=dx*u[0]+dz*u[1], cc=dx*(-u[1])+dz*u[0]; if(Math.abs(cc)<38&&t>tAc+30&&t<tAc+2600&&g.E[i].length>=1&&D.dist[i]<1e17) cand.push({i,t,cc,L:D.dist[i]+(t-tAc)}); }
   cand.sort((a,b)=>a.L-b.L); let best=null;
-  for(const k of cand.slice(0,8)){
-    const pts=[[pose.nx,pose.nz]]; const V=g.V[k.i];
-    if(Math.abs(k.cc)>4) pts.push([e.x+u[0]*k.t, e.z+u[1]*k.t]);      // 滑走路の中心線を進み、出口の位置から曲がる
+  const finish=(pre,k,tail)=>{    // pre: 先頭の手作り部分（Uターン）。 tail: 出口以降の折れ線
+    const pts=tail; const f=[pts[0]]; for(let q=1;q<pts.length;q++){ if(Math.hypot(pts[q][0]-f[f.length-1][0],pts[q][1]-f[f.length-1][1])>0.8) f.push(pts[q]); } if(f.length<3&&!pre) return null;
+    const sm=f.length>=2?smoothPath(f,opt.R||45,2):f; const all=pre?pre.concat(sm.slice(1)):sm; const taxi=annotate(all,{vmax:opt.vmax||9,vend:0}); const len=taxi[taxi.length-1].s; if(len<60||len>7000) return null;
+    const km=maxCurv(taxi,6,3); if(km>0.06) return null; return {len,taxi,stand:st,exitT:k.t,km,uturn:!!pre};
+  };
+  const buildTail=(first,k)=>{
+    const pts=[first]; if(Math.abs(k.cc)>4) pts.push([e.x+u[0]*k.t, e.z+u[1]*k.t]);      // 滑走路の中心線を進み、出口の位置から曲がる
     for(let v=k.i;v!==-1;v=D.prev[v]){ pts.push(g.V[v].slice()); if(v===sv) break; }
     for(let q=1;q<c.pts.length;q++) pts.push(c.pts[q].slice());       // 駐機線（スタンドの引き込み線）
     // 経路は主脚中心の軌跡。前脚が停止位置に来るよう、終点を WB（前脚〜主脚の距離）だけ手前にする
-    { let rem=WB; while(rem>0&&pts.length>2){ const a=pts[pts.length-2], b=pts[pts.length-1]; const l=Math.hypot(b[0]-a[0],b[1]-a[1]); if(l>rem){ const t=(l-rem)/l; pts[pts.length-1]=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]; rem=0; } else { rem-=l; pts.pop(); } } }
-    const f=[pts[0]]; for(let q=1;q<pts.length;q++){ if(Math.hypot(pts[q][0]-f[f.length-1][0],pts[q][1]-f[f.length-1][1])>0.8) f.push(pts[q]); } if(f.length<3) continue;
-    const sm=smoothPath(f,opt.R||45,2); const taxi=annotate(sm,{vmax:opt.vmax||9,vend:0}); const len=taxi[taxi.length-1].s; if(len<60||len>7000) continue;
-    const km=maxCurv(taxi,6,3); if(km>0.06) continue;
-    if(!best||len<best.len) best={len,taxi,stand:st,exitT:k.t,km};
+    let rem=WB; while(rem>0&&pts.length>2){ const a=pts[pts.length-2], b=pts[pts.length-1]; const l=Math.hypot(b[0]-a[0],b[1]-a[1]); if(l>rem){ const t=(l-rem)/l; pts[pts.length-1]=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]; rem=0; } else { rem-=l; pts.pop(); } }
+    return pts;
+  };
+  for(const k of cand.slice(0,8)){ const r=finish(null,k,buildTail([pose.nx,pose.nz],k)); if(r&&(!best||r.len<best.len)) best=r; }
+  // 出口を通り過ぎて止まったとき: 滑走路上で U ターンして、後ろ側の出口へ戻る
+  if(!best&&opt.uturn!==false){
+    const rt=[-u[1],u[0]]; const back=[];
+    for(let i=0;i<g.V.length;i++){ const dx=g.V[i][0]-e.x, dz=g.V[i][1]-e.z; const t=dx*u[0]+dz*u[1], cc=dx*rt[0]+dz*rt[1]; if(Math.abs(cc)<38&&t<tAc-90&&t>tAc-2600&&t>20&&g.E[i].length>=1&&D.dist[i]<1e17) back.push({i,t,cc,L:D.dist[i]+(tAc-t)}); }
+    back.sort((a,b)=>a.L-b.L);
+    for(const k of back.slice(0,8)){
+      const sd=(k.cc>=0)?1:-1; const r0=19, X0=70; const P0=[pose.nx,pose.nz]; const at=(sp,cp)=>[P0[0]+u[0]*sp+rt[0]*cp*sd, P0[1]+u[1]*sp+rt[1]*cp*sd];
+      const pre=[]; for(let d=0;d<=Math.hypot(X0,r0);d+=2){ const f=d/Math.hypot(X0,r0); pre.push(at(X0*f,-r0*f)); }
+      for(let a=-Math.PI/2+0.1;a<=Math.PI/2;a+=2/r0){ pre.push(at(X0+r0*Math.cos(a), r0*Math.sin(a))); }
+      const Cend=pre[pre.length-1]; const tc=(Cend[0]-e.x)*u[0]+(Cend[1]-e.z)*u[1]; if(tc-k.t<70) continue;
+      const rr=finish(pre,k,buildTail(Cend,k)); if(rr&&(!best||rr.len<best.len)) best=rr;
+    }
   }
   return best;
 }
@@ -238,5 +342,5 @@ const FOOT=(function(){ const a=[]; for(let o=-17;o<=19;o+=4) a.push([o,0,3.3]);
   return a; })();
 function footprint(x,z,dx,dz,out){ const rx=-dz, rz=dx; for(const [o,l,r] of FOOT) out.push([x+dx*o+rx*l,z+dz*o+rz*l,r]); return out; }
 
-root.TAXI={ footprint, buildGraph, nearestVertex, dijkstra, gateStand, standsOf, autoPlan, planArrival, autoArrival, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
+root.TAXI={ footprint, buildGraph, nearestVertex, dijkstra, gateStand, standsOf, addVirtualStands, autoPlan, planArrival, autoArrival, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
 })(typeof window!=="undefined"?window:globalThis);
