@@ -226,9 +226,16 @@ class Airports{
     add(ring(0.35,6),12,[0.45,0.45,0.47],0.0,g+h+6.3);                                       // アンテナ
   }
   // ---------- 地表の種類 ----------
+  // 空港ごとの「地表の種類を調べる範囲」。基準点から 3km 固定だと、羽田・成田・新千歳の遠い側の滑走路が範囲外になり、接地が「海面」扱いになっていた
+  kindR2(a){
+    if(a.kR2) return a.kR2; let m=3000; const d=this.data[a.icao]||{};
+    for(const r of a.runways){ for(const k of ["ax","bx"]){ const px=r[k], pz=r[k==="ax"?"az":"bz"]; m=Math.max(m,Math.hypot(px-a.ref[0],pz-a.ref[1])+400); } }
+    for(const w of (d.ways||[])){ if(w.t!=="taxiway"&&w.t!=="taxilane"&&w.t!=="apron") continue; for(const q of w.g){ const p=G.ll2xz(q[1],q[0]); m=Math.max(m,Math.hypot(p[0]-a.ref[0],p[1]-a.ref[1])+50); } }
+    return a.kR2=m*m;
+  }
   kindAt(x,z){
     for(const a of Object.values(this.ap)){
-      const dx=x-a.ref[0], dz=z-a.ref[1]; if(dx*dx+dz*dz>9e6) continue;
+      const dx=x-a.ref[0], dz=z-a.ref[1]; if(dx*dx+dz*dz>this.kindR2(a)) continue;
       for(const r of a.runways){ const t=(x-r.ax)*r.ux+(z-r.az)*r.uz; if(t<-60||t>r.L+60) continue; const c=Math.abs(-(x-r.ax)*r.uz+(z-r.az)*r.ux); if(c<r.w/2+9) return "runway"; }
       if(a.built){ for(const p of a.apron) if(pip(x,z,p)) return "taxi"; for(const sg of a.taxi){ for(let i=0;i<sg.pts.length-1;i++) if(segDist(x,z,sg.pts[i][0],sg.pts[i][1],sg.pts[i+1][0],sg.pts[i+1][1])<sg.W/2) return "taxi"; } }
     }

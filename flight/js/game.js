@@ -411,7 +411,9 @@ class Game{
     if(s.onGround){ this.say("離陸後に使えます","#ffb11a"); return false; }
     if(!this.route.length||!this.destRwy){ this.say("経路がありません","#ffb11a"); return false; }
     const rt=this.route; let k=Math.min(Math.max(0,ap.wpIndex||0),rt.length-1);
-    while(k<rt.length-1){ const a=rt[k], b=rt[k+1]; if((s.pos[0]-a.x)*(b.x-a.x)+(s.pos[2]-a.z)*(b.z-a.z)>0) k++; else break; }   // すでに通り過ぎた経由地は飛ばす
+    while(k<rt.length-1){ const a=rt[k], b=rt[k+1]; const lx=b.x-a.x, lz=b.z-a.z, ll=Math.hypot(lx,lz)||1, rx=s.pos[0]-a.x, rz=s.pos[2]-a.z;
+      const along=(rx*lx+rz*lz)/ll, xt=Math.abs((rx*(-lz)+rz*lx)/ll);
+      if(along>0&&xt<6000) k++; else break; }   // すでに通り過ぎた経由地は飛ばす（その脚の近くにいるときだけ。横に大きく離れているなら、飛ばさず経路に入り直す）
     ap.on=true; ap.athr=true; ap.latMode="LNAV"; ap.route=rt; ap.wpIndex=k; ap.appr=false; ap.loc=null; this.apprState=null; this.c.legFrom=null;
     if(ap.vertMode==="GS") ap.vertMode="ALT";
     this.autoFlight=true; this.af={phase:null,sayT:0};
@@ -438,8 +440,15 @@ class Game{
     const fi=Math.round(p.flapsTarget);
     if(!af.descend&&fi>0&&raFt>700&&this.t>(af.flT||0)&&cas>(fi>1?lim(fi-1)-22:lim(1)-30)){ p.flapsTarget=fi-1; af.flT=this.t+4; }
     // 降下を始める点: しきい値までの道のりが「降下に必要な距離」以下になったら
+    // 進入コースの手前の地形の上 450m 以上を保つ高度。遠くでは地形データが粗い／未読込なので、近づくにつれて 1.5 秒ごとに計算し直す
+    // （最初の 1 回だけ計算していたため、仙台のように手前に山がある空港で山に当たっていた）
+    if(!af.tgt||this.t>(af.tgtT||0)){
+      af.tgtT=this.t+1.5; const near=this.routeRemain()<170000; let mt=0;
+      for(let d=1500;d<=45000;d+=500) for(const o of [-1500,0,1500]){ const x=e.x-e.ux*d-e.uz*o, z=e.z-e.uz*d+e.ux*o; mt=Math.max(mt,this.terrain.heightAt(x,z)); }
+      if(near) for(let d=3000;d<=45000;d+=4000) this.terrain.ensureDem(e.x-e.ux*d,e.z-e.uz*d,2500);   // 手前の地形データを読み込んでおく
+      af.tgt=Math.max(re.h+880,mt+450);
+    }
     if(!af.descend){
-      if(!af.tgt){ let mt=0; for(let d=3000;d<=42000;d+=3000) mt=Math.max(mt,this.terrain.heightAt(e.x-e.ux*d,e.z-e.uz*d)); af.tgt=Math.max(re.h+880,mt+400); }
       const drop=s.pos[1]-af.tgt; const need=Math.max(0,drop)/Math.tan(2.8*D2R)+9000;
       if(drop>250&&this.routeRemain()<=need){ af.descend=true; }
     }
