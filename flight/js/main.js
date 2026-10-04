@@ -15,6 +15,7 @@ async function init(){
   const [tiles,bidx,apd]=await Promise.all([fetch("data/tiles.json").then(r=>r.json()),fetch("data/bld_index.json").then(r=>r.json()),fetch("data/airports.json").then(r=>r.json())]);
   for(const d of Object.values(apd)){ try{ TAXI.addVirtualStands(d); }catch(e){ console.error(e); } }   // 駐機位置データが少ない空港にゲートを補う
   const sky=FS.sky=new Sky(T,scene,renderer);
+  FS.wxfx=new WxFx(document.getElementById("rainfx"));
   scene.fog=new T.FogExp2(sky.fogColor,1/52000);
   const terrain=FS.terrain=new Terrain(T,scene,"data/",tiles,{maxActive:+q.get("act")||8});
   let ap=null; const bld=FS.bld=new Buildings(T,scene,"data/",bidx,sky,{skip:(x,z)=>ap&&ap.skipAt(x,z)});
@@ -31,6 +32,7 @@ async function init(){
     game.frame(dt); easy.update(dt); try{ fmap.update(dt); }catch(e){ if(!fmap.err){ fmap.err=1; console.error(e); } }
     const cam=game.cam; pm.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
     sky.update(cam,dt); scene.fog.color.copy(sky.fogColor);
+    { const v=game.wxVis(), d=v>0?Math.max(1/52000,1.978/v):1/52000; if(Math.abs(scene.fog.density-d)>d*0.01){ scene.fog.density=d; sky.light.fogDen.value=d; } if(FS.wxfx) FS.wxfx.update(dt,game.wxRain(),game.s.tas||0); }
     const tc=sky.tintCol; terrain.tint.setRGB(tc[0],tc[1],tc[2]); terrain.nlK.value=Math.max(0,sky.night-0.2)*1.0;
     lm.update(cam,game.t); terrain.update(cam,frustum); bld.update(cam,frustum); ap.prepare(cam); for(const k in ap.ap) pk.ensure(k); ap.update(cam,frustum);
     const s=game.s; const pp=(game.state==="fly"||game.state==="crashed")?{x:s.pos[0],y:s.pos[1],z:s.pos[2]}:null;

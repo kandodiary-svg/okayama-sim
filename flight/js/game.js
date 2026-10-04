@@ -56,11 +56,25 @@ class Game{
     const h=this.terrain.heightAt(x,z); let kind=this.ap.kindAt(x,z); if(!kind) kind=(h<=0.7?"water":"grass");
     return {h,kind};
   }
+  // ---------------- 天気（雲・視程・雨）----------------
+  //  vis: 地表付近の視程 m（0=既定の遠方霞のみ）。wet: 空を灰色に・日射を弱める度合い。霧は地表付近の薄い層、雨は雲底より下で視程が落ちる。
+  applyWx(cl){
+    const P={ clear:{cover:0.08,base:2000,turb:0,vis:0,wet:0}, fair:{cover:0.35,base:2000,turb:0.12,vis:0,wet:0}, cloudy:{cover:0.7,base:1500,turb:0.3,vis:0,wet:0},
+      rain:{cover:0.95,base:700,turb:0.35,vis:5000,wet:0.85,rain:1,name:"雨"}, fog:{cover:0.2,base:2500,turb:0.03,vis:1000,wet:0.7,fog:1,name:"霧"} };
+    const w=P[cl]||P.fair; this.wxp=Object.assign({kind:cl},w); this.sky.cover=w.cover; this.sky.cloudBase=w.base; this.sky.turb=0; this.wx.turbBase=w.turb; this.sky.wet=w.wet;
+  }
+  /* 現在の位置での視程(m)。0 は「既定の霞のまま」。霧: 地表から 120〜500m で晴れる。雨: 雲底〜+700m で晴れる */
+  wxVis(){
+    const p=this.wxp; if(!p||!p.vis) return 0; const fly=(this.state==="fly"||this.state==="crashed"), s=this.s, y=fly?s.pos[1]:this.cam.y, x=fly?s.pos[0]:this.cam.x, z=fly?s.pos[2]:this.cam.z;
+    if(p.fog){ const agl=Math.max(0,y-this.terrain.heightAt(x,z)), k=Math.min(1,Math.max(0,(agl-120)/380)); return p.vis*(1-k)+40000*k; }
+    const k=Math.min(1,Math.max(0,(y-p.base)/700)); return p.vis*(1-k)+50000*k;
+  }
+  /* 雨粒の強さ 0..1（雲底より下で降る） */
+  wxRain(){ const p=this.wxp; if(!p||!p.rain) return 0; const fly=(this.state==="fly"||this.state==="crashed"), y=fly?this.s.pos[1]:this.cam.y; return Math.min(1,Math.max(0,1-(y-p.base)/600)); }
   // ---------------- シナリオ ----------------
   startScenario(o){
     this.sceneId=o; this.state="loading"; this.paused=false; this.ended=false; this.stats={}; this.log={}; this.pending=o; this.wxOpts=o.wx||{}; this.loadT=0;
-    this.startHour=o.hour!=null?o.hour:14; this.sky.setHour(this.startHour); this.sky.cover=({clear:0.08,fair:0.35,cloudy:0.7}[o.cloud||"fair"]); this.sky.cloudBase=o.cloud==="cloudy"?1500:2000;
-    this.sky.turb=0; this.wx.turbBase=({clear:0.0,fair:0.12,cloudy:0.3}[o.cloud||"fair"]);
+    this.startHour=o.hour!=null?o.hour:14; this.applyWx(o.cloud||"fair"); this.sky.setHour(this.startHour);
     this.c=C.create(); this.acft.root.visible=false; this.msgQ=[]; this.setMsg("");
     // 開始地点付近の地形・空港をあらかじめ読み込ませる
     const p=this.startPoint(o); this.cam.x=p.x; this.cam.z=p.z; this.cam.y=p.alt+80; this.loadHold=p;
@@ -112,8 +126,7 @@ class Game{
   }
   startScenario(o){
     this.sceneId=o; this.state="loading"; this.paused=false; this.ended=false; this.stats={}; this.log={}; this.pending=o; this.wxOpts=o.wx||{}; this.loadT=0;
-    this.startHour=o.hour!=null?o.hour:14; this.sky.setHour(this.startHour); this.sky.cover=({clear:0.08,fair:0.35,cloudy:0.7}[o.cloud||"fair"]); this.sky.cloudBase=o.cloud==="cloudy"?1500:2000;
-    this.sky.turb=0; this.wx.turbBase=({clear:0.0,fair:0.12,cloudy:0.3}[o.cloud||"fair"]);
+    this.startHour=o.hour!=null?o.hour:14; this.applyWx(o.cloud||"fair"); this.sky.setHour(this.startHour);
     this.c=C.create(); this.acft.root.visible=false; this.msgQ=[]; this.setMsg("");
     this.spec=this.resolveSpec(o); this.destRwy={icao:this.spec.dest.icao,name:this.spec.dest.rwy};
     // 開始地点付近の地形・空港をあらかじめ読み込ませる

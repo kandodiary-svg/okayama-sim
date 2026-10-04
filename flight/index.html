@@ -6,6 +6,7 @@
 :root{--ac:#3ddcff;--ok:#38e06a;--warn:#ffb11a;--bad:#ff3b30;--pnk:#ff5ad8}
 html,body{margin:0;height:100%;background:#0b1118;color:#e8eef5;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",Meiryo,sans-serif;overflow:hidden;-webkit-user-select:none;user-select:none;touch-action:none}
 canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+canvas#rainfx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;display:none}
 canvas#frame{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;display:none;z-index:2}
 body.v-cockpit canvas#frame,body.v-window canvas#frame{display:block}
 #dbg{position:fixed;left:8px;bottom:8px;font:11px/1.35 ui-monospace,Menlo,Consolas,monospace;color:#cfe;background:rgba(0,0,0,.45);padding:4px 7px;border-radius:5px;white-space:pre;pointer-events:none;z-index:5;display:none}
@@ -66,7 +67,7 @@ button.on{background:#12432b;border-color:var(--ok);color:#caffdb} button.arm{ba
 body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 @media (max-width:760px){#bar{max-width:30vw}}
 </style></head><body>
-<canvas id="gl"></canvas><canvas id="frame"></canvas>
+<canvas id="gl"></canvas><canvas id="rainfx"></canvas><canvas id="frame"></canvas>
 <canvas id="inst"></canvas>
 <div id="dbg"></div>
 <div id="mcp">
@@ -109,7 +110,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
   </div>
   <div class="opts">
     <div>時刻<select id="oHour"><option value="7">朝（7:00）</option><option value="14" selected>昼（14:00）</option><option value="17.6">夕方（17:35）</option><option value="19.4">日没後（19:25）</option><option value="21">夜（21:00）</option></select></div>
-    <div>天気<select id="oCloud"><option value="clear">快晴</option><option value="fair" selected>晴れ（雲少なめ）</option><option value="cloudy">曇り（雲多め）</option></select></div>
+    <div>天気<select id="oCloud"><option value="clear">快晴</option><option value="fair" selected>晴れ（雲少なめ）</option><option value="cloudy">曇り（雲多め）</option><option value="rain">雨（視程 約5km・低い雲）</option><option value="fog">霧（視程 約1km・地表付近）</option></select></div>
     <div>燃料<select id="oFuel"><option value="std" selected>標準（経路＋予備）</option><option value="full">たっぷり（約12トン）</option></select></div>
     <div>風<select id="oWind"><option value="calm">無風</option><option value="light" selected>弱い向かい風</option><option value="cross">横風（約14kt）</option><option value="strong">強い風（約22kt）</option></select></div>
   </div>
@@ -155,6 +156,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 <script src="js/hud.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/easy.js"></script>
+<script src="js/wxfx.js"></script>
 <script src="js/map.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>

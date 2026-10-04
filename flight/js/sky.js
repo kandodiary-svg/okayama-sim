@@ -41,9 +41,12 @@ class Sky{
     // 夕焼け（地平線を橙に）
     const warm=Math.max(0,1-Math.abs(sinEl-0.04)/0.18)*(sinEl>-0.2?1:0); hor=mix3(hor,[0.98,0.55,0.28],warm*0.55*(1-0.4*day));
     zen=mix3(zen,[0.25,0.30,0.55],warm*0.35);
+    { const wet=this.wet||0; if(wet>0){   // 雨・霧: 空と地平線を灰色に寄せる
+        const gz=0.30*zen[0]+0.59*zen[1]+0.11*zen[2], gh=0.30*hor[0]+0.59*hor[1]+0.11*hor[2];
+        zen=mix3(zen,[gz*0.92+0.03,gz*0.95+0.035,gz*1.0+0.045],wet*0.75); hor=mix3(hor,[gh*0.96+0.02,gh*0.98+0.025,gh*1.0+0.03],wet*0.85); } }
     this.zen.setRGB(zen[0],zen[1],zen[2]); this.hor.setRGB(hor[0],hor[1],hor[2]); this.fogColor.copy(this.hor).lerp(this.zen,0.12);
     this.night=1-twi; this.light.night.value=this.night;
-    const sunI=sm(-0.04,0.25,sinEl); this.sunCol.setRGB(1.0*sunI*(0.8+0.2*day)+0.0, (0.55+0.4*day)*sunI, (0.3+0.58*day)*sunI*(0.65+0.35*day));
+    const sunI=sm(-0.04,0.25,sinEl)*(1-0.62*(this.wet||0)); this.sunCol.setRGB(1.0*sunI*(0.8+0.2*day)+0.0, (0.55+0.4*day)*sunI, (0.3+0.58*day)*sunI*(0.65+0.35*day));
     const ambDay=0.55+0.45*day;
     this.hemiSky.setRGB(0.20*ambDay*(0.2+0.8*twi)+0.02*(1-twi)+0.10*day, 0.27*ambDay*(0.2+0.8*twi)+0.025*(1-twi)+0.14*day, 0.42*ambDay*(0.2+0.8*twi)+0.05*(1-twi)+0.22*day);
     this.hemiGround.setRGB(0.10+0.12*day,0.09+0.11*day,0.08+0.08*day);
