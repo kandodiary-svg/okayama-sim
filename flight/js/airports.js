@@ -110,7 +110,12 @@ class Airports{
     }
     a.hold=hmark;
     const mkMesh=(S,order)=>{ const g=new T.BufferGeometry(); g.setAttribute("position",new T.BufferAttribute(new Float32Array(S.pos),3)); g.setAttribute("color",new T.BufferAttribute(new Float32Array(S.col),3)); g.setIndex(new T.BufferAttribute(new Uint32Array(S.idx),1));
-      const m=new T.Mesh(g,new T.MeshBasicMaterial({vertexColors:true,color:this.tint,fog:true,side:T.DoubleSide})); m.frustumCulled=false; m.renderOrder=order; grp.add(m); return m; };
+      const mat=new T.MeshBasicMaterial({vertexColors:true,color:this.tint,fog:true,side:T.DoubleSide});
+      if(order===1) mat.onBeforeCompile=(sh)=>{   // コンクリート（明るい舗装）に目地と板ごとの濃淡を付ける（遠くでは消す）
+        sh.vertexShader=sh.vertexShader.replace("#include <common>","#include <common>\nvarying vec3 vLoc; varying float vVz;").replace("#include <begin_vertex>","#include <begin_vertex>\nvLoc=position;").replace("#include <project_vertex>","#include <project_vertex>\nvVz=-mvPosition.z;");
+        sh.fragmentShader=sh.fragmentShader.replace("#include <common>","#include <common>\nvarying vec3 vLoc; varying float vVz;").replace("#include <color_fragment>","#include <color_fragment>\n{ float conc=step(0.45,vColor.r); vec2 q=vLoc.xz/6.0; vec2 f=abs(fract(q)-0.5); float jl=smoothstep(0.488,0.5,max(f.x,f.y)); vec2 id=floor(q); float hh=fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453); float fade=1.0-smoothstep(120.0,650.0,vVz); diffuseColor.rgb*=1.0-conc*fade*(0.16*jl+0.07*(hh-0.5)); }");
+      };
+      const m=new T.Mesh(g,mat); m.frustumCulled=false; m.renderOrder=order; grp.add(m); return m; };
     if(pav.pos.length) mkMesh(pav,1); if(paint.pos.length) mkMesh(paint,2);
     // --- 建物（ターミナル・格納庫・OSM 建物） ---
     this.buildings(a,d);
@@ -190,8 +195,10 @@ class Airports{
         const a0=tri[0],b1=tri[1],c0=tri[2]; const cy=(zs[b1]-zs[a0])*(xs[c0]-xs[a0])-(xs[b1]-xs[a0])*(zs[c0]-zs[a0]);
         for(let t=0;t<tri.length;t+=3){ if(cy>0) idx.push(b0+tri[t],b0+tri[t+1],b0+tri[t+2]); else idx.push(b0+tri[t],b0+tri[t+2],b0+tri[t+1]); } nv+=n; } };
     for(const w of d.ways){
-      if(w.t==="terminal"||w.t==="hangar"){ const pts=ring2xz(w.g); const h=parseFloat(w.height)||(w.t==="terminal"?20:14); add(pts,h,w.t==="terminal"?[0.80,0.82,0.85]:[0.74,0.75,0.77],w.t==="terminal"?0.95:0.3); }
+      if(w.t==="terminal"||w.t==="hangar"){ const pts=ring2xz(w.g); const h=parseFloat(w.height)||(w.t==="terminal"?20:14); add(pts,h,w.t==="terminal"?[0.80,0.82,0.85]:[0.74,0.75,0.77],w.t==="terminal"?2.0:3.0); }
+      else if(w.t==="tower"||w.t==="aircraft_control"){ this.addTower(add,ring2xz(w.g),parseFloat(w.height),H); }
     }
+    for(const n of d.nodes){ if(n.t!=="tower") continue; const q=G.ll2xz(n.p[1],n.p[0]); this.addTower(add,[[q[0]-2.5,q[1]-2.5],[q[0]+2.5,q[1]-2.5],[q[0]+2.5,q[1]+2.5],[q[0]-2.5,q[1]+2.5]],NaN,H); }
     // OSM の建物（岡山空港周辺）
     for(const b of (d.bldg||[])){ const pts=ring2xz(b.g); const h=parseFloat(b.h)||8; add(pts,h,[0.82,0.82,0.80],0.5); }
     // ボーディングブリッジ
@@ -207,6 +214,16 @@ class Airports{
     const g=new T.BufferGeometry(); g.setAttribute("position",new T.BufferAttribute(new Float32Array(pos),3)); g.setAttribute("nrm",new T.BufferAttribute(new Float32Array(nrm),4)); g.setAttribute("col",new T.BufferAttribute(new Float32Array(col),4));
     g.setIndex(new T.BufferAttribute(new (nv>65535?Uint32Array:Uint16Array)(idx),1));
     const m=new T.Mesh(g,this.B.floatMaterial); m.frustumCulled=false; a.group.add(m); a.bldMesh=m;
+  }
+  // 管制塔: 柱 + 展望室（ガラス張り・柱より広い）+ アンテナ。高さが OSM に無いときは 45 m（概算）。
+  addTower(add,pts,hh,H){
+    if(!pts||pts.length<3) return; const n=pts.length; let cx=0,cz=0; for(const p of pts){ cx+=p[0]; cz+=p[1]; } cx/=n; cz/=n;
+    let R=0; for(const p of pts) R+=Math.hypot(p[0]-cx,p[1]-cz); R=Math.min(7,Math.max(2.2,R/n)); const h=(isFinite(hh)&&hh>15)?hh:45; const g=H(cx,cz);
+    const ring=(r,k)=>{ const o=[]; for(let i=0;i<k;i++){ const a=i/k*Math.PI*2; o.push([cx+Math.cos(a)*r,cz+Math.sin(a)*r]); } return o; };
+    add(ring(R,12),h,[0.86,0.86,0.84],0.05,g);
+    const cr=Math.min(11,R*1.9+1.5); add(ring(cr,12),5.5,[0.78,0.82,0.86],2.0,g+h);         // 展望室（ガラス）
+    add(ring(cr+0.9,12),0.8,[0.62,0.63,0.65],0.0,g+h+5.5);                                   // 屋根のひさし
+    add(ring(0.35,6),12,[0.45,0.45,0.47],0.0,g+h+6.3);                                       // アンテナ
   }
   // ---------- 地表の種類 ----------
   kindAt(x,z){

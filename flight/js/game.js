@@ -168,7 +168,7 @@ class Game{
     this.wx.turb=this.wx.turbBase||0; this.env.turb=this.wx.turb;
     const setAir=(x,z,alt,hdgTrue,cas,thr,flaps,gear)=>{ s.pos=[x,alt,z]; const a=F.atmos(alt); const tas=cas*KT/Math.sqrt(a.sigma); s.q=F.eulerToQ(hdgTrue,2.5*D2R,0); F.derived(s); s.vel=[s.fwd[0]*tas,0,s.fwd[2]*tas]; s.thr=[thr,thr]; pilot.throttle=thr; s.flaps=s.flapsTarget=flaps; pilot.flapsTarget=flaps; s.gear=s.gearTarget=gear; pilot.gearTarget=gear; F.derived(s); this.s.onGround=false; };
     let windFrom=null, mode=mode0;
-    this.push=null; this.autoTaxi=null; this.taxiPhase=null; this.taxiPlan=null; if(this.FS.pk) for(const k of Object.keys(A.ap)) this.FS.pk.release(k);
+    this.push=null; this.autoTaxi=null; this.taxiPhase=null; this.taxiPlan=null; this.arrival=null; this.arrivalPlan=null; this.autoTO=null; this.autoPitch=0; if(this.FS.pk) for(const k of Object.keys(A.ap)) this.FS.pk.release(k);
     const dest=spec.dest;
     const fuelFor=(Lm)=>{ const cap=79000*0.97-F.AC.emptyMass-F.AC.payload; return Math.round(Math.min(Math.max(3500,2500+3.4*Lm/1000),cap,14000)/100)*100; };
     if(mode==="gate"){
@@ -259,7 +259,7 @@ class Game{
     const p=Object.assign({},this.pilot), s=this.s, ap=this.c.ap;
     if(this.autoTaxi&&this.taxiPhase==="taxi"&&s.onGround&&this.state==="fly"){
       const a=this.autoTaxi.update(s,1/60); this.taxiInfo=a; this.pilot.throttle=a.thr; p.throttle=a.thr; p.brake=a.brake; p.yaw=a.nws; p.parking=false; this.pilot.parking=false; s.parking=false;
-      if(this.autoTaxi.done){ this.autoTaxi=null; this.timeScale=1; this.taxiPhase="done"; this.pilot.throttle=0; p.throttle=0; this.pilot.parking=true; this.say("滑走路に整列しました ― パーキングブレーキを外し、スロットルを上げて離陸（Shift / PageUp / 9）","#38e06a",8); }
+      if(this.autoTaxi.done){ if(this.arrival){ this.autoTaxi=null; this.timeScale=1; this.taxiPhase="done"; this.pilot.throttle=0; p.throttle=0; this.pilot.parking=true; p.parking=true; this.arrival.done=true; this.arrival.doneT=this.t; this.say("ゲートに到着しました ― パーキングブレーキをセット","#38e06a",8); } else { this.autoTaxi=null; this.timeScale=1; this.taxiPhase="done"; this.pilot.throttle=0; p.throttle=0; this.pilot.parking=true; this.say("滑走路に整列しました ― パーキングブレーキを外し、スロットルを上げて離陸（Shift / PageUp / 9）","#38e06a",8); } }
       return p;
     }
     // 離陸滑走中は滑走路中心線に沿うよう自動で方向舵（入力があれば手動優先）
@@ -290,7 +290,7 @@ class Game{
   cancelAutoTaxi(why){ if(!this.autoTaxi) return; this.autoTaxi=null; if(this.timeScale>1&&this.s.onGround) this.timeScale=1; this.say(why||"手動操縦に切り替え","#ffb11a",2.5); }
   // タキシー段階の管理（手動で滑走路に乗ったら「完了」）
   taxiTick(){
-    if(this.taxiPhase!=="taxi"||this.autoTaxi) return; const s=this.s, e=this.takeoffRwy; if(!e) return;
+    if(this.taxiPhase!=="taxi"||this.autoTaxi||this.arrival) return; const s=this.s, e=this.takeoffRwy; if(!e) return;
     if(this.ap.kindAt(s.pos[0],s.pos[2])==="runway"&&Math.abs(n180(s.psi-e.hdg))<25*D2R){ this.taxiPhase="done"; this.say("滑走路に乗りました ― スロットルを上げて離陸","#38e06a",5); }
   }
   afterStep(dt){
@@ -306,11 +306,12 @@ class Game{
     if(s.crashed&&this.state==="fly"){ this.state="crashed"; this.crashT=this.t; this.sound("crash"); }
     if(this.state==="crashed"&&this.t-this.crashT>2.2&&!this.ended){ this.ended=true; this.showEnd("crash"); }
     // 着陸後の停止
-    if(this.landed&&!this.ended&&s.gs<1.5&&onG&&this.t-this.touchT>5){ this.ended=true; this.showEnd("landed"); }
+    if(this.landed&&!this.ended&&s.gs<1.5&&onG&&this.t-this.touchT>5){ this.ended=true; this.arrivalPlan=this.planArrivalNow(); this.showEnd("landed"); }
+    if(this.arrival&&this.arrival.done&&!this.arrival.shown&&this.t-this.arrival.doneT>3){ this.arrival.shown=true; this.showEnd("parked"); }
     this.taxiTick(); if(this.taxiPhase==="taxi"&&s.parking&&pilot.throttle>0.04&&s.onGround){ pilot.parking=false; s.parking=false; this.say("パーキングブレーキ解除","#fff",1.4); }
-    if(this.stats.liftoff&&this.taxiPhase){ this.taxiPhase=null; this.autoTaxi=null; }
+    if(this.stats.liftoff&&this.taxiPhase&&!this.arrival){ this.taxiPhase=null; this.autoTaxi=null; }
     // 自動機能
-    this.autoLights(); this.autoFlightStep(dt); this.apprAssist(dt); this.takeoffCalls(); this.computeWarnings(dt); this.updateHints();
+    this.autoLights(); this.autoTakeoffStep(dt); this.autoFlightStep(dt); this.apprAssist(dt); this.takeoffCalls(); this.computeWarnings(dt); this.updateHints();
     // 失速速度（見かけの目安）
     this.vStall=Math.sqrt(2*s.mass*F.G/(1.225*F.AC.S*(F.flapParams(s.flaps)[1])))/KT*1.0;
     // 飛行機の見た目
@@ -355,6 +356,54 @@ class Game{
     const f=this.findApproach(); if(!f){ this.say("進入コースに乗っていません（滑走路の延長線の前方 60km 以内、方位 ±35° 以内）","#ffb11a",4); return; }
     const e=f.g.e; ap.loc={x:e.x,z:e.z,crs:e.hdg,h:f.g.h,gs:3*D2R,aim:300,name:f.icao+" "+f.name}; ap.on=true; ap.athr=true; ap.latMode="LOC"; ap.vertMode="GS"; ap.appr=true; ap.spdIsMach=false; this.apprState={icao:f.icao,name:f.name,e}; this.rwyFocus={icao:f.icao,name:f.name};
     ap.spd=Math.min(Math.max(s.cas,this.vsp.vref*KT),230*KT); this.pilot.autobrake=2; this.pilot.spoilerArm=true; this.say("進入モード ― "+this.apName(f.icao)+" 滑走路 "+f.name,"#3ddcff",3);
+  }
+  // ---------------- 到着（着陸して止まったあと、ゲートまで自動タキシー）----------------
+  planArrivalNow(){
+    try{
+      const r=this.touchRep; const s=this.s; if(!r||!r.rwy||!r.icao||r.onRwy===false) return null;
+      const re=this.ap.runwayEnd(r.icao,r.rwy); const d=this.ap.data&&this.ap.data[r.icao]; if(!re||!d) return null;
+      const e=re.e; const fw=[Math.sin(s.psi),-Math.cos(s.psi)]; const mx=s.pos[0]+fw[0]*TAXI.MAIN, mz=s.pos[2]+fw[1]*TAXI.MAIN;
+      if(Math.abs(n180(s.psi-e.hdg))>30*D2R) return null;
+      const pl=TAXI.autoArrival(d,e,{nx:mx,nz:mz,psi:s.psi}); if(pl) pl.icao=r.icao; return pl;
+    }catch(err){ return null; }
+  }
+  startArrivalTaxi(){
+    const pl=this.arrivalPlan, s=this.s, p=this.pilot; if(!pl||this.state!=="fly") return;
+    this.arrival={plan:pl}; this.taxiPlan={taxi:pl.taxi,stand:pl.stand}; this.taxiPhase="taxi"; this.push=null;
+    p.flapsTarget=0; p.spoilerArm=false; p.autobrake=0; p.reverse=false; p.speedbrake=0; p.throttle=0; p.parking=false; s.parking=false;
+    this.autoTaxi=new TAXI.AutoTaxi(pl.taxi); this.say("ゲートへ自動タキシー開始（操作すると手動に戻ります。T キーで早送り）","#3ddcff",6);
+  }
+  // ---------------- オート離陸（滑走路上で Enter：推力全開 → VR で機首上げ → ギア上げ → 一定高度でオート航行へ）----------------
+  startAutoTakeoff(){
+    const s=this.s, p=this.pilot; if(this.state!=="fly"||!s.onGround||this.stats.liftoff||this.landed) return false;
+    if(this.taxiPhase==="push"||this.taxiPhase==="taxi"){ this.say("滑走路に整列してから使えます（自動タキシーで滑走路まで進めます）","#ffb11a",3); return false; }
+    const re=this.rwyFocus; if(this.autoTO) { this.stopAutoTakeoff("オート離陸を止めました"); return false; }
+    this.autoTO={phase:"roll",t0:this.t}; p.parking=false; s.parking=false; p.throttle=Math.max(p.throttle,0.3); p.brake=0;
+    this.say("オート離陸 ― 推力全開 → VR で機首を上げ、上昇したらギアを上げて自動航行へ（操作すると手動に戻ります）","#38e06a",6); return true;
+  }
+  stopAutoTakeoff(msg){ if(!this.autoTO) return; this.autoTO=null; this.autoPitch=0; if(msg) this.say(msg,"#ffb11a",3); }
+  autoTakeoffStep(dt){
+    const to=this.autoTO; if(!to) return; const s=this.s, p=this.pilot; if(this.state!=="fly"||this.landed){ this.autoTO=null; this.autoPitch=0; return; }
+    const cas=s.cas/KT, raFt=s.radAlt/FT, th=s.theta;
+    p.parking=false; s.parking=false;
+    if(to.phase==="roll"){
+      p.throttle=Math.min(1,p.throttle+dt*0.5); this.autoPitch=0;
+      if(s.onGround&&cas>=this.vsp.vr){ to.phase="rotate"; }
+      if(!s.onGround&&this.stats.liftoff) to.phase="climb";
+    }
+    if(to.phase==="rotate"){
+      p.throttle=1; this.autoPitch=clamp((6.8*D2R-th)/(2.2*D2R),0,1);
+      if(!s.onGround&&this.stats.liftoff) to.phase="climb";
+    }
+    if(to.phase==="climb"){
+      p.throttle=1; this.autoPitch=clamp((7.5*D2R-th)/(2.2*D2R),-0.3,1);
+      if(raFt>25&&s.vs>1&&p.gearTarget===1){ p.gearTarget=0; this.say("ギア上げ","#38e06a"); }
+      if(raFt>260||(raFt>90&&cas>this.vsp.v2+25)){
+        this.autoPitch=0; this.autoTO=null;
+        if(this.route.length&&this.destRwy&&this.startAutoFlight(true)) this.say("オート航行へ ― 上昇・巡航・降下・ILS進入まで自動","#38e06a",5);
+        else { const ap=this.c.ap; ap.on=true; ap.athr=true; ap.latMode="HDG"; ap.hdg=s.psi; ap.vertMode="FLCH"; ap.alt=Math.max(s.pos[1]+600*FT,4000*FT); this.syncMCP&&this.syncMCP(); }
+      }
+    }
   }
   // ---------------- オート航行（離陸後の上昇 → 巡航 → 降下 → ILS 進入を、経路に沿って自動で行う）----------------
   startAutoFlight(quiet){
@@ -446,8 +495,9 @@ class Game{
     const cas=s.cas/KT, raFt=s.radAlt/FT, altFt=s.pos[1]/FT;
     if(this.state==="crashed") h="";
     else if(this.push) h="プッシュバック中です。まもなく自分で動かせます（Enter でスキップ）";
-    else if(this.taxiPhase==="taxi"){ if(this.autoTaxi) h="自動タキシー中。手で操作するか Enter で止められます（T で早送り）"; else if(s.parking) h="パーキングブレーキを外す（P）→ スロットルを少し上げて（数字キー 1 → しばらくしたら 0）前進。A / D で曲がる。Enter で自動タキシー"; else h="青いラインに沿って進む。A / D で操舵、速度が出すぎたら Space でブレーキ（目安 15 kt 以下、曲がり角は 8 kt）"; }
-    else if(s.onGround&&!this.stats.liftoff&&!this.landed){ if(p.throttle<0.1) h="スロットルを上げて離陸滑走（Shift / PageUp / 数字キー 9）。パーキングブレーキは自動で外れます"; else if(cas<this.vsp.vr) h="加速中。滑走路中心線は自動で維持されます。VR（"+this.vsp.vr+" kt）で操縦桿を引く（↓ / S）"; else h="操縦桿を引いて機首を約 10° 上げる"; }
+    else if(this.arrival&&this.arrival.done) h="ゲートに到着しました。おつかれさま！";
+    else if(this.taxiPhase==="taxi"){ if(this.autoTaxi) h=this.arrival?"ゲートへ自動タキシー中。手で操作するか Enter で止められます（T で早送り）":"自動タキシー中。手で操作するか Enter で止められます（T で早送り）"; else if(s.parking) h="パーキングブレーキを外す（P）→ スロットルを少し上げて（数字キー 1 → しばらくしたら 0）前進。A / D で曲がる。Enter で自動タキシー"; else h="青いラインに沿って進む。A / D で操舵、速度が出すぎたら Space でブレーキ（目安 15 kt 以下、曲がり角は 8 kt）"; }
+    else if(s.onGround&&!this.stats.liftoff&&!this.landed){ if(this.autoTO) h="オート離陸中 ― 自動で加速・離陸します"; else if(p.throttle<0.1) h="Enter でオート離陸（おまかせ）／ 自分で: スロットルを上げて離陸滑走（Shift / PageUp / 数字キー 9）。パーキングブレーキは自動で外れます"; else if(cas<this.vsp.vr) h="加速中。滑走路中心線は自動で維持されます。VR（"+this.vsp.vr+" kt）で操縦桿を引く（↓ / S）"; else h="操縦桿を引いて機首を約 10° 上げる"; }
     else if(this.stats.liftoff&&!this.landed&&s.gear>0.5&&raFt>30&&s.vs>0) h="正の上昇率 → ギア上げ（G）";
     else if(!this.landed&&s.gear<0.5&&s.flaps>0.5&&altFt>1500&&cas>180) h="フラップ上げ（V でフラップを一段ずつ引き上げ）";
     else if(!ap.on&&!s.onGround&&altFt>1500&&!this.landed) h="Enter キーで「オート航行」（上昇→巡航→降下→ILS進入まで経路に沿って自動）。自分で飛ばすなら上の MCP で高度・速度・方位を設定";
@@ -487,7 +537,7 @@ class Game{
       case "KeyL": p.spoilerArm=!p.spoilerArm; this.say(p.spoilerArm?"グラウンドスポイラー ARM":"スポイラー ARM 解除","#fff",1.4); break;
       case "KeyO": p.autobrake=(p.autobrake+1)%5; this.say("オートブレーキ "+["OFF","1","2","3","MAX"][p.autobrake],"#fff",1.4); break;
       case "KeyC": this.cycleView(); break;
-      case "Enter": if(this.push) break; if(this.taxiPhase==="taxi"){ if(this.autoTaxi) this.cancelAutoTaxi("自動タキシーを止めました"); else this.startAutoTaxi(); } else this.toggleAP(); break;
+      case "Enter": if(this.push) break; if(this.taxiPhase==="taxi"){ if(this.autoTaxi) this.cancelAutoTaxi("自動タキシーを止めました"); else this.startAutoTaxi(); } else if(this.s.onGround&&!this.stats.liftoff&&!this.landed) this.startAutoTakeoff(); else this.toggleAP(); break;
       case "KeyY": this.c.assist=!this.c.assist; this.say(this.c.assist?"操縦補助 ON":"操縦補助 OFF（直接操縦）","#ffb11a",2); break;
       case "KeyT": this.timeScale=this.timeScale>=4?1:this.timeScale*2; this.say("時間 ×"+this.timeScale,"#fff",1.4); break;
       case "KeyU": if(this.easy){ this.easy.toggle(); const b=$("bEasy"); if(b) b.classList.toggle("on",this.easy.on); } break;
@@ -505,7 +555,8 @@ class Game{
   readInput(dt){
     const K=this.keys, p=this.pilot; const axis=(a,b)=>(K[a]?1:0)-(K[b]?1:0);
     let pitch=axis("ArrowDown","ArrowUp")+axis("KeyS","KeyW"), roll=axis("ArrowRight","ArrowLeft")+axis("KeyD","KeyA"), yaw=axis("KeyX","KeyZ")+axis("KeyE","KeyQ");
-    pitch+=this.padPitch||0; roll+=this.padRoll||0; yaw+=this.padYaw||0; pitch+=this.touchPitch||0; roll+=this.touchRoll||0;
+    if(this.autoTO&&(K.ArrowUp||K.ArrowDown||K.KeyW||K.KeyS||K.ArrowLeft||K.ArrowRight||K.KeyA||K.KeyD||K.KeyQ||K.KeyE||K.KeyZ||K.KeyX||K.Space||K.KeyB||K.ControlLeft||K.ControlRight||K.PageDown||this.touchBrake||Math.abs(this.padPitch||0)>0.3||Math.abs(this.touchPitch||0)>0.3)) this.stopAutoTakeoff("オート離陸を止めました（手動操縦）");
+    pitch+=this.autoPitch||0; pitch+=this.padPitch||0; roll+=this.padRoll||0; yaw+=this.padYaw||0; pitch+=this.touchPitch||0; roll+=this.touchRoll||0;
     const sm=(cur,tgt,r)=>{ const d=tgt-cur; return Math.abs(d)<r*dt?tgt:cur+Math.sign(d)*r*dt; };
     this.sPitch=sm(this.sPitch||0,clamp(pitch,-1,1),4.2); this.sRoll=sm(this.sRoll||0,clamp(roll,-1,1),4.2); this.sYaw=sm(this.sYaw||0,clamp(yaw,-1,1),3.5);
     p.pitch=this.sPitch; p.roll=this.sRoll; p.yaw=this.sYaw;
@@ -585,13 +636,14 @@ class Game{
   showEnd(kind){
     const e=$("end"); const s=this.s; let h=""; 
     if(kind==="crash"){ h="<h2>飛行終了</h2><p class='bad'>"+(s.crashMsg||"機体が破損しました")+"</p>"; }
-    else { const r=this.touchRep||{}; const rate=Math.abs(r.vs||0); const grade=r.hard?"ハードランディング（機体に負担）":rate<1.5?"とてもなめらかな着陸":rate<2.5?"良い着陸":rate<3.3?"やや硬い着陸":"硬い着陸"; const used=this.stats.startFuel-s.fuel;
-      h="<h2>着陸しました</h2><p class='ok'>"+grade+"</p><table>"+
+    else { const r=this.touchRep||{}; const parked=kind==="parked"; const rate=Math.abs(r.vs||0); const grade=r.hard?"ハードランディング（機体に負担）":rate<1.5?"とてもなめらかな着陸":rate<2.5?"良い着陸":rate<3.3?"やや硬い着陸":"硬い着陸"; const used=this.stats.startFuel-s.fuel;
+      h="<h2>"+(parked?"ゲートに到着しました":"着陸しました")+"</h2><p class='ok'>"+grade+"</p><table>"+
       "<tr><td>接地の降下率</td><td>"+Math.round(r.fpm||0)+" fpm（"+(r.vs||0).toFixed(1)+" m/s）</td></tr>"+
       "<tr><td>接地速度</td><td>"+Math.round(r.cas||0)+" kt（対気）</td></tr>"+
       (r.rwy?"<tr><td>滑走路</td><td>"+this.apName(r.icao)+" RWY "+r.rwy+"（"+(r.onRwy?"滑走路上":"滑走路外！")+"）</td></tr><tr><td>接地位置</td><td>しきい値から "+Math.round(r.dist)+" m ／ 中心線から "+(r.lat>=0?"右":"左")+" "+Math.abs(r.lat).toFixed(0)+" m</td></tr>":"")+
       "<tr><td>使った燃料</td><td>"+Math.round(used)+" kg</td></tr></table>"; }
-    h+="<div class='btns'><button id='endRetry'>もう一度（同じ条件）</button><button id='endMenu'>メニューへ</button></div>"; e.firstElementChild.innerHTML=h; e.style.display="flex";
+    h+="<div class='btns'>"+((kind==="landed"&&this.arrivalPlan)?"<button id='endGate'>ゲートまで自動で走る</button>":"")+"<button id='endRetry'>もう一度（同じ条件）</button><button id='endMenu'>メニューへ</button></div>"; e.firstElementChild.innerHTML=h; e.style.display="flex";
+    if($("endGate")) $("endGate").onclick=()=>{ e.style.display="none"; this.startArrivalTaxi(); };
     $("endRetry").onclick=()=>{ e.style.display="none"; this.startScenario(this.sceneId); }; $("endMenu").onclick=()=>{ e.style.display="none"; this.state="menu"; $("menu").style.display="flex"; this.acft.root.visible=false; if(this.ui) this.ui.showPlay(false); };
   }
 }

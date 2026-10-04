@@ -155,6 +155,46 @@ function autoPlan(data,rwy,opt){
   if(!ok.length) return null; ok.sort((a,b)=>a.taxi[a.taxi.length-1].s-b.taxi[b.taxi.length-1].s); return ok[ok.length>>1];
 }
 
+
+// ---------- 到着（滑走路 → ゲート）の計画 ----------
+// e: 着陸した滑走路の端（x,z,ux,uz = 着陸方向）。 pose: 止まった機体の主脚中心 (nx,nz)。 c: standsOf の 1 件
+function dijkAll(g,s){
+  const n=g.V.length, dist=new Float64Array(n).fill(1e18), prev=new Int32Array(n).fill(-1), done=new Uint8Array(n); dist[s]=0;
+  for(;;){ let u=-1,bd=1e18; for(let i=0;i<n;i++) if(!done[i]&&dist[i]<bd){ bd=dist[i]; u=i; } if(u<0) break; done[u]=1;
+    for(const [v,l] of g.E[u]){ const nd=dist[u]+l; if(nd<dist[v]){ dist[v]=nd; prev[v]=u; } } }
+  return {dist,prev};
+}
+function maxCurv(taxi,skipHead,skipTail){ const end=taxi[taxi.length-1].s; let km=0; for(const q of taxi) if(q.s>skipHead&&q.s<end-skipTail&&q.k>km) km=q.k; return km; }
+function planArrival(data,e,pose,c,opt){
+  opt=opt||{}; const g=opt.graph||buildGraph(data); const st=standGeom(c); const u=[e.ux,e.uz];
+  const tAc=(pose.nx-e.x)*u[0]+(pose.nz-e.z)*u[1];
+  const sv=nearestVertex(g,st.start[0],st.start[1]); if(sv<0||Math.hypot(g.V[sv][0]-st.start[0],g.V[sv][1]-st.start[1])>25) return null;
+  const D=dijkAll(g,sv); const cand=[];
+  for(let i=0;i<g.V.length;i++){ const dx=g.V[i][0]-e.x, dz=g.V[i][1]-e.z; const t=dx*u[0]+dz*u[1], cc=dx*(-u[1])+dz*u[0]; if(Math.abs(cc)<38&&t>tAc+30&&t<tAc+2600&&g.E[i].length>=1&&D.dist[i]<1e17) cand.push({i,t,cc,L:D.dist[i]+(t-tAc)}); }
+  cand.sort((a,b)=>a.L-b.L); let best=null;
+  for(const k of cand.slice(0,8)){
+    const pts=[[pose.nx,pose.nz]]; const V=g.V[k.i];
+    if(Math.abs(k.cc)>4) pts.push([e.x+u[0]*k.t, e.z+u[1]*k.t]);      // 滑走路の中心線を進み、出口の位置から曲がる
+    for(let v=k.i;v!==-1;v=D.prev[v]){ pts.push(g.V[v].slice()); if(v===sv) break; }
+    for(let q=1;q<c.pts.length;q++) pts.push(c.pts[q].slice());       // 駐機線（スタンドの引き込み線）
+    // 経路は主脚中心の軌跡。前脚が停止位置に来るよう、終点を WB（前脚〜主脚の距離）だけ手前にする
+    { let rem=WB; while(rem>0&&pts.length>2){ const a=pts[pts.length-2], b=pts[pts.length-1]; const l=Math.hypot(b[0]-a[0],b[1]-a[1]); if(l>rem){ const t=(l-rem)/l; pts[pts.length-1]=[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t]; rem=0; } else { rem-=l; pts.pop(); } } }
+    const f=[pts[0]]; for(let q=1;q<pts.length;q++){ if(Math.hypot(pts[q][0]-f[f.length-1][0],pts[q][1]-f[f.length-1][1])>0.8) f.push(pts[q]); } if(f.length<3) continue;
+    const sm=smoothPath(f,opt.R||45,2); const taxi=annotate(sm,{vmax:opt.vmax||9,vend:0}); const len=taxi[taxi.length-1].s; if(len<60||len>7000) continue;
+    const km=maxCurv(taxi,6,3); if(km>0.06) continue;
+    if(!best||len<best.len) best={len,taxi,stand:st,exitT:k.t,km};
+  }
+  return best;
+}
+// 使えるスタンドを順に試し、中くらいの距離のものを選ぶ
+function autoArrival(data,e,pose,opt){
+  opt=opt||{}; const g=opt.graph||buildGraph(data); const all=standsOf(data); if(!all.length) return null;
+  const nearTerm=nearTermFn(data); const cand=all.map(c=>({c,t:nearTerm(c.e[0],c.e[1])})).filter(q=>q.t<140);
+  const pool=(cand.length?cand:all.map(c=>({c,t:0}))).map(q=>q.c); const step=Math.max(1,Math.floor(pool.length/14)); const ok=[];
+  for(let pass=0;pass<2&&ok.length<3;pass++) for(let i=pass?1:0;i<pool.length&&ok.length<8;i+=pass?1:step){ let p=null; try{ p=planArrival(data,e,pose,pool[i],{graph:g}); }catch(err){ p=null; } if(p) ok.push(p); }
+  if(!ok.length) return null; ok.sort((a,b)=>a.len-b.len); return ok[ok.length>>1];
+}
+
 // 経路上で主脚中心に最も近い点（前回位置の近くだけ探す）
 function progress(P,x,z,from){
   let b=from, bd=1e18; const lo=Math.max(0,from-5), hi=Math.min(P.length-1,from+60);
@@ -198,5 +238,5 @@ const FOOT=(function(){ const a=[]; for(let o=-17;o<=19;o+=4) a.push([o,0,3.3]);
   return a; })();
 function footprint(x,z,dx,dz,out){ const rx=-dz, rz=dx; for(const [o,l,r] of FOOT) out.push([x+dx*o+rx*l,z+dz*o+rz*l,r]); return out; }
 
-root.TAXI={ footprint, buildGraph, nearestVertex, dijkstra, gateStand, standsOf, autoPlan, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
+root.TAXI={ footprint, buildGraph, nearestVertex, dijkstra, gateStand, standsOf, autoPlan, planArrival, autoArrival, smoothPath, annotate, planDeparture, progress, AutoTaxi, NOSE, MAIN, WB };
 })(typeof window!=="undefined"?window:globalThis);

@@ -12,7 +12,11 @@ const FS="#include <common>\n#include <logdepthbuf_pars_fragment>\nuniform vec3 
  "void main(){\n#include <logdepthbuf_fragment>\n"+
  "vec3 n=normalize(vN); float wall=step(0.0,vK); vec3 base=vC.rgb; float seed=vC.a;\n"+
  "vec3 emis=vec3(0.0);\n"+
- "if(wall>0.5){ float u=dot(vL.xz,vec2(n.z,-n.x)); float v=vL.y; vec2 cell=vec2(u/3.1,v/3.4); vec2 f=fract(cell); vec2 id=floor(cell);\n"+
+ "if(wall>0.5 && seed>2.5){ float u=dot(vL.xz,vec2(n.z,-n.x)); float v=vL.y; float rib=step(0.5,fract(u/1.1)); base*=1.0-0.09*rib; base*=1.0-0.10*step(fract(v/6.0),0.06); base=mix(base,vec3(0.50,0.54,0.58),0.25*step(5.5,v)); }\n"+
+"else if(wall>0.5 && seed>1.5){ float u=dot(vL.xz,vec2(n.z,-n.x)); float v=vL.y; float fl=v/4.4; float fy=fract(fl); float band=step(0.16,fy)*step(fy,0.88); float uc=u/2.4; float mu=fract(uc); float pane=band*step(0.06,mu)*step(mu,0.94); float con=1.0-smoothstep(2500.0,9000.0,vD); float hv=h21(vec2(floor(uc),floor(fl)));\n"+
+"  vec3 sky=mix(ambSky,fogCol,0.30); vec3 glass=mix(vec3(0.13,0.19,0.25),sky*vec3(0.85,0.95,1.05),0.40+0.18*hv); base=mix(base,glass,pane*con); base*=1.0-0.10*(1.0-band)*con*step(fy,0.16);\n"+
+"  float lit=step(0.55,h21(vec2(floor(uc)*1.3,floor(fl)*2.1)+vec2(91.0,13.0)))*pane; emis=vec3(1.0,0.86,0.60)*lit*night*(0.62+0.3*hv); }\n"+
+"else if(wall>0.5){ float u=dot(vL.xz,vec2(n.z,-n.x)); float v=vL.y; vec2 cell=vec2(u/3.1,v/3.4); vec2 f=fract(cell); vec2 id=floor(cell);\n"+
  "  float win=step(0.16,f.x)*step(f.x,0.84)*step(0.24,f.y)*step(f.y,0.80); float con=1.0-smoothstep(500.0,2600.0,vD); float hasWin=step(0.12,seed);\n"+
  "  win*=hasWin; vec3 glass=vec3(0.34,0.38,0.43)*(0.75+0.5*h21(id+seed*17.0)); base=mix(base,glass,0.55*win*con);\n"+
  "  float lit=step(0.52,h21(id*1.7+vec2(seed*91.0,seed*13.0)))*win; emis=vec3(1.0,0.82,0.52)*lit*night*(0.9+0.4*h21(id)); base*=1.0-0.12*(1.0-win)*con*step(f.y,0.12);\n"+

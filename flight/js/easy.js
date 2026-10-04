@@ -183,12 +183,12 @@ class Easy{
     let j=i0; while(j<n-1&&P[j].s<P[i0].s+28) j++; const brg=Math.atan2(P[j].x-mx,-(P[j].z-mz)); const err=n180(brg-s.psi); const deg=Math.round(Math.abs(err)/D2R);
     const cte=(mx-P[i0].x)*Math.cos(P[i0].psi)+(mz-P[i0].z)*Math.sin(P[i0].psi);
     let vref=P[i0].v; const sLook=P[i0].s+Math.max(15,v*3); for(let k=i0;k<n&&P[k].s<sLook;k++) vref=Math.min(vref,P[k].v); const vtk=vref/KT;
-    const phase=g.taxiPhase==="push"?"プッシュバック中":(remain<250?"滑走路へ進入":"地上走行（誘導路）");
-    const next={name:"滑走路"+((g.takeoffRef&&g.takeoffRef.name)||"")+" 離陸位置",dist:remain};
+    const arr=!!g.arrival; const phase=g.taxiPhase==="push"?"プッシュバック中":(arr?(remain<120?"ゲートへ停止位置を合わせる":"ゲートへ地上走行（誘導路）"):(remain<250?"滑走路へ進入":"地上走行（誘導路）"));
+    const next={name:arr?"ゲート（駐機位置）":"滑走路"+((g.takeoffRef&&g.takeoffRef.name)||"")+" 離陸位置",dist:remain};
     if(g.taxiPhase==="push"){
       rows.push({ico:"🚜",lab:"プッシュバック",st:"ok",txt:"トーイングカーが機体を後ろへ押しています。そのまま待つ（"+kc("Enter")+" でスキップ）"});
     } else if(g.autoTaxi){
-      rows.push({ico:"🤖",lab:"自動タキシー",st:"ok",txt:"作動中。誘導路を自動で走っています。止めるには "+kc("Enter")+"、手動にするには "+kc("A","D")+" やブレーキ",sub:"滑走路まであと約 "+(remain/1000).toFixed(1)+" km ／ "+kc("T")+" で早送り"});
+      rows.push({ico:"🤖",lab:"自動タキシー",st:"ok",txt:"作動中。誘導路を自動で走っています。止めるには "+kc("Enter")+"、手動にするには "+kc("A","D")+" やブレーキ",sub:(arr?"ゲートまであと約 ":"滑走路まであと約 ")+(remain/1000).toFixed(1)+" km ／ "+kc("T")+" で早送り"});
     } else {
       if(s.parking) rows.push({ico:"🅿",lab:"パーキングブレーキ",st:"act",txt:"外す "+kc("P")});
       if(deg>=4) rows.push({ico:"🧭",lab:"向き",st:"act",txt:(err>0?"右へ ":"左へ ")+(err>0?kc("D","→"):kc("A","←"))+"（押している間、前輪が切れる）",sub:"青いラインまで あと約 "+deg+"° "+(err>0?"右":"左")+(Math.abs(cte)>3?" ／ 中心線から "+Math.abs(cte).toFixed(0)+" m "+(cte>0?"右":"左"):"")});
@@ -199,7 +199,7 @@ class Easy{
         else if(kt>vtk-1&&pil.throttle>0.04&&kt>2) rows.push({ico:"⚙",lab:"速度",st:"act",txt:"スロットルを戻す "+kc("0"),sub:"いま "+Math.round(kt)+" kt ／ 目安 "+Math.round(vtk)+" kt"});
         else rows.push({ico:"⚙",lab:"速度",st:"ok",txt:"速度OK（"+Math.round(kt)+" kt）",sub:"曲がり角では目安 "+Math.round(vtk)+" kt まで落とす"});
       }
-      rows.push({ico:"💡",lab:"らくに進む",st:"info",txt:kc("Enter")+" で自動タキシー（滑走路の手前まで連れて行きます）"});
+      rows.push({ico:"💡",lab:"らくに進む",st:"info",txt:kc("Enter")+" で自動タキシー（"+(arr?"ゲートまで":"滑走路の手前まで")+"連れて行きます）"});
     }
     this.render(phase,next.name,next.dist,err,rows,{next:next});
     this.info={phase,nextName:next.name,dNext:remain,err};
@@ -227,6 +227,8 @@ class Easy{
       rows.push({ico:"🛑",lab:"減速",st:s.gs>2?"act":"ok",txt:st});
     } else if(onG&&!g.stats.liftoff){
       rows.push({ico:"🧭",lab:"向き",st:"ok",txt:"中心線は自動で保たれます（青いラインに沿って進む）"});
+      if(g.autoTO){ const ph={roll:"加速中",rotate:"機首上げ",climb:"上昇中"}[g.autoTO.phase]||""; rows.push({ico:"🤖",lab:"オート離陸",st:"ok",txt:"自動で離陸中（"+ph+"）。止めるには ↑↓ / Space など何かを操作"}); }
+      else rows.push({ico:"🤖",lab:"かんたん離陸",st:"act",txt:kc("Enter")+" を押すと、離陸から上昇・オート航行まで全部おまかせ"});
       const thr=pil.throttle;
       if(thr<0.85) rows.push({ico:"⚙",lab:"スロットル",st:"act",txt:"上げる "+kc("Shift","PageUp")+" 長押し（"+kc("9")+"＝最大）"});
       else rows.push({ico:"⚙",lab:"スロットル",st:"ok",txt:"離陸推力。加速中…"});
