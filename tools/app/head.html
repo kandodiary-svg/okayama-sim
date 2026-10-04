@@ -113,6 +113,9 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .ui.cab .cabhint{ display:block; }
 .cabspeed{ display:none; position:absolute; right:12px; bottom:calc(58px + env(safe-area-inset-bottom,0px)); background:rgba(23,20,15,.86); border:1px solid var(--line); padding:6px 10px; border-radius:2px; font-variant-numeric:tabular-nums; }
 .cabspeed b{ font-size:22px; color:var(--amber); } .ui.cab .cabspeed{ display:block; }
+.ui.cab.hs .rack{ top:64px; left:auto; right:120px; width:350px; }   /* v39.3: 新幹線の運転台では、情報カードを左ミラーに重ならない位置（上・右寄り）へ */
+.ui.cab.hs .subtitle{ bottom:auto; top:134px; left:304px; right:130px; width:auto; transform:none; }                          /* 字幕を計器・レバー目盛りに重ねない */
+.ui.cab.hs .cabhint{ bottom:calc(54px + env(safe-area-inset-bottom,0px)); font-size:10px; opacity:.8; }
 /* 車モード */
 .carui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
 .carui.on{ display:block; }
@@ -205,6 +208,12 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .mlist .mode-opt small{ display:block; margin-top:2px; font-size:11.5px; color:#a99f88; font-weight:400; }
 .mlist .mode-opt.on small{ color:#d9b26a; }
 .mlist .mode-opt:hover{ border-color:#6b5b34; }
+.flightlink{ display:flex; align-items:center; gap:12px; margin-top:10px; padding:8px 14px; background:var(--panel-2); border:1px dashed #6b5b34; color:var(--cream); border-radius:2px; text-decoration:none; }
+.flightlink .mi{ font-style:normal; font-size:24px; width:32px; text-align:center; }
+.flightlink b{ display:block; font-size:15.5px; }
+.flightlink small{ display:block; margin-top:2px; font-size:11.5px; color:#a99f88; font-weight:400; }
+.flightlink em{ margin-left:auto; font-style:normal; color:var(--amber); }
+.flightlink:hover{ border-color:var(--amber); }
 .mmain .routes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:8px; }
 .mmain .vehs{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:8px; }
 .mmain .veh-opt{ flex:none; }
@@ -262,6 +271,10 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .progtrack{ height:4px; background:rgba(255,255,255,.12); border-radius:2px; margin-top:8px; overflow:hidden; }
 .progtrack i{ display:block; height:100%; width:0%; background:var(--amber); }
 .mfoot{ display:flex; justify-content:space-between; margin-top:6px; font-size:10.5px; color:#8a8067; }
+.diarow{ display:flex; align-items:baseline; gap:10px; margin-top:7px; padding-top:6px; border-top:1px solid var(--line); font-size:12px; color:#cfc5ac; font-variant-numeric:tabular-nums; }
+.diarow .dk{ font-size:10.5px; letter-spacing:.14em; color:var(--brass); }
+.diarow b{ margin-left:auto; font-size:15px; }
+.diarow b.ok{ color:#9fe09f; } .diarow b.wait{ color:#e6a94d; } .diarow b.late{ color:#ff8a5c; } .diarow b.early{ color:#7cc4ff; }
 
 .rack{ position:absolute; top:170px; left:12px; right:12px; display:flex; gap:8px; }
 .icard{ flex:1; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:9px 10px; backdrop-filter: blur(4px); }
@@ -375,6 +388,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
         <button type="button" class="mode-opt" data-mode="car"><i class="mi">🚗</i><span><b>車で自由に走る</b><small>市街地・山陽自動車道（約100km）</small></span></button>
         <button type="button" class="mode-opt" data-mode="heli"><i class="mi">🚁</i><span><b>ヘリコプター</b><small>空から岡山を見る</small></span></button>
       </div>
+      <a class="flightlink" href="flight/"><i class="mi">✈️</i><span><b>フライト</b><small>全国28空港・ゲート出発〜着陸（別ページ）</small></span><em>→</em></a>
       </aside>
       <main class="mmain">
         <div class="mside-h">2　路線・出発地・車両を選ぶ</div>
@@ -447,6 +461,9 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
       <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁で描く簡略表示。色は写真から推定">建物: 簡略（軽い）</button>
       <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
     </div></div>
+    <div class="mset"><div class="mset-h"><span>運行（路面電車）</span><small>定刻どおりに走る・遅れと早発を採点</small></div><div class="modes opts">
+      <button type="button" class="dia-opt on" title="停留所ごとの到着・発車の定刻を表示し、遅れ・早発を定時点で採点します（所要時間は公表値: 東山線 約15分・清輝橋線 約12分）">ダイヤ運行: あり</button>
+    </div></div>
     <div class="mset"><div class="mset-h"><span>時間帯・天気</span><small>走行中も N・M キーで切り替え</small></div><div class="modes opts">
       <button type="button" class="time-opt" data-time="morning">朝</button>
       <button type="button" class="time-opt on" data-time="noon">昼</button>
@@ -483,6 +500,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <div class="mrow"><h2 id="next-stop">岡山駅前</h2><div class="dist"><b id="distance">0</b> m</div></div>
     <div class="progtrack"><i id="stop-progress"></i></div>
     <div class="mfoot"><span>駅間進行</span><span id="stop-seq">1 / 10</span></div>
+    <div class="diarow" id="diarow" style="display:none"><span class="dk">ダイヤ</span><span id="dia-t">--</span><b id="dia-d" class="ok">定刻</b></div>
     <div class="stopguide" id="stopguide"><div class="sgtxt" id="sgtxt">停止位置: ホーム先端の標識に車両先頭を合わせる</div><div class="sgbar"><i class="sgzone"></i><i class="sgmark" id="sgmark"></i></div></div>
   </section>
 
@@ -632,7 +650,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
         <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL。中心部〔v28 の範囲〕は 2026年9月26日時点、v29 で広げた所は 9月28日時点、v30 で広げた所は 9月29日時点のデータ）</li>
         <li>地面・屋根の航空写真: 国土地理院 シームレス空中写真（撮影時期は場所によって異なります）。遠景: 国土地理院 標高タイル・空中写真</li>
         <li>バスの停留所の順序: 晴れバスナビ（岡山の時刻表検索）。岡山駅東口ののりば: 岡山駅東口バスのりば行き先案内</li>
-        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材（新幹線の車内音は Freesound の KoimeMatsuchiya 氏 #872228・#872230（Hikari Green Car 車内）と mycompasstv 氏 #474615（高速列車の車内）、いずれも CC0）</li>
+        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材（新幹線の停車中の車内音は Freesound の KoimeMatsuchiya 氏 #872228・#872230（Hikari Green Car 車内）、mycompasstv 氏 #474615（高速列車の車内）のうち使用分、いずれも CC0）。新幹線の走行音・高速時の轟音・「まもなく到着」のチャイムは制作者が用意した音源（出典・ライセンスを確認中）</li>
       </ul>
       <p style="margin:0 0 4px"><b style="color:#e6a94d">推定・仮定している所（実際とは異なる場合があります）</b></p>
       <ul style="margin:0;padding-left:18px">

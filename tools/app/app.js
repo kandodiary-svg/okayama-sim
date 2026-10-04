@@ -3024,7 +3024,7 @@ function applyRoute(r, key, preview){
   S.P=mkPath(S.track); S.blockIv = Trams.ready ? Trams.intervals(S.P) : [];
   for(const q of S.blockIv) if(q.s0>8) S.signals.push({stop:q.s0-4, center:q.s0, block:q.b});
   S.signals.sort((a,b)=>a.stop-b.stop);
-  if(!preview){ S.pos=S.cum[0]; S.speed=0; S.acc=0; S.emergency=false; S.notch=0; S.doorOpen=true; S.stopIndex=1; S.sigIndex=0; S.score=1000; S.comfortHits=0; S.announced=new Set(); }
+  if(!preview){ S.pos=S.cum[0]; S.speed=0; S.acc=0; S.emergency=false; S.notch=0; S.mc=0; S.bv=0; S.doorOpen=true; S.stopIndex=1; S.sigIndex=0; S.score=1000; S.comfortHits=0; S.announced=new Set(); }
   else S.pos = S.cum[0]+40;
 }
 function idxAt(s){ let lo=0, hi=S.arc.length-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(S.arc[m]<=s) lo=m; else hi=m; } return lo; }
@@ -3094,6 +3094,103 @@ function buildNotchBar(){ const el=$("notch-bar"), nb=NB(), np=NP(); el.innerHTM
 function updateNotchBar(){ const b=$("notch-bar").children, nb=NB(), np=NP(); for(let i=-nb;i<=np;i++){ const el=b[i+nb]; if(!el) continue; el.classList.remove("on"); if(S.notch<0&&i>=S.notch&&i<0)el.classList.add("on"); if(S.notch>0&&i<=S.notch&&i>0)el.classList.add("on"); } $("notch").textContent=S.emergency?"EB":(S.notch===0?"N":(S.notch>0?"P"+S.notch:"B"+(-S.notch))); }
 function setSubtitle(t){ $("subtitle").textContent=t; }
 
+/* ---------------- ダイヤ運行（定時運転・v41） ----------------
+   各停留所の到着・発車の定刻を作り、遅れ・早発を「定時点」で採点する（快適スコアとは別。評価は 1000 点から引く）。
+   ・総所要時間は公表値: 東山線 岡山駅前〜東山 約15分、清輝橋線 岡山駅前〜清輝橋 約12分（Wikipedia「岡山電気軌道東山本線／清輝橋線」。渋滞等が無い場合）。
+   ・停留所ごとの配分は、区間の距離・制限速度・信号の数から按分した推定（実際の時刻表の値ではない）。停車時間（DWELL）も仮定。
+   ・到着は「停止した時刻」で測る。定刻より GRACE 秒を超えて遅れると減点、早着は減点なし（その代わり発車は定刻まで待つ）。
+   ・定刻前の発車（早発）は 1 秒につき 3 点（最大 60 点）。 */
+const Dia = (() => {
+  const cfg = { TOTAL: { higashi: 1080, seiki: 870 }, DWELL: 25, GRACE: 20, START_WAIT: 30, LATE_K: 0.6, LATE_MAX: 40, EARLY_K: 3, PASS_PEN: 60 };
+  const D = { on: true, sc: null, i0: 0, pen: 0, rec: [], early: [], passed: [], hold: null, moving: false, stopClock: 0, key: "" };
+  const hms = (t) => { t = Math.round(t); const h = Math.floor(t / 3600) % 24, m = Math.floor(t / 60) % 60, s = t % 60; return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0"); };
+  function active(){ return D.on && S.mode === "tram" && !VEH().jr && S.running && D.sc; }
+  function build(){
+    D.sc = null; D.pen = 0; D.rec = []; D.early = []; D.passed = []; D.hold = null; D.moving = false;
+    if(!D.on || S.mode !== "tram" || !S.stops || VEH().jr) return;
+    const key = (S.baseKey || S.key || "").replace(/_r$/, ""), tot = cfg.TOTAL[key]; if(!tot) return;
+    const st = S.stops, n = st.length, i0 = /引上線/.test(st[0].name) ? 1 : 0;
+    if(n - i0 < 3) return;
+    const ideal = [];
+    for(let i = i0 + 1; i < n; i++){
+      const a = st[i - 1].arc, b = st[i].arc; let t = 0;
+      for(let j = idxAt(a); j < S.arc.length - 1 && S.arc[j] < b; j++){ const lo = Math.max(a, S.arc[j]), hi = Math.min(b, S.arc[j + 1]); if(hi > lo) t += (hi - lo) / (Math.max(10, S.speedLim[j]) * 0.9 / 3.6); }
+      const nSig = S.signals.filter(g => g.stop >= a && g.stop < b).length;   // 信号の多い区間は余裕を多く（赤で止まる期待値 = 赤の長さ² / (2×周期) ≒ 14 秒）
+      ideal.push(t + 12 + nSig * (((CYCLE - MAIN_G) ** 2) / (2 * CYCLE)));   // 加減速・停止のぶん + 信号待ち
+    }
+    const inter = n - 2 - i0, run = tot - cfg.DWELL * inter, sumI = ideal.reduce((x, y) => x + y, 0), k = run / sumI;
+    const sc = []; let t = S.clock + cfg.START_WAIT; sc[i0] = { arr: null, dep: t };
+    for(let i = i0 + 1; i < n; i++){ const arr = sc[i - 1].dep + ideal[i - i0 - 1] * k; sc[i] = { arr, dep: i < n - 1 ? arr + cfg.DWELL : arr }; }
+    D.sc = sc; D.i0 = i0; D.key = key; D.total = sc[n - 1].arr - sc[i0].dep;
+    show(true);
+  }
+  function atStop(){ return S.doorOpen ? (S._openedAt === S.stopIndex ? S.stopIndex : S.stopIndex - 1) : -1; }
+  // 時刻 t0→t1 を距離 u(0..1)に割り付ける（加速・減速でなめらか: 距離 = 3τ²−2τ³ の逆）
+  function expAt(i){
+    const st = S.stops, a0 = st[i - 1].arc, a1 = st[i].arc, u = Math.max(0, Math.min(1, (S.pos - a0) / Math.max(1, a1 - a0)));
+    let lo = 0, hi = 1; for(let k = 0; k < 14; k++){ const m = (lo + hi) / 2; if(3 * m * m - 2 * m * m * m < u) lo = m; else hi = m; }
+    return D.sc[i - 1].dep + (D.sc[i].arr - D.sc[i - 1].dep) * (lo + hi) / 2;
+  }
+  function show(on){ const r = $("diarow"); if(r) r.style.display = on ? "" : "none"; }
+  function hud(){
+    const r = $("diarow"); if(!r) return;
+    if(!active()){ r.style.display = "none"; return; } r.style.display = "";
+    const L = $("dia-t"), V = $("dia-d"); let a = atStop(), cls = "ok", txt = "";
+    if(a >= 0 && D.sc[a]){
+      const last = a >= S.stops.length - 1;
+      if(last){ L.textContent = "終点"; txt = "定時点 " + Math.max(0, Math.round(1000 - D.pen)); }
+      else { const rem = D.sc[a].dep - S.clock; L.textContent = "発車 " + hms(D.sc[a].dep); if(rem > 0.5){ txt = "あと " + Math.ceil(rem) + " 秒"; cls = "wait"; } else { txt = "定刻です"; cls = "ok"; if(rem < -5){ txt = "遅れ " + Math.round(-rem) + " 秒"; cls = "late"; } } }
+    } else {
+      const i = S.stopIndex; if(!D.sc[i] || D.sc[i].arr == null || i - 1 < D.i0){ r.style.display = "none"; return; }
+      const d = S.clock - expAt(i); L.textContent = "到着 " + hms(D.sc[i].arr);
+      if(d > 5){ txt = "遅れ " + Math.round(d) + " 秒"; cls = "late"; } else if(d < -5){ txt = "進み " + Math.round(-d) + " 秒"; cls = "early"; } else txt = "定刻";
+    }
+    V.textContent = txt; V.className = cls;
+  }
+  function tick(){
+    if(S.speed < 0.3){ if(D.moving){ D.moving = false; D.stopClock = S.clock; } } else D.moving = true;
+    if(!active()) return;
+    if(D.hold != null){
+      const sc = D.sc[D.hold];
+      if(!sc || S.clock >= sc.dep - 0.5) D.hold = null;
+      else if(!S.doorOpen && S.speed > 1.0){ const early = sc.dep - S.clock, pen = Math.min(60, early * cfg.EARLY_K); D.pen += pen; D.early.push({ i: D.hold, sec: Math.round(early) });
+        setSubtitle("定刻前に発車しました（" + Math.round(early) + " 秒早い・-" + Math.round(pen) + "点）。この停留所の発車定刻は " + hms(sc.dep) + " です。"); D.hold = null; }
+    }
+    hud();
+  }
+  function onOpen(i){
+    if(!active() || !D.sc[i] || D.sc[i].arr == null || D.rec.some(r => r.i === i)) return;   // 同じ停留所で開け閉めを繰り返しても 1 回だけ数える
+    const at = (S.clock - D.stopClock < 180 && D.stopClock > 0) ? D.stopClock : S.clock, dev = Math.round(at - D.sc[i].arr);
+    const pen = dev > cfg.GRACE ? Math.min(cfg.LATE_MAX, (dev - cfg.GRACE) * cfg.LATE_K) : 0; D.pen += pen; D.rec.push({ i, dev, pen });
+    let m;
+    if(dev > cfg.GRACE) m = "定刻 " + hms(D.sc[i].arr) + " より " + dev + " 秒の遅れ（-" + Math.round(pen) + "点）。";
+    else if(dev < -5) m = "定刻より " + (-dev) + " 秒早い到着です。" + (i < S.stops.length - 1 ? "発車は " + hms(D.sc[i].dep) + " まで待ちます。" : "");
+    else m = "定刻どおりの到着です（" + (dev >= 0 ? "+" : "") + dev + " 秒）。";
+    $("subtitle").textContent += "　" + m;
+  }
+  function onPass(i){   // 停まらずに通過した停留所（ダイヤ上は停車駅）
+    if(!active() || !D.sc[i] || D.sc[i].arr == null || i >= S.stops.length - 1 || D.rec.some(r => r.i === i) || D.passed.includes(i)) return;
+    D.passed.push(i); D.pen += cfg.PASS_PEN;
+  }
+  function onClose(a){
+    if(!active() || a < D.i0 || !D.sc[a]) return;
+    const rem = D.sc[a].dep - S.clock;
+    if(rem > 0.5){ D.hold = a; setSubtitle("発車定刻は " + hms(D.sc[a].dep) + " です（あと " + Math.ceil(rem) + " 秒）。定刻まで待ってから発車してください。"); }
+  }
+  function grade(v){ return v > 900 ? "S" : v > 750 ? "A" : v > 550 ? "B" : "C"; }
+  function result(){
+    if(!D.sc || !(D.rec.length || D.passed.length)) return null;
+    const dia = Math.max(0, Math.round(1000 - D.pen)), ok = D.rec.filter(r => r.dev <= cfg.GRACE).length, late = Math.max(0, ...D.rec.map(r => r.dev));
+    return { dia, g: grade(dia), ok, n: D.rec.length + D.passed.length, late, early: D.early.length, passed: D.passed.length };
+  }
+  function summary(){
+    const r = result(); if(!r) return "";
+    return "\nダイヤ運行: 定時点 " + r.dia + " / 1000（" + r.g + "）・定刻どおりの到着 " + r.ok + "/" + r.n + " 停留所・最大遅れ " + r.late + " 秒" + (r.passed ? "・通過 " + r.passed + " 停留所（-" + r.passed * cfg.PASS_PEN + "点）" : "") + (r.early ? "・早発 " + r.early + " 回" : "");
+  }
+  function setOn(v){ D.on = !!v; if(!v){ D.sc = null; show(false); } else if(S.running && S.mode === "tram") build(); }
+  return { build, tick, onOpen, onPass, onClose, summary, result, setOn, cfg, D, get on(){ return D.on; }, hms };
+})();
+
 /* ---------------- 音と車内放送 ----------------
    走行音: 日本の路面電車の車内で録音した実音（函館・豊橋, CC0 / freesound.org Heigh-hoo）を
            速度に応じて2本のループをクロスフェード・再生速度変化。モーター音（VVVF）は合成で重ねる。
@@ -3114,7 +3211,7 @@ const Snd = (() => {
                   bus_door_open:"sfx/bus_door_open.wav", bus_door_close:"sfx/bus_door_close.wav",
                   heli_rotor:"sfx/heli_rotor.wav", heli_body:"sfx/heli_body.wav", heli_cabin:"sfx/heli_cabin.wav",
                   mc_click:"sfx/mc_click.wav", bv_click:"sfx/bv_click.wav", lever_clunk:"sfx/lever_clunk.wav",
-                  hs_idle:"sfx/hs_idle.wav", hs_cruise:"sfx/hs_cruise.wav", hs_roar:"sfx/hs_roar.wav" };   // v39: 新幹線の車内録音（Freesound・CC0。出典は画面下の注記）
+                  hs_idle:"sfx/hs_idle.wav", hs_cruise:"sfx/hs_u_cruise.wav", hs_roar:"sfx/hs_u_roar.wav", hs_chime:"sfx/hs_u_chime.mp3" };   // v40: 巡航・轟音・到着チャイムは制作者が用意した音源に差し替え（元の hs_cruise.wav / hs_roar.wav は予備として残してある）   // v39: 新幹線の車内録音（Freesound・CC0。出典は画面下の注記）
   async function load(name, url){
     try{ const r = await fetch(url); if(!r.ok) throw 0; buf[name] = await ctx.decodeAudioData(await r.arrayBuffer()); }
     catch(e){ console.warn("sound load failed", url); }
@@ -3178,6 +3275,7 @@ const Snd = (() => {
   let noiseBuf = null, windN = null, rumbN = null, hissN = null, lastTun = false, atcTimer = null;
   // 新幹線（N700）: 風切り音・低い唸り・IGBT インバータの磁励音（速度に連動して音程が上がる）・トンネル出入りの圧力変動音。
   // 溶接レールなので在来線のような継目音は鳴らさない。音は合成による近似で、実車の録音ではない
+  const hsMotorLv = 0.3;
   function hsUpdate(t, st){
     const vk = Number.isFinite(st.vk) ? st.vk : 0, k = Math.min(1, vk / 300), tun = st.tun ? 1 : 0, lvl = sm(1, 50, vk);
     // v38: 在来線のような継目音は出さない（溶接レール）。低速だけ弱く残す。主役は車内録音のループ。
@@ -3187,7 +3285,8 @@ const Snd = (() => {
     if(hsL){
       const lv = ins ? 0.42 : 0.2, tg = tun ? 1.25 : 1;
       hsL.idle.g.gain.setTargetAtTime(lv * 0.6 * (1 - sm(40, 150, vk)), t, 0.4);
-      hsL.cruise.g.gain.setTargetAtTime(lv * sm(15, 130, vk) * (1 - sm(200, 285, vk) * 0.8) * tg, t, 0.5);
+      const pw = Math.max(0, Math.min(1, Math.max(st.pf, st.bf * 0.7))) * sm(5, 120, vk) * (1 - sm(200, 290, vk));   // v39.2: 加速・回生中は録音の走行音が少し強まる（電子音の磁励音の代わり）
+      hsL.cruise.g.gain.setTargetAtTime(lv * sm(15, 130, vk) * (1 - sm(200, 285, vk) * 0.8) * tg * (1 + 0.2 * pw), t, 0.5);
       hsL.roar.g.gain.setTargetAtTime(lv * sm(150, 270, vk) * tg, t, 0.5);
       const cut = (ins ? 7000 : 2500) * (tun ? 0.7 : 1);              // 外から聞くときはこもらせる
       for(const k in hsL) hsL[k].lp.frequency.setTargetAtTime(cut, t, 0.4);
@@ -3204,8 +3303,8 @@ const Snd = (() => {
     const f = vk < 20 ? 380 + vk * 14 : vk < 90 ? 660 + (vk - 20) * 9.5 : Math.min(2100, 1325 + (vk - 90) * 3.6);
     const step = vk < 90 ? Math.round(f / 55) * 55 : f;
     motorO1.frequency.setTargetAtTime(step, t, 0.06); motorO2.frequency.setTargetAtTime(step * 2, t, 0.06);
-    motorF.Q.setTargetAtTime(7, t, 0.1); motorF.frequency.setTargetAtTime(step * 1.4, t, 0.1);
-    motorG.gain.setTargetAtTime(act > 0 && vk > 1 ? (0.008 + 0.034 * act) * (1 - 0.55 * sm(160, 290, vk)) : 0, t, 0.2);
+    motorF.Q.setTargetAtTime(2.5, t, 0.1); motorF.frequency.setTargetAtTime(Math.min(step * 1.2, 1500), t, 0.1);   // v39.2: 鋭いピーという電子音をやめ、帯域を広げて小さく（N700 は車内ではっきりした音階は出ない）
+    motorG.gain.setTargetAtTime(act > 0 && vk > 1 ? hsMotorLv * (0.008 + 0.034 * act) * (1 - 0.7 * sm(120, 250, vk)) * (hsL ? 1 : 3) : 0, t, 0.3);
     if(tun !== (lastTun ? 1 : 0)){ if(vk > 70) boom(t, k, tun); lastTun = !!tun; }
   }
   function boom(t, k, enter){   // トンネル突入・脱出の圧力変動（ドンッ）
@@ -3275,12 +3374,13 @@ const Snd = (() => {
   let lastMC = 0, lastBV = 0;
   function levers(mc, bv, emg){ emg = emg || 6;
     if(!ctx || !on){ lastMC = mc; lastBV = bv; return; }
-    const dm = mc - lastMC, db = bv - lastBV;
-    for(let i = 0; i < Math.abs(dm); i++) play("mc_click", {gain: 0.55 + Math.random()*0.15, rate: (dm > 0 ? 1.0 : 0.93) * (0.97 + Math.random()*0.06), delay: i * 0.075});
-    for(let i = 0; i < Math.abs(db); i++){
+    const dm = mc - lastMC, db = bv - lastBV, hsv = S.mode === "tram" && typeof VEH === "function" && VEH().hs;   // v39.2: 新幹線は 13 段のマスコンを一度に動かしても「カカカカ…」と連打しない
+    const nm = hsv ? Math.min(2, Math.abs(dm)) : Math.abs(dm), nbv = hsv ? Math.min(2, Math.abs(db)) : Math.abs(db), kg = hsv ? 0.5 : 1;
+    for(let i = 0; i < nm; i++) play("mc_click", {gain: kg * (0.55 + Math.random()*0.15), rate: (dm > 0 ? 1.0 : 0.93) * (0.97 + Math.random()*0.06), delay: i * 0.075});
+    for(let i = 0; i < nbv; i++){
       const toEmg = bv >= emg && lastBV + (db > 0 ? i + 1 : -(i + 1)) >= emg;
-      if(toEmg) play("lever_clunk", {gain: 0.9, rate: 0.8, delay: i * 0.08});
-      else play("bv_click", {gain: 0.6 + Math.random()*0.15, rate: 0.9 + Math.random()*0.08, delay: i * 0.08});
+      if(toEmg) play("lever_clunk", {gain: kg * 0.9, rate: 0.8, delay: i * 0.08});
+      else play("bv_click", {gain: kg * (0.6 + Math.random()*0.15), rate: 0.9 + Math.random()*0.08, delay: i * 0.08});
     }
     lastMC = mc; lastBV = bv;
   }
@@ -3293,6 +3393,7 @@ const Snd = (() => {
     if(S.mode === "bus"){ play("bus_horn", {gain: 0.8}); return; }
     if(S.mode === "car"){ play("car_horn", {gain: 0.75}); return; }
     play("bell", {gain: 0.9}); play("bell", {gain: 0.8, delay: 0.42}); }
+  function hsChime(){ return play("hs_chime", {gain: 0.7}); }   // v40: 新幹線の「まもなく到着」チャイム（提供音源）
   function chime(){ if(!ctx || !on) return; const t=ctx.currentTime;
     for(const [f,d] of [[1318.5,0],[1046.5,0.32]]){ const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=f; const g=ctx.createGain();
       g.gain.setValueAtTime(0.0001,t+d); g.gain.exponentialRampToValueAtTime(0.35,t+d+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+d+0.9); o.connect(g).connect(sfxBus); o.start(t+d); o.stop(t+d+1); } }
@@ -3428,7 +3529,7 @@ const Snd = (() => {
   function debug(){ const g = o => o ? +o.g.gain.value.toFixed(3) : null; return { ctx: ctx && ctx.state, bufs: Object.keys(buf).length, plays, last: Snd._last,
     car: eng && { car: g(eng.car), bus: g(eng.bus), road: g(eng.road), cabin: g(eng.cabin), rate: eng.car && +eng.car.src.playbackRate.value.toFixed(2), brate: eng.bus && +eng.bus.src.playbackRate.value.toFixed(2) },
     heli: hs && { rotor: g(hs.rotor), body: g(hs.body), cabin: g(hs.cabin) } }; }
-  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, get on(){ return on; }};
+  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, get on(){ return on; }};
 })();
 
 /* 放送文は audio/ann.json（提供の書き起こしを整えた文面。広告は除外、運賃は改定があるため入れていない）。 */
@@ -3442,7 +3543,7 @@ function annDepart(){
   Snd.preload(["app_" + S.key + "_" + AI(), "arr_" + S.key + "_" + AI(), "dep_" + S.key + "_" + (AI() + 1)]);
   const t = Snd.text(id); setSubtitle("（放送）" + (t ? t.replace(/^この電車は、[^。]+。発車します。ご注意ください。/, "") : "次は " + S.stops[S.stopIndex].name));
 }
-function annApproach(){ if(VEH().jr){ setSubtitle("（放送）まもなく "+S.stops[S.stopIndex].name+" です。"); return; } if(S.phase==="pull" || AI()<=0) return; const id = "app_" + S.key + "_" + AI(); Snd.ann(id); const t = Snd.text(id); if(t) setSubtitle("（放送）" + t); }
+function annApproach(){ if(VEH().jr){ if(VEH().hs && Snd.hsChime) Snd.hsChime(); setSubtitle("（放送）まもなく "+S.stops[S.stopIndex].name+" です。"); return; } if(S.phase==="pull" || AI()<=0) return; const id = "app_" + S.key + "_" + AI(); Snd.ann(id); const t = Snd.text(id); if(t) setSubtitle("（放送）" + t); }
 function annArrive(){ if(VEH().jr) return; Snd.ann("arr_" + S.key + "_" + AI(), 0.8); }
 
 /* ---------------- 運転台（3D）: 参考写真の在来形路面電車の運転台を再現 ----------------
@@ -3605,12 +3706,12 @@ const Cab = (() => {
   const addHsGauge = (th, y, rad, label, unit, max, ticks, red) => { { const b = bezel(th, y, 0.01, 0.01); b.geometry = new THREE.CircleGeometry(rad + 0.007, 32); } const cm = mkCanvasMat(256, 256); const m = new THREE.Mesh(new THREE.CircleGeometry(rad, 32), cm.m);
     const r = bandR(y) - 0.013; m.position.set(r * Math.sin(th), y, r * Math.cos(th) + HB.cz); m.rotation.order = "YXZ"; m.rotation.y = th - Math.PI; m.rotation.x = -HB.tilt; HS.add(m);
     const o = Object.assign(cm, { label, unit, max, ticks, red, last: null }); hsG.push(o); return o; };
-  const gHS = addHsGauge(Math.PI + 0.225, -0.17, 0.088, "速度計", "km/h", 320, 8, false);
-  const gMRh = addHsGauge(Math.PI + 0.385, -0.225, 0.043, "元空気溜", "kPa", 1000, 5, false);
-  const gBCh = addHsGauge(Math.PI + 0.385, -0.118, 0.043, "ブレーキシリンダ", "kPa", 500, 5, true);
+  const gHS = addHsGauge(Math.PI + 0.31, -0.17, 0.097, "速度計", "km/h", 320, 8, false);
+  const gMRh = addHsGauge(Math.PI + 0.485, -0.225, 0.043, "元空気溜", "kPa", 1000, 5, false);
+  const gBCh = addHsGauge(Math.PI + 0.485, -0.118, 0.043, "ブレーキシリンダ", "kPa", 500, 5, true);
   // 中央左: 速度・ATC の表示器 / 右: モニタ（ノッチ・次駅・ドア）
-  bezel(Math.PI + 0.025, -0.17, 0.19, 0.15); const dAtc = mkCanvasMat(256, 192); onBand(Math.PI + 0.025, -0.17, 0.18, 0.138, dAtc.m);
-  bezel(Math.PI - 0.262, -0.17, 0.25, 0.19); const dMon = mkCanvasMat(256, 192); onBand(Math.PI - 0.262, -0.17, 0.24, 0.18, dMon.m);
+  bezel(Math.PI + 0.04, -0.17, 0.26, 0.20).translateZ(0.008); const dAtc = mkCanvasMat(256, 192); onBand(Math.PI + 0.04, -0.17, 0.25, 0.188, dAtc.m).translateZ(0.008);   // 平面を円筒面に置くので、幅が広いほど端が面に埋まる → 手前へ 8mm   // v39.3: 速度・ATC の表示器を大きく
+  bezel(Math.PI - 0.31, -0.17, 0.30, 0.225).translateZ(0.010); const dMon = mkCanvasMat(256, 192); onBand(Math.PI - 0.31, -0.17, 0.29, 0.213, dMon.m).translateZ(0.010);   // v39.3: モニタも大きく
   // 右: スイッチ盤（つまみ・表示灯）
   onBand(Math.PI - 0.74, -0.15, 0.15, 0.13, HM.dark);
   const hsLamps = [];
@@ -3641,7 +3742,7 @@ const Cab = (() => {
     const hit = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.30, 10), hitM); hit.position.set(0, 0.13, 0); piv.add(hit);
     return { piv, hit };
   }
-  const hsMC = makeLever(0.36, -0.74, "mc"), hsBV = makeLever(-0.36, -0.74, "bv");
+  const hsMC = makeLever(0.50, -0.74, "mc"), hsBV = makeLever(-0.50, -0.74, "bv");   // v39.3: 計器の前を横切らないよう外側へ
   // ノッチの目盛り板（ハンドルの横。手前に傾けて文字が読めるように）
   const PL_H = 0.27, PL_TILT = 1.0;
   function makePlate(x) {
@@ -3650,7 +3751,7 @@ const Cab = (() => {
     const mk = new THREE.Mesh(new THREE.PlaneGeometry(0.082, 0.014), new THREE.MeshBasicMaterial({ color: 0xff9a1f, transparent: true, opacity: 0.55, depthTest: false })); mk.renderOrder = 5; mk.rotation.x = -PL_TILT; HS.add(mk);
     return Object.assign(cm, { mk, x });
   }
-  const plMC = makePlate(0.475), plBV = makePlate(-0.475);
+  const plMC = makePlate(0.585), plBV = makePlate(-0.585);
   function paintPlate(pl, labels, redLast) {
     const c = pl.c, g = c.getContext("2d"), w = c.width, h = c.height, n = labels.length; g.fillStyle = "#e9edf0"; g.fillRect(0, 0, w, h);
     g.textAlign = "center"; g.textBaseline = "middle"; g.font = "bold " + Math.min(34, Math.floor(h / n * 0.62)) + "px sans-serif";
@@ -3763,7 +3864,7 @@ const Cab = (() => {
     root.position.set(Math.sin(S.t * 13.1) * 0.0025 * sh, Math.sin(S.t * 17.3) * 0.003 * sh - (S.acc || 0) * 0.0012, 0);
   }
   function render(r) {
-    camC.aspect = camera.aspect; camC.fov = camera.fov; camC.updateProjectionMatrix();
+    camC.aspect = camera.aspect; camC.fov = camera.fov * (isHS ? 0.95 : 1); camC.updateProjectionMatrix();   // v39.3: 新幹線は運転台だけ少し拡大して計器を読みやすく（外の景色の画角は変えない）
     r.clearDepth(); r.render(sceneC, camC);
   }
   function screenPos() {   // テスト用: ハンドル位置の画面座標
@@ -3773,7 +3874,7 @@ const Cab = (() => {
   }
   function setNotches(np, nb, hs) {   // np: 力行ノッチ数、nb: 常用ブレーキ段数（非常はその次）、hs: 新幹線配置（マスコン右・ブレーキ弁左）
     MC_N = np; BV_N = nb + 1; MC_STEP = -1.44 / np; BV_STEP = -1.8 / BV_N;
-    isHS = !!hs; HS.visible = isHS; for (const ch of root.children) if (ch !== HS) ch.visible = !isHS; if (!isHS) root.position.set(0, 0, 0);
+    isHS = !!hs; { const u = document.getElementById("ui"); if(u) u.classList.toggle("hs", isHS); } HS.visible = isHS; for (const ch of root.children) if (ch !== HS) ch.visible = !isHS; if (!isHS) root.position.set(0, 0, 0);
     if (isHS) { const lm = []; for (let i = np; i >= 1; i--) lm.push(String(i)); lm.push("切"); paintPlate(plMC, lm, false);
       const lb = ["運"]; for (let i = 1; i <= nb; i++) lb.push(String(i)); lb.push("非"); paintPlate(plBV, lb, true); dAtc.key = ""; dMon.key = ""; hsG.forEach(o => o.last = null); }
     for(const [p, fn, n] of [[mcPlate, paintMC, np], [bvPlate, paintBV, BV_N]]){ const m = p.material.map, c = m.image; fn(c.getContext("2d"), c.width, c.height, n); m.needsUpdate = true; }
@@ -4074,9 +4175,9 @@ function targetAccel(){
     const k1 = V.hsK[0], k2 = V.hsK[1], F = V.hsA * (v <= k1 ? 1 : v <= k2 ? k1 / v : k1 * k2 / (v * v));
     a = F * (S.notch / V.np) * Math.max(0, Math.min(1, (V.vmax - v) / 4)); }
   else if(S.notch > 0){ a = V.acc[S.notch] * (v > kn ? kn / v : 1) * Math.max(0, Math.min(1, (V.vmax - v) / 4)); }
-  else if(S.notch < 0) a = -(V.bdec||B_DEC)[-S.notch];
+  else if(S.notch < 0){ const T = V.bdec||B_DEC; a = -(T[Math.min(-S.notch, T.length-1)] || 0); }   // 非常位置（段数+1）は表の範囲外 → 最大値で頭打ち（undefined→NaN で動かなくなるのを防ぐ）
   if(v > 0.05){ const dg=V.drag; a -= dg ? dg[0] + dg[1]*v + dg[2]*v*v : 0.05 + 0.0012*v + 0.00003*v*v; }
-  const g = (pointAt(S.pos+4).y - pointAt(S.pos-4).y) / 8;
+  const g = (pointAt(S.pos+15).y - pointAt(S.pos-15).y) / 30;   // 勾配は ±15m で平均（路線高さデータの 0.6m の段差が ±4m だと 7% の急坂になり、電車が動けなくなっていた）
   if(v > 0.05 || a > 0) a -= 35.3 * g;
   return a;
 }
@@ -4093,13 +4194,14 @@ function atcUpdate(){      // 新幹線の ATC: 指示速度 = 現在の制限�
 function tick(dt){
   S.t += dt;
   if(VEH().hs && S.running) atcUpdate(); else if(S.atc){ S.atc = false; Snd.atc(false); }
-  const tgt = targetAccel();
+  let tgt = targetAccel(); if(!Number.isFinite(tgt)) tgt = 0;
+  if(!Number.isFinite(S.acc)) S.acc = 0; if(!Number.isFinite(S.speed)) S.speed = 0;
   const VJ = VEH(); const rate = VJ.hs ? ((tgt < S.acc) ? 2.4 : 1.5) : ((tgt < S.acc) ? 4.5 : 3.0);   // 加減速度の変化の速さ（km/h/s²）。新幹線は緩やか
   const prevAcc = S.acc;
   S.acc += Math.max(-rate*dt, Math.min(rate*dt, tgt - S.acc));
   S.speed = Math.max(0, Math.min(VEH().jr ? VEH().vmax + 2 : 50, S.speed + S.acc*dt));
   if(S.speed === 0 && S.acc < 0) S.acc = 0;
-  if(S.speed === 0 && S.emergency) S.emergency = false;
+  if(S.speed === 0 && S.emergency && S.bv < NB()+1) S.emergency = false;   // 非常ブレーキは停止後もハンドルを戻すまで保持（戻したら解除）
   $("accel").textContent = (S.acc>=0?"+":"") + S.acc.toFixed(1);
   const lim=limitAt(S.pos); { let nx=null; if(VEH().jr){ const i0=idxAt(S.pos), mi=Math.min(S.speedLim.length-1,i0+400); let m=lim; for(let i=i0+5;i<=mi;i+=5){ if(S.speedLim[i]<m){ m=S.speedLim[i]; nx=[m, S.arc[i]-S.pos]; } } } $("limit").textContent=nx?lim+"→"+nx[0]:lim; $("limit").title=nx?"あと "+Math.round(nx[1])+" m で制限 "+nx[0]+" km/h":""; }
   if(S.speed>lim+5){ S.score=Math.max(0,S.score-dt*8); if(performance.now()-lastWarn>1500){ setSubtitle("制限速度 "+lim+"km/h を超えています。"); lastWarn=performance.now(); } }
@@ -4135,7 +4237,7 @@ function tick(dt){
     $("sgmark").style.left = (50 - Math.max(-15, Math.min(15, ds)) / 15 * 50) + "%"; }
   if(VEH().jr){ _sndS.speed=Math.min(S.speed,50); _sndS.acc=Math.max(-3,Math.min(3,S.acc)); _sndS.notch=S.notch; _sndS.emergency=S.emergency; _sndS.motor=S.motor; _sndS.pos=S.pos; _sndS.hs=!!VEH().hs; _sndS.vk=S.speed; _sndS.pf=S.notch>0?S.notch/NP():0; _sndS.bf=(S.notch<0&&!S.emergency)?-S.notch/NB():0; _sndS.tun=VEH().hs?JR.playerTun(S.pos):false; _sndS.atc=!!S.atc; _sndS.inside=(S.view==='cab'); Snd.update(dt, _sndS); } else Snd.update(dt, S);
   if(!S.doorOpen && S.stopIndex<S.stops.length-1 && S.pos > S.cum[S.stopIndex] + 6){
-    const passed=S.stops[S.stopIndex].name; S.stopIndex++; S._appr=false;
+    const passed=S.stops[S.stopIndex].name; Dia.onPass(S.stopIndex); S.stopIndex++; S._appr=false;
     $("stop-seq").textContent=S.stopIndex+" / "+(S.stops.length-1); $("next-stop").textContent=S.stops[S.stopIndex].name;
     setSubtitle(passed.replace(/・.*$/,"")+" を通過しました。"); setTimeout(annDepart, 1200);
   }
@@ -4145,7 +4247,7 @@ function tick(dt){
   for(const lm of (S.routes.landmarks||[])){ if(S.announced.has(lm.name)) continue; if(Math.hypot(lm.x-p.x,lm.z-p.z)<60&&S.speed>1){ S.announced.add(lm.name); setSubtitle("「"+lm.name+"」付近を通過します。"); } }
   $("speed").textContent=Math.round(S.speed); $("cabspd").textContent=Math.round(S.speed); $("score").textContent=Math.round(S.score); $("comfort").textContent="快適 "+Math.round(S.score/10)+"%";
   $("drive-state").textContent=S.doorOpen?"停車中":(S.speed<1?"発車準備":"走行中");
-  S.clock+=dt; const hh=Math.floor(S.clock/3600)%24, mm=Math.floor(S.clock/60)%60; $("clock").textContent=String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
+  S.clock+=dt; Dia.tick(); const hh=Math.floor(S.clock/3600)%24, mm=Math.floor(S.clock/60)%60; $("clock").textContent=String(hh).padStart(2,"0")+":"+String(mm).padStart(2,"0");
   drawSpeedo(); drawMiniMap();
 }
 /* ドアを開けられる範囲: 先頭が停止目標の 3.5m 先から、ホーム長−4m 手前まで（ホームの無い電停は 12m 区間） */
@@ -4165,12 +4267,14 @@ function doorAction(){
       Snd.brakeRelease(); setTimeout(()=>Snd.door(true), 500);
       if(AI()===0){ annStart(); setSubtitle(S.stops[S.stopIndex].name+"（乗車）。お客様が乗り終わったらドアを閉めて発車してください。"); }
       else { annArrive(); setSubtitle(S.stops[S.stopIndex].name+"。停車しました。乗降が終わったらドアを閉めて発車してください。"); }
-      if(S.stopIndex>=S.stops.length-1) setTimeout(finishRide,1500);
+      Dia.onOpen(S.stopIndex);
+      if(S.stopIndex>=S.stops.length-1) setTimeout(()=>{ if(S.running) finishRide(); },1500);
     } else if(S.speed<0.4) setSubtitle(ds>0?"停止位置の手前です（あと"+Math.round(ds)+"m）。":"停止位置を"+Math.round(-ds)+"m 行き過ぎました。");
     else setSubtitle("走行中はドアを開けられません。");
   } else {
     S.doorOpen=false; $("door").textContent="閉"; Snd.door(false);
     if(S.phase==="pull"){ setSubtitle("奥の線路（引上線）へ進み、停止目標で止まったら D（ドア）で運転台を交換します。"); return; }
+    Dia.onClose(S._openedAt===S.stopIndex ? S.stopIndex : S.stopIndex-1);
     if(S._openedAt===S.stopIndex && S.stopIndex<S.stops.length-1) S.stopIndex++;
     S._openedAt=-1;
     S._appr = false; setTimeout(annDepart, 1800);
@@ -4181,7 +4285,8 @@ function finishRide(){ S.running=false; const tn=S.routes.turn && S.routes.turn[
   $("turnback").style.display = tn ? "" : "none";
   $("turnback-label").textContent = tn ? (tn.deadhead ? "折り返し運転（回送で乗り場を移って出発）" : (tn.pull.length ? "折り返し運転（引上線で運転台を交換）" : "折り返し運転（運転台を交換）")) : ""; $("finish-score").textContent=Math.round(S.score); const g=S.score>900?"S":S.score>750?"A":S.score>550?"B":"C";
   { const R=Prefs.record("tram:"+(S.baseKey||S.key), Math.round(S.score)); setTimeout(()=>{ if(R.newBest && R.n>1) $("finish-text").textContent+="\n自己ベスト更新！"; }, 0); }
-  $("finish-text").textContent=S.route.name+" "+S.stops[0].name.replace(/・.*$/,"")+" → "+S.stops[S.stops.length-1].name.replace(/・.*$/,"")+"（"+Math.round(S.endArc-S.cum[0])+" m）\n評価: "+g+"（快適スコア "+Math.round(S.score)+" / 1000）\n衝撃減点回数: "+S.comfortHits+"回"; $("finish-overlay").classList.add("on"); }
+  $("finish-text").textContent=S.route.name+" "+S.stops[0].name.replace(/・.*$/,"")+" → "+S.stops[S.stops.length-1].name.replace(/・.*$/,"")+"（"+Math.round(S.endArc-S.cum[0])+" m）\n評価: "+g+"（快適スコア "+Math.round(S.score)+" / 1000）\n衝撃減点回数: "+S.comfortHits+"回"; { const dr=Dia.result(); if(dr){ $("finish-text").textContent+=Dia.summary(); const R2=Prefs.record("dia:"+(S.baseKey||S.key), dr.dia); if(R2.newBest && R2.n>1) $("finish-text").textContent+="（ダイヤ自己ベスト更新！）"; } }
+  $("finish-overlay").classList.add("on"); }
 
 /* マスコン(S.mc: 切・1〜4) とブレーキ弁(S.bv: 運転・1〜5・非常=6) を別々に持ち、実際の指令(S.notch)を合成する。
    ブレーキ弁が運転位置以外なら制動が優先（力行は遮断）。キー・ボタンは従来どおり1本の軸で操作できる。 */
@@ -4233,6 +4338,7 @@ function changeCab(){
   });
 }
 function afterTurn(){
+  Dia.build();
   if(S.vehicle && S.vehicle!=="momo") setVehicle(S.vehicle);
   mapCache=null; $("route-name").textContent=S.route.name; $("next-stop").textContent=S.stops[S.stopIndex].name; $("stop-seq").textContent=S.stopIndex+" / "+(S.stops.length-1);
   if(S.doorOpen){ S._appr=false; setTimeout(annStart, 600); setSubtitle(S.stops[0].name.replace(/・.*$/,"")+"。折り返し、"+S.route.dest+"行きになります。ドアを閉めて発車してください。"); }
@@ -4245,7 +4351,7 @@ function applyHandles(){
   if(S.notch!==prev) Snd.notch(S.notch,prev); Snd.levers(S.mc, S.bv, NB()+1); updateNotchBar();
 }
 const NP=()=>VEH().np||4, NB=()=>VEH().nb||5;   // 力行ノッチ数・常用ブレーキ段数（新幹線は 13 / 7、非常はその次）
-function setMC(n){ n=Math.max(0,Math.min(NP(),n)); if(n>0 && S.doorOpen){ setSubtitle("ドアを閉めてから力行してください。"); n=0; } if(n>0 && S.bv>=NB()+1){ setSubtitle("非常ブレーキ中は力行できません。"); } S.mc=n; applyHandles(); }
+function setMC(n){ n=Math.max(0,Math.min(NP(),n)); if(n>0 && S.doorOpen){ setSubtitle("ドアを閉めてから力行してください。"); n=0; } if(n>0 && S.bv>=NB()+1){ setSubtitle("非常ブレーキ中は力行できません。ブレーキハンドル（↑）を戻してください。"); } else if(n>0 && S.bv>0 && S.speed<1){ setSubtitle("ブレーキがかかっています。ブレーキハンドル（↑）を戻すと力行できます。"); } S.mc=n; applyHandles(); }
 function setBV(n){ S.bv=Math.max(0,Math.min(NB()+1,n)); applyHandles(); }
 function setNotch(n){ if(n>0){ S.bv=0; setMC(n); } else if(n<0){ S.mc=0; setBV(-n); } else { S.mc=0; setBV(0); } }
 function powerUp(){ if(S.bv>0) setBV(S.bv-1); else setMC(S.mc+1); }
@@ -4520,7 +4626,7 @@ function beginRide(){ leaveJR(); setupRoute(S.key,false); if(S.vehicle && S.vehi
   $("stop-seq").textContent="1 / "+(S.stops.length-1); $("menu").style.display="none"; $("ui").classList.add("on"); $("finish-overlay").classList.remove("on");
   S.mode="tram"; Car.stop(); $("carui").classList.remove("on"); buildNotchBar(); S.mc=0; S.bv=0; applyHandles();
   $("ui").classList.toggle("cab", S.view==="cab");
-  S.running=true; buildNotchBar(); updateNotchBar();
+  S.running=true; buildNotchBar(); updateNotchBar(); Dia.build();
   setSubtitle((S.key.endsWith("_r") ? S.stops[0].name : "岡山駅前（駅前広場の新停留場）") + "。ドアを閉めて、ブレーキハンドルを運転位置に戻し、マスコンを入れてください。");
   Snd.init(); Snd.hush(); S._appr=false; setTimeout(annStart, 600);
   Trams.populate(S.key, S.pos, S.vehicle); Traffic.reset(); }
@@ -4598,6 +4704,7 @@ document.querySelectorAll(".mode-opt").forEach(b=>b.addEventListener("click",()=
 document.querySelectorAll(".cstart-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".cstart-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on"); S.carStart=b.dataset.cs; $("mw-start-sel").style.display=S.carStart==="mw"?"":"none"; }));
 document.querySelectorAll(".cstart-dir").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".cstart-dir").forEach(x=>x.classList.remove("on")); b.classList.add("on"); S.mwDir=b.dataset.dir; }));
 document.querySelectorAll(".look-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".look-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on"); setLook(b.dataset.look); }));
+document.querySelectorAll(".dia-opt").forEach(b=>b.addEventListener("click",()=>{ const on=!b.classList.contains("on"); b.classList.toggle("on",on); b.textContent="ダイヤ運行: "+(on?"あり":"なし"); Dia.setOn(on); }));
 document.querySelectorAll(".shadow-opt").forEach(b=>b.addEventListener("click",()=>{ const on=!b.classList.contains("on"); b.classList.toggle("on",on); b.textContent="影: "+(on?"あり":"なし"); setShadows(on); }));
 Car.bindUI();
 // 車モード: 他の車・電車との接触（進む先の車体の範囲に何かあれば止める）
@@ -4619,7 +4726,7 @@ let _hudT=0;
 function layoutHud(){
   if(!S.running || performance.now()-_hudT<250) return; _hudT=performance.now();
   const m=document.querySelector("#ui .mission"), r=document.querySelector("#ui .rack"), mm=document.querySelector("#ui .minimap");
-  if(!m||!r) return; const top=m.offsetTop+m.offsetHeight+8; r.style.top=top+"px";
+  if(!m||!r) return; const top=m.offsetTop+m.offsetHeight+8; r.style.top=((S.view==="cab" && VEH().hs) ? 64 : top)+"px";   // 新幹線の運転台: 情報カードは上の段へ（ミラーに重ねない）
   if(mm) mm.style.top = S.view==="cab" ? "64px" : top+"px";
 }
 function onResize(){ renderer.setSize(innerWidth,innerHeight); camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); }
@@ -5533,8 +5640,8 @@ const Prefs = (() => {
   function save(){
     if(restoring) return;
     const q = (s) => document.querySelector(s);
-    const m = q(".mode-opt.on"), l = q(".look-opt.on"), h = q(".hstart-opt.on"), sh = q(".shadow-opt");
-    st.set = { mode: m && m.dataset.mode, route: S.key, veh: S.vehicle, look: l && l.dataset.look, shadow: sh ? sh.classList.contains("on") : true,
+    const m = q(".mode-opt.on"), l = q(".look-opt.on"), h = q(".hstart-opt.on"), sh = q(".shadow-opt"), dp = q(".dia-opt");
+    st.set = { mode: m && m.dataset.mode, route: S.key, veh: S.vehicle, look: l && l.dataset.look, shadow: sh ? sh.classList.contains("on") : true, dia: dp ? dp.classList.contains("on") : true,
                time: Env.st.time, rain: Env.st.rain, hstart: h && h.dataset.start, sound: st.set.sound !== false };
     write();
   }
@@ -5548,6 +5655,7 @@ const Prefs = (() => {
       if(s.veh) click('.veh-opt[data-veh="' + s.veh + '"]');
       if(s.look) click('.look-opt[data-look="' + s.look + '"]');
       const sh = document.querySelector(".shadow-opt"); if(sh && s.shadow === false && sh.classList.contains("on")) sh.click();
+      const dp = document.querySelector(".dia-opt"); if(dp && s.dia === false && dp.classList.contains("on")) dp.click();
       if(s.time || s.rain != null) Env.set(s.time || null, !!s.rain);
       if(s.hstart) click('.hstart-opt[data-start="' + s.hstart + '"]');
       click('.mode-opt[data-mode="' + s.mode + '"]');
@@ -5563,12 +5671,12 @@ const Prefs = (() => {
     const el = document.getElementById("records"); if(!el) return;
     const parts = [];
     for(const [k, r] of Object.entries(st.rec)){
-      const name = k === "bus" ? "バス 西大寺線" : (S.routes && S.routes[k.slice(5)] ? S.routes[k.slice(5)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k);
+      const name = k === "bus" ? "バス 西大寺線" : k.startsWith("dia:") ? "ダイヤ運行 " + (S.routes && S.routes[k.slice(4)] ? S.routes[k.slice(4)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k.slice(4)) : (S.routes && S.routes[k.slice(5)] ? S.routes[k.slice(5)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k);
       parts.push(name + " 最高 " + r.best + " 点（" + RANK(k, r.best) + "）・" + r.n + " 回");
     }
     el.textContent = parts.length ? "これまでの記録（このブラウザ）: " + parts.join(" ／ ") : "";
   }
-  document.addEventListener("click", (e) => { if(e.target.closest(".mode-opt,.route-opt,.veh-opt,.look-opt,.shadow-opt,.time-opt,.rain-opt,.hstart-opt")) setTimeout(save, 0); });
+  document.addEventListener("click", (e) => { if(e.target.closest(".mode-opt,.route-opt,.veh-opt,.look-opt,.shadow-opt,.dia-opt,.time-opt,.rain-opt,.hstart-opt")) setTimeout(save, 0); });
   document.addEventListener("keydown", (e) => { if(e.key === "n" || e.key === "N" || e.key === "m" || e.key === "M") setTimeout(save, 0); });
   return { save, restore, record, render, setSound, get soundOn(){ return st.set.sound !== false; } };
 })();
@@ -5758,7 +5866,7 @@ function loop(now){
 }
 requestAnimationFrame(loop);
 loadAll().catch(e=>{ console.error(e); $("start-label").textContent="読み込みに失敗しました: "+e.message; });
-window.__phase = phaseState; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
+window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap;   // v29: 試験用
 window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
 })();
