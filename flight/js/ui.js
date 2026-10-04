@@ -25,7 +25,7 @@ function bindUI(game, hud, audio){
   $("oPreset").onchange=()=>{ const v=$("oPreset").value; if(v==="") return; const p=PRESETS[+v]; $("oFrom").value=p[0]; $("oDest").value=p[1]; syncRoute(); };
   syncRoute();
   $("bStart").onclick=()=>{
-    audio.start(); const id=scn(); const o={id,hour:+$("oHour").value,cloud:$("oCloud").value,wx:{wind:$("oWind").value}};
+    audio.start(); const id=scn(); const o={id,hour:+$("oHour").value,cloud:$("oCloud").value,wx:{wind:$("oWind").value},fuelMode:$("oFuel")?$("oFuel").value:"std"};
     o.dest={icao:$("oDest").value,rwy:$("oRwy").value}; if(id!=="app") o.from={icao:$("oFrom").value,rwy:$("oFromRwy").value};
     if(id!=="app"&&o.from.icao===o.dest.icao&&id!=="cruise"){ /* 同じ空港への往復も可（離陸して戻る） */ }
     game.startScenario(o); showPlay(true); setTimeout(layout,0);
@@ -39,7 +39,7 @@ function bindUI(game, hud, audio){
   function showPlay(on){ for(const id of ["mcp","topright","bar","thr","inst"]) $(id).style.display=on?(id==="mcp"||id==="topright"?"flex":"block"):"none"; if(on&&matchMedia("(pointer:coarse)").matches) $("touch").style.display="block"; if(!on) $("touch").style.display="none"; if(on) layout(); }
   // ---------------- ボタン ----------------
   $("bEasy").onclick=()=>game.keyDown({code:"KeyU"}); if(game.easy) $("bEasy").classList.toggle("on",game.easy.on);
-  $("bView").onclick=()=>game.cycleView(); $("bTime").onclick=()=>{ game.keyDown({code:"KeyT"}); $("bTime").textContent="時間 ×"+game.timeScale; };
+  $("bView").onclick=()=>game.cycleView(); $("bMap").onclick=()=>{ if(game.FS&&game.FS.map) game.FS.map.cycle(); }; $("bTime").onclick=()=>{ game.keyDown({code:"KeyT"}); $("bTime").textContent="時間 ×"+game.timeScale; };
   $("bSnd").onclick=()=>{ audio.start(); audio.setMuted(!audio.muted); $("bSnd").textContent=audio.muted?"音 OFF":"音 ON"; };
   $("bGear").onclick=()=>game.keyDown({code:"KeyG"}); $("bFlapUp").onclick=()=>game.keyDown({code:"KeyV"}); $("bFlapDn").onclick=()=>game.keyDown({code:"KeyF"});
   $("bSpoil").onclick=()=>game.keyDown({code:"KeyL"}); $("bAB").onclick=()=>game.keyDown({code:"KeyO"}); $("bPark").onclick=()=>game.keyDown({code:"KeyP"});

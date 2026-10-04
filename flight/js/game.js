@@ -170,7 +170,7 @@ class Game{
     let windFrom=null, mode=mode0;
     this.push=null; this.autoTaxi=null; this.taxiPhase=null; this.taxiPlan=null; this.arrival=null; this.arrivalPlan=null; this.autoTO=null; this.autoPitch=0; if(this.FS.pk) for(const k of Object.keys(A.ap)) this.FS.pk.release(k);
     const dest=spec.dest;
-    const fuelFor=(Lm)=>{ const cap=79000*0.97-F.AC.emptyMass-F.AC.payload; return Math.round(Math.min(Math.max(3500,2500+3.4*Lm/1000),cap,14000)/100)*100; };
+    const fuelFor=(Lm)=>{ const cap=79000*0.97-F.AC.emptyMass-F.AC.payload; return Math.round(Math.min(Math.max(4500,3000+3.6*Lm/1000),cap,14000)/100)*100; };   // 経路の長さ×3.6kg/km ＋ 予備（約45分ぶん＋余裕）
     if(mode==="gate"){
       const e=spec.dep, plan=spec.plan; const p0=plan.push.poses[0], fw=[Math.sin(p0.psi),-Math.cos(p0.psi)]; const x=p0.mx-fw[0]*TAXI.MAIN, z=p0.mz-fw[1]*TAXI.MAIN, h=T.heightAt(x,z);
       s.pos=[x,h+3.85-0.16,z]; s.q=F.eulerToQ(p0.psi,0,0); s.vel=[0,0,0]; s.flaps=s.flapsTarget=3; pilot.flapsTarget=3; s.gear=s.gearTarget=1; pilot.parking=true; s.parking=true; s.onGround=true; F.derived(s);
@@ -197,10 +197,11 @@ class Game{
       this.route=spec.from?this.routeFor(spec,null):baseRouteToTokyo().slice(3).concat(this.finalRoutePart(o));
       let tgt=this.route.length?this.route[0]:{x:e.x-e.ux*42000,z:e.z-e.uz*42000}; if(!spec.from){ const w=G.ll2xz(35.36,138.73); tgt={x:w[0],z:w[1]}; }
       const hdg=Math.atan2(tgt.x-cs.x,-(tgt.z-cs.z));
-      s.fuel=fuel!=null?fuel:Math.max(2200,Math.round((1800+3.4*cs.R/1000)/100)*100); setAir(cs.x,cs.z,cs.alt,hdg,260,0.62,0,0); ap.spdIsMach=true; ap.mach=0.78; ap.spd=270*KT; ap.alt=cs.alt; ap.vertMode="ALT";
+      s.fuel=fuel!=null?fuel:Math.max(3500,Math.round((2600+3.6*cs.R/1000)/100)*100); setAir(cs.x,cs.z,cs.alt,hdg,260,0.62,0,0); ap.spdIsMach=true; ap.mach=0.78; ap.spd=270*KT; ap.alt=cs.alt; ap.vertMode="ALT";
       windFrom=270*D2R; this.engageBasic(true);
     }
     if(mode==="gate"||mode==="rwy"){ if(o.fuel==null&&!spec.legacy) s.fuel=fuelFor(this.routeLen(this.route,[spec.dep.x,spec.dep.z])); }
+    if(o.fuel==null&&o.fuelMode==="full") s.fuel=Math.min(12000,F.AC.fuelMax);   // メニューで「たっぷり」を選んだとき
     // 巡航高度の目安（距離が短い路線では低くする）
     { const st=[s.pos[0],s.pos[2]]; const Lr=(mode==="app")?0:this.routeLen(this.route,st)+(this.takeoffRwy?0:0);
       const capH=(Lr-30000)/30.5; this.cruiseAlt=(mode==="app")?35000*FT:(mode==="cruise")?Math.max(s.pos[1],6000*FT):clamp(Math.floor(capH/FT/1000)*1000,4000,35000)*FT; if(spec.legacy&&(mode==="gate"||mode==="rwy")) this.cruiseAlt=35000*FT; }
@@ -311,7 +312,7 @@ class Game{
     this.taxiTick(); if(this.taxiPhase==="taxi"&&s.parking&&pilot.throttle>0.04&&s.onGround){ pilot.parking=false; s.parking=false; this.say("パーキングブレーキ解除","#fff",1.4); }
     if(this.stats.liftoff&&this.taxiPhase&&!this.arrival){ this.taxiPhase=null; this.autoTaxi=null; }
     // 自動機能
-    this.autoLights(); this.autoTakeoffStep(dt); this.autoFlightStep(dt); this.apprAssist(dt); this.takeoffCalls(); this.computeWarnings(dt); this.updateHints();
+    this.autoLights(); this.autoTakeoffStep(dt); this.autoFlightStep(dt); this.apprAssist(dt); this.takeoffCalls(); this.fuelStep(); this.computeWarnings(dt); this.updateHints();
     // 失速速度（見かけの目安）
     this.vStall=Math.sqrt(2*s.mass*F.G/(1.225*F.AC.S*(F.flapParams(s.flaps)[1])))/KT*1.0;
     // 飛行機の見た目
@@ -484,6 +485,21 @@ class Game{
     const lim=F.AC.flapSpeeds[Math.min(8,Math.round(s.flapsTarget))]/KT-5; ap.spd=Math.min(spd,lim)*KT; ap.spdIsMach=false; ap.athr=true;
   }
   // ---------------- 警報 ----------------
+  // ---------------- 燃料の見張り（あと何分飛べるか、足りないときの警告）----------------
+  fuelStep(){
+    const s=this.s; if(this.state!=="fly") return; let f=this.fu; if(!f||f.s!==s){ f=this.fu={s,t:s.t,f:s.fuel,flow:0,endMin:null,lv:0,said:0,airT:0}; }
+    if(s.t-f.t>=5){ const inst=(f.f-s.fuel)/(s.t-f.t); f.flow=f.flow>0?f.flow*0.7+inst*0.3:inst; f.t=s.t; f.f=s.fuel; }
+    // 上昇中・降下中は燃料の流れが平均より大きい／小さいので、極端な値は丸めて「あと何分」を出す
+    const fl=(Math.abs(s.vs)>4)?clamp(f.flow,0.6,1.2):f.flow; f.endMin=(fl>0.02)?s.fuel/fl/60:null;
+    if(s.onGround){ f.airT=0; return; } f.airT+=1/60; if(f.airT<90) return;     // 離陸直後の増加分はまだ見ない
+    if(Math.abs(s.vs)>2.5||f.lastUn==null) f.lastUn=s.t; const steady=(s.t-f.lastUn)>40;     // 水平飛行が 40 秒以上続いたときだけ「あと何分」で警告（上昇・降下中は燃料の流れが大きく変わるため）
+    const em=f.endMin;
+    if(s.fuel<=0){ if(f.lv<3){ f.lv=3; this.say("燃料切れ！ エンジンが止まりました。滑空して、いちばん近い空港を目指してください（地図の ` キーで位置を確認）","#ff4d4d",12); } return; }
+    if(s.fuel<900||(steady&&em!=null&&em<20)){ if(f.lv<2){ f.lv=2; f.chkT=this.t+60; this.say("燃料警報！ あと約"+Math.max(1,Math.round(em||5))+"分。いちばん近い空港へ向かってください（地図 ` キー）","#ff4d4d",9); } }
+    else if(s.fuel<1800||(steady&&em!=null&&em<45)){ if(f.lv<1){ f.lv=1; f.chkT=this.t+60; this.say("燃料が少なくなっています（あと約"+Math.round(em||10)+"分）。目的地までの燃料を確認してください","#ffb11a",7); } }
+    // このままの飛び方で目的地まで足りるか
+    if(steady&&this.route.length&&this.destRwy&&em!=null&&this.t>(f.chkT||0)){ f.chkT=this.t+30; const rem=this.routeRemain(); const need=rem/Math.max(s.gs,110)/60; if(rem>20000&&em<need*1.1&&this.t>(f.sayT2||0)){ f.sayT2=this.t+300; this.say("いまの飛び方では目的地まで燃料が足りない見込みです（あと約"+Math.max(1,Math.round(em))+"分／目的地まで約"+Math.round(need)+"分）。高度を上げて巡航すると燃料の減りが小さくなります","#ffb11a",9); } }
+  }
   computeWarnings(dt){
     const s=this.s, W=[]; const raFt=s.radAlt/FT, vsF=s.vs/FT*60; const ap=this.c.ap; const near=this.nearAirportDist();
     if(s.stallWarn&&!s.onGround) W.push({t:"STALL",steady:true,sound:"stall"});
@@ -495,6 +511,7 @@ class Game{
       this.tAccum=(this.tAccum||0)+dt; if(this.tAccum>0.5){ this.tAccum=0; const v=s.vel; const sp=Math.hypot(v[0],v[2]); let thr=false; if(sp>60&&near>9000){ for(const T of [15,30]){ const h=this.terrain.heightAt(s.pos[0]+v[0]*T,s.pos[2]+v[2]*T); if(h>s.pos[1]+Math.min(0,v[1])*T*0.0-120+ (s.vel[1]>2?s.vel[1]*T*0.8:0)) thr=true; } } this.terrainWarn=thr; }
       if(this.terrainWarn&&near>9000) W.push({t:"TERRAIN",steady:true,sound:"gpws"});
     }
+    if(this.fu&&this.fu.s===s&&!s.onGround&&this.state==="fly"){ if(this.fu.lv>=3) W.push({t:"FUEL EMPTY",steady:true}); else if(this.fu.lv===2) W.push({t:"LOW FUEL",col:"#ffb11a"}); }
     this.warn=W;
   }
   nearAirportDist(){ let m=1e9; const s=this.s; for(const a of Object.values(this.ap.ap)) m=Math.min(m,Math.hypot(s.pos[0]-a.ref[0],s.pos[2]-a.ref[1])); return m; }
@@ -546,6 +563,7 @@ class Game{
       case "KeyL": p.spoilerArm=!p.spoilerArm; this.say(p.spoilerArm?"グラウンドスポイラー ARM":"スポイラー ARM 解除","#fff",1.4); break;
       case "KeyO": p.autobrake=(p.autobrake+1)%5; this.say("オートブレーキ "+["OFF","1","2","3","MAX"][p.autobrake],"#fff",1.4); break;
       case "KeyC": this.cycleView(); break;
+      case "Backquote": if(this.FS&&this.FS.map) this.FS.map.cycle(); break;
       case "Enter": if(this.push) break; if(this.taxiPhase==="taxi"){ if(this.autoTaxi) this.cancelAutoTaxi("自動タキシーを止めました"); else this.startAutoTaxi(); } else if(this.s.onGround&&!this.stats.liftoff&&!this.landed) this.startAutoTakeoff(); else this.toggleAP(); break;
       case "KeyY": this.c.assist=!this.c.assist; this.say(this.c.assist?"操縦補助 ON":"操縦補助 OFF（直接操縦）","#ffb11a",2); break;
       case "KeyT": this.timeScale=this.timeScale>=4?1:this.timeScale*2; this.say("時間 ×"+this.timeScale,"#fff",1.4); break;

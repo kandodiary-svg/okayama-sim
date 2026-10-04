@@ -79,7 +79,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
     <button id="bALT">ALT</button><button id="bVS">V/S</button><button id="bFLCH" title="速度を保って上昇・降下">FLCH</button><button id="bAPPR" title="ILS進入 (I)">APPR</button><button id="bMACH" title="速度表示の切り替え">kt/M</button>
   </div>
 </div>
-<div id="topright"><span id="viewname" style="font-size:12px;opacity:.7;align-self:center"></span><button id="bEasy" title="かんたんモード：青いラインと操作ガイド (U)">かんたん (U)</button><button id="bView">視点 (C)</button><button id="bTime">時間 ×1</button><button id="bSnd">音</button><button id="bHelp">操作 (?)</button><button id="bPause">メニュー</button></div>
+<div id="topright"><span id="viewname" style="font-size:12px;opacity:.7;align-self:center"></span><button id="bEasy" title="かんたんモード：青いラインと操作ガイド (U)">かんたん (U)</button><button id="bMap" title="地図 小→大→消す (`)">地図 (`)</button><button id="bView">視点 (C)</button><button id="bTime">時間 ×1</button><button id="bSnd">音</button><button id="bHelp">操作 (?)</button><button id="bPause">メニュー</button></div>
 <div id="easy"></div>
 <div id="hint"></div><div id="bigmsg"></div>
 <div id="bar">
@@ -110,6 +110,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
   <div class="opts">
     <div>時刻<select id="oHour"><option value="7">朝（7:00）</option><option value="14" selected>昼（14:00）</option><option value="17.6">夕方（17:35）</option><option value="19.4">日没後（19:25）</option><option value="21">夜（21:00）</option></select></div>
     <div>天気<select id="oCloud"><option value="clear">快晴</option><option value="fair" selected>晴れ（雲少なめ）</option><option value="cloudy">曇り（雲多め）</option></select></div>
+    <div>燃料<select id="oFuel"><option value="std" selected>標準（経路＋予備）</option><option value="full">たっぷり（約12トン）</option></select></div>
     <div>風<select id="oWind"><option value="calm">無風</option><option value="light" selected>弱い向かい風</option><option value="cross">横風（約14kt）</option><option value="strong">強い風（約22kt）</option></select></div>
   </div>
   <div class="go"><button id="bHelp2" style="background:#18222d;border-color:#33465a;font-size:13px">操作方法</button><button id="bStart">▶ スタート</button></div>
@@ -128,6 +129,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
     <b>G</b><span>ギア上げ／下げ ／ <b>F / V</b> フラップ 下げ／上げ（一段ずつ）</span>
     <b>Space / B</b><span>ブレーキ（長押し） ／ <b>R</b> 逆噴射（地上・長押し） ／ <b>P</b> 駐機ブレーキ ／ <b>L</b> スポイラー自動展開 ／ <b>O</b> オートブレーキ</span>
     <b>K</b><span>スピードブレーキ（空中で降下・減速）</span>
+    <b>` （バッククォート）</b><span><b>地図</b>（小→大→消す）。北が上で、いまの位置・空港・経路・通った跡・燃料で行ける範囲が出ます。＋／−／自動で縮尺を変えられます。</span>
     <b>Enter</b><span><b>滑走路に並んだとき</b>は<b>オート離陸</b>（離陸〜上昇〜オート航行まで全部おまかせ）。飛行中は<b>オート航行</b>（経路・降下・ILS進入まで自動）の ON/OFF。上のパネル（MCP）で 速度・方位・高度・昇降率 を自分で設定もできます ／ <b>ゲート出発のとき</b>は、プッシュバックのスキップ、地上では<b>自動タキシー</b>の開始・停止</span>
     <b>I または J</b><span>ILS進入（APPR）。滑走路の延長線に乗っていると、ローカライザーとグライドスロープで自動進入・着陸します</span>
     <b>C</b><span>視点 コックピット／外から／客室の窓。ドラッグで見回し・周回、ホイールでズーム、ダブルクリックで戻す</span>
@@ -153,6 +155,7 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
 <script src="js/hud.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/easy.js"></script>
+<script src="js/map.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>

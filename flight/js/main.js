@@ -20,7 +20,7 @@ async function init(){
   let ap=null; const bld=FS.bld=new Buildings(T,scene,"data/",bidx,sky,{skip:(x,z)=>ap&&ap.skipAt(x,z)});
   ap=FS.ap=new Airports(T,scene,"data/",apd,terrain,sky,bld); const lights=FS.lights=new AirLights(T,scene,ap,sky,renderer);
   const lm=FS.lm=new Landmarks(T,scene,terrain,sky); const pk=FS.pk=new Parked(T,ap,terrain); const hudCv=document.getElementById("inst"); const hud=FS.hud=new Hud(hudCv); const audio=FS.audio=new Sound();
-  const game=FS.game=new Game(FS,{hud,audio}); const easy=FS.easy=new Easy(T,scene,game); game.easy=easy; game.easyOn=easy.on; const ui=FS.ui=bindUI(game,hud,audio); game.ui=ui;
+  const game=FS.game=new Game(FS,{hud,audio}); const easy=FS.easy=new Easy(T,scene,game); const fmap=FS.map=new FlightMap(game,terrain,ap); game.easy=easy; game.easyOn=easy.on; const ui=FS.ui=bindUI(game,hud,audio); game.ui=ui;
   sky.setHour(+q.get("h")||14); game.cam.x=0;
   const frustum=new T.Frustum(), pm=new T.Matrix4();
   function resize(){ const w=innerWidth,h=innerHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
@@ -28,7 +28,7 @@ async function init(){
   const dbg=document.getElementById("dbg"); let last=performance.now(), fps=0, frames=0, hudT=0;
   function frame(now){
     const dt=Math.min(0.1,(now-last)/1000); last=now; frames++; fps+=(1/Math.max(dt,1e-3)-fps)*0.1;
-    game.frame(dt); easy.update(dt);
+    game.frame(dt); easy.update(dt); try{ fmap.update(dt); }catch(e){ if(!fmap.err){ fmap.err=1; console.error(e); } }
     const cam=game.cam; pm.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
     sky.update(cam,dt); scene.fog.color.copy(sky.fogColor);
     const tc=sky.tintCol; terrain.tint.setRGB(tc[0],tc[1],tc[2]); terrain.nlK.value=Math.max(0,sky.night-0.2)*1.0;
@@ -44,7 +44,7 @@ async function init(){
   game.state="menu"; document.getElementById("menu").style.display="flex";
   // 試験用: ?scn=rjob_to&view=chase で自動開始
   // ?scn=gate|rwy|cruise|app&from=RJTT&frwy=34R&to=RJCC&rwy=01L （旧: rjob_gate / rjob_to / rjtt_app …）
-  if(q.get("scn")){ const o={id:q.get("scn"),hour:+q.get("h")||14,cloud:q.get("cloud")||"fair",wx:{wind:q.get("wind")||"light"}};
+  if(q.get("scn")){ const o={id:q.get("scn"),hour:+q.get("h")||14,cloud:q.get("cloud")||"fair",wx:{wind:q.get("wind")||"light"},fuelMode:q.get("fuel")||"std"};
     if(q.get("to")||q.get("from")){ o.dest={icao:q.get("to")||"RJTT",rwy:q.get("rwy")||"auto"}; if(q.get("from")) o.from={icao:q.get("from"),rwy:q.get("frwy")||"auto"}; }
     else o.rwy=q.get("rwy")||"16L";
     game.view=q.get("view")||"chase"; document.getElementById("menu").style.display="none"; game.startScenario(o); ui.showPlay(true); }
