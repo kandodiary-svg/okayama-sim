@@ -2642,6 +2642,8 @@ const Bus = (() => {
                sigI:0, off:false, offT:0, annNext:false, comfortHits:0, lastWarn:0, waiting:[], alight:[] };
   function init(data){
     D=data; P=mkPath(data.path);
+    // 標柱の真後ろに、データ由来の高い電柱（架線柱）が重なって看板を半分隠す停留所は、柱ごと進行方向へずらす（岡山駅前: 柱どうしの距離 0.02m だった）
+    for(const [nm, m] of [["岡山駅前", 1.2]]){ const s0 = D.stops.find(q => q.name === nm); if(s0 && !s0._nudged){ const t = pathTan(P, s0.arc); s0.pole = [s0.pole[0] + t.x * m, s0.pole[1] + t.z * m]; s0.arc += m; s0._nudged = true; } }
     D.stops.forEach((s,i)=>{ if(i>0) BUS_ANN["next_"+i]={ text: i===D.stops.length-1 ? "次は、終点、"+s.name+"です。" : "次は、"+s.name+"です。お降りの方は、お近くのボタンでお知らせください。" }; });
     buildFurniture();
   }
@@ -2735,7 +2737,7 @@ const Bus = (() => {
     st.alight = D.stops.map(()=>0);
     setBusDoors(model,1); placePeople(); orientPlates(); buildStopMarks();
     st.atStop=0; st.dwell=0; st.dwellNeed=3+1.1*st.waiting[0];
-    ribbon.visible=true; active=true;
+    ribbon.visible=true; active=true; bdBuild();
     $("busui").classList.add("on"); $("bus-route").textContent=D.short+"（"+D.via+"）"; hudStops();
     busAnn("start"); setTimeout(()=>busSay("岡山駅東口 13番のりばに停車中。お客様が乗り終わったら（約"+Math.ceil(st.dwellNeed)+"秒）F で扉を閉め、青い帯に沿って発車してください。"), 400);
     return true;
@@ -2803,6 +2805,52 @@ const Bus = (() => {
   }
   /* ---- 放送（録音があれば再生、無ければ字幕のみ） ---- */
   function busAnn(id, extra){ const txt = BUS_ANN[id] ? BUS_ANN[id].text : null; if(txt) busSay("（放送）"+txt); Snd.ann && Snd.ann("bus_"+id); }
+  /* ---- ダイヤ（時刻表）: ゲーム内ダイヤ。区間ごとに 長さ ÷ 6.2 m/s ＋ 12 秒、停車は 20 秒。電車のダイヤ（Dia）と同じ評価 ---- */
+  const bd = { clk: 32400, sc: null, pen: 0, rec: [], early: [], passed: 0, hold: null, stopClk: 0, moving: false };
+  const bdOn = () => active && Dia.on && bd.sc && !st.done;
+  function bdBuild(){
+    bd.sc = null; bd.pen = 0; bd.rec = []; bd.early = []; bd.passed = 0; bd.hold = null; bd.stopClk = 0; bd.moving = false;
+    const n = D.stops.length; if(!Dia.on || n < 3) return;
+    const sc = []; let t = bd.clk + Math.max(30, st.dwellNeed + 15); sc[0] = { arr: null, dep: t };
+    for(let i = 1; i < n; i++){ const arr = sc[i - 1].dep + (D.stops[i].arc - D.stops[i - 1].arc) / 6.2 + 12; sc[i] = { arr, dep: i < n - 1 ? arr + 20 : arr }; }
+    bd.sc = sc; bdHud();
+  }
+  function bdHud(){
+    const el = $("bus-dia"), row = $("bus-diarow"); if(!el || !row) return;
+    if(!bdOn()){ row.style.display = "none"; return; } row.style.display = "";
+    const a = (st.doors && st.atStop >= 0) ? st.atStop : -1; let txt, cls = "ok";
+    if(a >= 0){ if(a >= D.stops.length - 1){ txt = "終点"; } else { const rem = bd.sc[a].dep - bd.clk; if(rem > 0.5){ txt = "発車 " + Dia.hms(bd.sc[a].dep) + "（あと " + Math.ceil(rem) + " 秒）"; cls = "wait"; } else { txt = "定刻です"; if(rem < -5){ txt = "遅れ " + Math.round(-rem) + " 秒"; cls = "late"; } } } }
+    else { const i = st.stopI, sc = bd.sc[i]; if(!sc || sc.arr == null){ row.style.display = "none"; return; }
+      const prev = bd.sc[i - 1], a0 = D.stops[i - 1].arc, a1 = D.stops[i].arc, u = Math.max(0, Math.min(1, (st.s + 4.6 - a0) / Math.max(1, a1 - a0)));
+      let lo = 0, hi = 1; for(let k = 0; k < 14; k++){ const m = (lo + hi) / 2; if(3 * m * m - 2 * m * m * m < u) lo = m; else hi = m; }
+      const d = bd.clk - (prev.dep + (sc.arr - prev.dep) * (lo + hi) / 2);
+      txt = "到着 " + Dia.hms(sc.arr) + "　" + (d > 5 ? "遅れ " + Math.round(d) + " 秒" : d < -5 ? "進み " + Math.round(-d) + " 秒" : "定刻"); cls = d > 5 ? "late" : d < -5 ? "early" : "ok"; }
+    el.textContent = txt; el.className = cls;
+  }
+  function bdOpen(i){
+    if(!bdOn() || !bd.sc[i] || bd.sc[i].arr == null || bd.rec.some(r => r.i === i)) return;
+    const at = (bd.clk - bd.stopClk < 120 && bd.stopClk > 0) ? bd.stopClk : bd.clk, dev = Math.round(at - bd.sc[i].arr), c = Dia.cfg;
+    const pen = dev > c.GRACE ? Math.min(c.LATE_MAX, (dev - c.GRACE) * c.LATE_K) : 0; bd.pen += pen; bd.rec.push({ i, dev, pen });
+    return dev > c.GRACE ? "定刻より " + dev + " 秒の遅れ（ダイヤ -" + Math.round(pen) + "点）。" : dev < -5 ? "定刻より " + (-dev) + " 秒早い到着。" + (i < D.stops.length - 1 ? "発車は " + Dia.hms(bd.sc[i].dep) + " まで待ちます。" : "") : "定刻どおりの到着です。";
+  }
+  function bdClose(i){
+    if(!bdOn() || !bd.sc[i] || i >= D.stops.length - 1) return; const rem = bd.sc[i].dep - bd.clk;
+    if(rem > 0.5){ bd.hold = i; return "発車定刻は " + Dia.hms(bd.sc[i].dep) + "（あと " + Math.ceil(rem) + " 秒）。定刻まで待ってから発車してください。"; }
+  }
+  function bdPass(i){ if(bdOn() && bd.sc[i] && bd.sc[i].arr != null && i < D.stops.length - 1 && !bd.rec.some(r => r.i === i)){ bd.passed++; bd.pen += Dia.cfg.PASS_PEN; } }
+  function bdTick(dt, v){
+    bd.clk += dt; if(Math.abs(v) < 0.3){ if(bd.moving){ bd.moving = false; bd.stopClk = bd.clk; } } else bd.moving = true;
+    if(!bdOn()) { bdHud(); return; }
+    if(bd.hold != null){ const sc = bd.sc[bd.hold];
+      if(!sc || bd.clk >= sc.dep - 0.5) bd.hold = null;
+      else if(!st.doors && Math.abs(v) * 3.6 > 3){ const early = sc.dep - bd.clk, pen = Math.min(60, early * Dia.cfg.EARLY_K); bd.pen += pen; bd.early.push({ i: bd.hold, sec: Math.round(early) }); busSay("定刻前に発車しました（" + Math.round(early) + " 秒早い・ダイヤ -" + Math.round(pen) + "点）。"); bd.hold = null; } }
+    bdHud();
+  }
+  function bdSummary(){
+    if(!bd.sc || !(bd.rec.length || bd.passed)) return null;
+    const dia = Math.max(0, Math.round(1000 - bd.pen)), ok = bd.rec.filter(r => r.dev <= Dia.cfg.GRACE).length, late = Math.max(0, ...bd.rec.map(r => r.dev));
+    return { dia, g: dia > 900 ? "S" : dia > 750 ? "A" : dia > 550 ? "B" : "C", ok, n: bd.rec.length + bd.passed, late, passed: bd.passed, early: bd.early.length };
+  }
   function busSay(t){ if(typeof setSubtitle==="function") setSubtitle(t); $("bus-msg").textContent=t; st.msgT=6; }
   function doorKey(){
     if(!active || st.done) return;
@@ -2814,12 +2862,13 @@ const Bus = (() => {
       if(z && z.ok){ const i=st.stopI; st.atStop=i; st.dwell=0; const a=st.alight[i]||0, b=st.waiting[i]||0; st.dwellNeed=3+1.1*(a+b);
         const acc=Math.max(0, 40-Math.abs(z.along)*10-Math.max(0,z.gap-0.8)*25); st.score=Math.min(1000, st.score+acc);
         busSay(D.stops[i].name+"。"+(a?a+"人が降ります。":"")+(b?b+"人が乗ります。":"")+"乗り降りが終わるまでお待ちください。");
+        { const m=bdOpen(i); if(m){ $("bus-msg").textContent+="　"+m; $("subtitle").textContent+="　"+m; } }
         if(i===D.stops.length-1) setTimeout(finish, 2500);
       } else { st.atStop=-1; st.score=Math.max(0, st.score-5); busSay(z ? "停留所の標柱に扉を合わせてください（"+(z.along>0?"あと "+z.along.toFixed(1)+" m 前":Math.abs(z.along).toFixed(1)+" m 行き過ぎ")+"・歩道まで "+z.gap.toFixed(1)+" m）。" : "停留所以外で扉を開けました（-30点）。"); }
     } else {
       if(st.atStop>=0 && st.dwell<st.dwellNeed){ st.score=Math.max(0, st.score-10); busSay("まだ乗り降りしています（-10点）。"); }
       st.doors=false; Snd.door && Snd.door(false);
-      if(st.atStop>=0){ const i=st.atStop; st.pax += (st.waiting[i]||0) - (st.alight[i]||0); st.pax=Math.max(0,st.pax); st.waiting[i]=0; placePeople();
+      if(st.atStop>=0){ const i=st.atStop; { const m=bdClose(i); if(m) setTimeout(()=>busSay(m), 300); } st.pax += (st.waiting[i]||0) - (st.alight[i]||0); st.pax=Math.max(0,st.pax); st.waiting[i]=0; placePeople();
         st.stopI=Math.min(D.stops.length-1, i+1); st.req=false; st.annNext=false; setTimeout(()=>busAnn("depart"), 600); setTimeout(()=>{ busAnn("next_"+st.stopI); prepareNext(); }, 3200); }
       st.atStop=-1; hudStops();
     }
@@ -2846,6 +2895,8 @@ const Bus = (() => {
     $("finish-score").textContent=s;
     { const R=Prefs.record("bus", s); setTimeout(()=>{ if(R.newBest && R.n>1) $("finish-text").textContent+="　自己ベスト更新！"; }, 0); }
     $("finish-text").textContent="両備バス 西大寺線 岡山駅 → 東山　ランク "+(s>=950?"S":s>=850?"A":s>=700?"B":"C")+"　乗り心地 "+Math.max(0,100-st.comfortHits*5)+"%";
+    { const r=bdSummary(); if(r){ $("finish-text").textContent+="\nダイヤ運行: 定時点 "+r.dia+" / 1000（"+r.g+"）・定刻どおりの到着 "+r.ok+"/"+r.n+" 停留所・最大遅れ "+r.late+" 秒"+(r.passed?"・通過 "+r.passed+" 停留所":"")+(r.early?"・早発 "+r.early+" 回":"");
+        const R2=Prefs.record("dia:bus", r.dia); setTimeout(()=>{ if(R2.newBest && R2.n>1) $("finish-text").textContent+="\nダイヤ自己ベスト更新！"; }, 0); } }
     $("finish-overlay").classList.add("on"); $("turnback").style.display="none";
     busAnn("terminal");
   }
@@ -2858,6 +2909,7 @@ const Bus = (() => {
     st.doorT += ((st.doors?1:0)-st.doorT)*Math.min(1,dt*3); setBusDoors(model, st.doorT);
     if(st.doors && Math.abs(C.v)>0.2){ C.v*=0.9; if(performance.now()-st.lastWarn>2500){ st.lastWarn=performance.now(); busSay("扉が開いています。閉めてから発車してください。"); } }
     if(st.doors && st.atStop>=0) st.dwell+=dt;
+    bdTick(dt, C.v);
     // 経路上の位置（近傍だけ探す）
     let best=1e18, bi=st.idx;
     for(let k=Math.max(0,st.idx-15); k<Math.min(P.n-1, st.idx+80); k++){ const dx=P.P[k*3]-C.x, dz=P.P[k*3+2]-C.z, d=dx*dx+dz*dz; if(d<best){ best=d; bi=k; } }
@@ -2891,7 +2943,7 @@ const Bus = (() => {
       $("bus-gmark").style.left = (50 - Math.max(-15, Math.min(15, z ? z.along : ds)) / 15 * 50) + "%";
       // 通過判定
       if(ds < -12 && !st.doors){
-        if(need){ st.score=Math.max(0, st.score-40); busSay(s.name+" を通過してしまいました（-40点）。"); }
+        if(need){ st.score=Math.max(0, st.score-40); bdPass(i); busSay(s.name+" を通過してしまいました（-40点・ダイヤ -"+Dia.cfg.PASS_PEN+"点）。"); }
         else busSay(s.name+" は乗り降りが無いので通過しました。");
         st.pax -= 0; st.waiting[i]=0; placePeople(); st.stopI=Math.min(D.stops.length-1,i+1); st.req=false; prepareNext(); setTimeout(()=>busAnn("next_"+st.stopI), 800); hudStops();
       }
@@ -2936,7 +2988,7 @@ const Bus = (() => {
     const q=pathPt(P,s), t=pathTan(P,s); st.idx=Math.max(0,bi-2); return {x:q.x, z:q.z, yaw:Math.atan2(t.x,t.z)};
   }
   function onRoute(){ return !st.off; }
-  return { init, begin, end, tick, doorKey, nearestOnRoute, onRoute, get active(){ return active; }, get data(){ return D; }, st, setLimit:(v)=>{ st.lim=v; } };
+  return { init, begin, end, tick, doorKey, nearestOnRoute, onRoute, bd, bdSummary, bdBuild, get active(){ return active; }, get data(){ return D; }, st, setLimit:(v)=>{ st.lim=v; } };
 })();
 
 /* 放送文（バス）。読み仮名は tts に */
@@ -5671,7 +5723,7 @@ const Prefs = (() => {
     const el = document.getElementById("records"); if(!el) return;
     const parts = [];
     for(const [k, r] of Object.entries(st.rec)){
-      const name = k === "bus" ? "バス 西大寺線" : k.startsWith("dia:") ? "ダイヤ運行 " + (S.routes && S.routes[k.slice(4)] ? S.routes[k.slice(4)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k.slice(4)) : (S.routes && S.routes[k.slice(5)] ? S.routes[k.slice(5)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k);
+      const name = k === "bus" ? "バス 西大寺線" : k === "dia:bus" ? "ダイヤ運行 バス 西大寺線" : k.startsWith("dia:") ? "ダイヤ運行 " + (S.routes && S.routes[k.slice(4)] ? S.routes[k.slice(4)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k.slice(4)) : (S.routes && S.routes[k.slice(5)] ? S.routes[k.slice(5)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k);
       parts.push(name + " 最高 " + r.best + " 点（" + RANK(k, r.best) + "）・" + r.n + " 回");
     }
     el.textContent = parts.length ? "これまでの記録（このブラウザ）: " + parts.join(" ／ ") : "";
@@ -5866,7 +5918,7 @@ function loop(now){
 }
 requestAnimationFrame(loop);
 loadAll().catch(e=>{ console.error(e); $("start-label").textContent="読み込みに失敗しました: "+e.message; });
-window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
+window.__scene = scene; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap;   // v29: 試験用
 window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
 })();
