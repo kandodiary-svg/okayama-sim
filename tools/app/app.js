@@ -2370,7 +2370,7 @@ const Traffic = (()=>{
       if(avoidView){ const v=new THREE.Vector3(p.x-camera.position.x, 0, p.z-camera.position.z); const f=new THREE.Vector3(); camera.getWorldDirection(f); f.y=0; if(d<320 && v.normalize().dot(f.normalize())>0.2) continue; }
       if(Obs.hit(p.x,p.z,7,null,null,p.y)) continue;
       if(cars.some(o=>o!==c && o.x!==undefined && Math.hypot(o.x-p.x,o.z-p.z)<9)) continue;
-      const T=pickType(); c.type=T; c.plan=[seg.i]; c.s=s; c.v=Math.min(seg.v/3.6*0.7, nearSig?1.5:8); c.passedG=undefined; c.passedT=0; c.stopT=0; c.v0=0.72+Math.random()*0.18; c.dead=false; c.deadT=0; c.wait=0; c.ghost=0; c.blockedBy=null; c.hold=null;
+      const T=pickType(); c.type=T; c.plan=[seg.i]; c.s=s; c.v=Math.min(seg.v/3.6*0.7, nearSig?1.5:8); c.passedG=undefined; c.passedT=0; c.stopT=0; c.v0=0.72+Math.random()*0.18; c.dead=false; c.deadT=0; c.wait=0; c.ghost=0; c.blockedBy=null; c.hold=null; c.honkT=0; c.honkDly=0; c.jamT=0;
       c.color=new THREE.Color(T.name==="bus" ? ["#f3efe2","#e9eef2","#f2e7cf"][Math.floor(Math.random()*3)] : T.name==="taxi" ? (Math.random()<0.8?"#1d2440":"#1c1d20") : T.name==="taxi2" ? (Math.random()<0.5?"#e9d23c":"#f2f2ef") : (T.name==="van"||T.name==="keitruck") ? (Math.random()<0.85?"#f2f2f0":paint()) : (T.name==="truck"||T.name==="truck4") ? ["#f2f2f0","#f2f2f0","#2c5d9a","#3a8a4a","#d9d9d6"][Math.floor(Math.random()*5)] : paint());
       planAhead(c); pose(c); return true;
     }
@@ -2405,8 +2405,10 @@ const Traffic = (()=>{
     for(const c of cars){
       if(!c.type) continue;
       const seg=segs[c.plan[0]]; const hl=c.type.l/2;
+      // v41.8: クラクション（利用者）を聞いた車。少し間をおいて（反応時間）から、譲り合い待ち・歩行者待ちを解いて前へ進む（赤信号は守る）
+      if(c.honkT>0){ c.honkT-=dt; if(c.honkDly>0) c.honkDly-=dt; } const hk = c.honkT>0 && !(c.honkDly>0);
       let vlim = (seg.lane ? seg.v : Math.min(segs[segs[c.plan[0]].next[0]].v, seg.v)) / 3.6 * c.v0;
-      let gap=1e9;
+      let gap=1e9, gsrc=0, sigHold=false, jw=null;   // sigHold: 信号待ち  jw: 譲り合いで待っている相手
       // 前方の曲がり（接続の制限速度）
       let acc=seg.P.len-c.s;
       for(let i=1;i<c.plan.length && acc<80;i++){ const q=segs[c.plan[i]]; if(!q.lane){ const vc=q.v/3.6; vlim=Math.min(vlim, Math.sqrt(vc*vc+2*2.0*Math.max(0,acc-hl))); } acc+=q.P.len; }
@@ -2418,10 +2420,12 @@ const Traffic = (()=>{
         if(q.lane && q.sig){ const d=base+q.sig.s-hl;
           if(d<=-0.3 && d>-6){ c.passedG=q.sig.g; c.passedT=simT; }
           if(d>-0.3 && !(c.passedG===q.sig.g && simT-c.passedT<15)){ const st=phaseState(q.sig.g, q.sig.ph, simT);
-            if(st===2 || (st===1 && d > c.v*c.v/2/3.5)) { gap=Math.min(gap, d); break; } } }
+            if(st===2 || (st===1 && d > c.v*c.v/2/3.5)) { if(d<gap){ gap=d; gsrc=1; } sigHold=true; break; } } }
         // 信号の無い交差点: 空くまで車線の終わりで待つ
         if(q.lane && i+1<c.plan.length){ const J=jnode.get(q.node);
-          if(J){ const d=base+q.P.len-hl; if(d<18){ if(J.owner && J.owner!==c && J.from!==q.i && simT-J.t<5){ if(d>-0.5) gap=Math.min(gap, d); } else if(d<6){ J.owner=c; J.from=q.i; J.t=simT; } } } }
+          if(J){ const d=base+q.P.len-hl; if(d<18){ if(!hk && !(c.ghost>0) && J.owner && J.owner!==c && J.from!==q.i && simT-J.t<5){ if(d>-0.5){ if(d<gap){ gap=d; gsrc=2; } jw=J.owner; } }
+            // 止まったままの持ち主は、場所取りの時刻を更新しない（5 秒で他の車に譲る＝交差点どうしの待ち合いで固まらない）
+            else if(d<6){ if(J.owner!==c || J.from!==q.i || c.v>0.3){ J.owner=c; J.from=q.i; J.t=simT; } } } } }
         acc += i===0 ? q.P.len-c.s : q.P.len;
       }
       // 進路上の障害物（車・電車・プレイヤー）
@@ -2429,23 +2433,29 @@ const Traffic = (()=>{
       const self=c, pr=prio(c);
       // 相手も自分を待っているときは、優先度の低い方が待つ（電車に対しては車が先に抜ける＝線路上に居座らない）
       const e0r=(q)=>0.85;
-      const skip=(o)=> c.ghost>0 && o.type ? true : o.leg ? o.blockedBy===c : (o.type && (
+      let pedSk=false;
+      const skip=(o)=> c.ghost>0 && o.type ? true : o.leg ? o.blockedBy===c : (hk && o.ped && ((o.x-c.x)*c.dx+(o.z-c.z)*c.dz) > hl+2.2) ? (pedSk=true) : (o.type && (
         // 対向車（向きが逆）は、進路の中心から 1.2m 以内に車体の中心がある時だけ（狭い道のすれ違いで止まらない）
         ((o.dx*c.dx+o.dz*c.dz) < -0.5 && Math.hypot(o.x-_q.x, o.z-_q.z) > 1.2 + o.type.l*0.5) ||
         (o.blockedBy===c && (prio(o)<pr || (prio(o)===pr && o.id>c.id)))));
       c.blockedBy=null;
-      for(let d=0.6; d<=look; d+=1.8){ aheadPt(c, hl+d, _q); const e=Obs.hit(_q.x,_q.z, e0r(_q), self,skip,_q.y); if(e){ gap=Math.min(gap, d-0.4-e.r*0.3); c.blockedBy=e.o; break; } }
+      for(let d=0.6; d<=look; d+=1.8){ aheadPt(c, hl+d, _q); const e=Obs.hit(_q.x,_q.z, e0r(_q), self,skip,_q.y); if(e){ const g_=d-0.4-e.r*0.3; if(g_<gap){ gap=g_; gsrc=e.o.ped?3:e.o.type?4:e.o.leg?5:6; } c.blockedBy=e.o; break; } }
+      if(!c.blockedBy && jw && jw.type) c.blockedBy=jw;   // 交差点の持ち主待ち（クラクションの伝言・待ち合い輪の検出に使う）
+      if(pedSk) vlim=Math.min(vlim, 2.0);   // 歩行者が前にいるときは、人をよけさせながら徐行で進む
+      // 前がつかえているなら、その前の車にもクラクションを伝える（先頭の車から順に動き出す）
+      if(c.honkT>0 && c.blockedBy && c.blockedBy.type && !(c.blockedBy.honkT>c.honkT-0.5)){ c.blockedBy.honkT=c.honkT; c.blockedBy.honkDly=0.4+Math.random()*0.8; }
       // 交差点の先が詰まっていたら、交差点に入らず手前で待つ（交差点内で止まって横の流れをふさがない）
-      if(c.plan.length>=3 && seg.lane){ const cn=segs[c.plan[1]], ex=segs[c.plan[2]]; if(cn && !cn.lane && ex){
+      if(c.plan.length>=3 && seg.lane && !(c.ghost>0)){ const cn=segs[c.plan[1]], ex=segs[c.plan[2]]; if(cn && !cn.lane && ex){
           const dEnd=seg.P.len-c.s-hl; if(dEnd<14 && dEnd>-0.5){ pathPt(ex.P, Math.min(ex.P.len, c.type.l+2.5), _q);
-            const e=Obs.hit(_q.x,_q.z,1.4,self,(o)=>!o.type || o===c || o.v>1.5,_q.y); if(e){ gap=Math.min(gap, dEnd); if(!c.blockedBy) c.blockedBy=e.o; } } } }
+            const e=Obs.hit(_q.x,_q.z,1.4,self,(o)=>!o.type || o===c || o.v>1.5,_q.y); if(e){ if(dEnd<gap){ gap=dEnd; gsrc=7; } if(!c.blockedBy) c.blockedBy=e.o; } } } }
       // 道の終わり（行き止まり）では手前で止まる
-      if(c.endAhead){ let rem=segs[c.plan[0]].P.len-c.s; for(let i=1;i<c.plan.length;i++) rem+=segs[c.plan[i]].P.len; gap=Math.min(gap, rem-hl-1); }
+      if(c.endAhead){ let rem=segs[c.plan[0]].P.len-c.s; for(let i=1;i<c.plan.length;i++) rem+=segs[c.plan[i]].P.len; { const g_=rem-hl-1; if(g_<gap){ gap=g_; gsrc=8; } } }
       // 利用者の車・バス: 進路の前方（左右 3.2m・扇形）にいれば止まる（割り込み・横切りにも対応）
       if(PLAYER_POS.on && Math.hypot(PLAYER_POS.x-c.x, PLAYER_POS.z-c.z)<45){
         for(const q of PLAYER_POS.pts){ const px=q[0]-c.x, pz=q[1]-c.z, fwd=px*c.dx+pz*c.dz, lat=Math.abs(px*c.dz-pz*c.dx);
           // 自分の車線の幅（左右 1.1m＋相手の半幅）に入っていれば、その手前で止まる
-          if(fwd>0 && fwd<40 && lat<1.1+PLAYER_POS.r) gap=Math.min(gap, fwd-hl-PLAYER_POS.r-1.5); } }
+          if(fwd>0 && fwd<40 && lat<1.1+PLAYER_POS.r){ const g_=fwd-hl-PLAYER_POS.r-1.5; if(g_<gap){ gap=g_; gsrc=9; } } } }
+      c.gsrc = gap<8 ? gsrc : 0;   // 何で止まっているか（1 信号 2 交差点の持ち主 3 歩行者 4 車 5 電車 6 他 7 出口がつまっている 8 行き止まり 9 利用者）
       // 安全運転: 車間は 3m＋速度×1.5秒、加速は穏やか
       const vt=Math.min(vlim, Math.sqrt(Math.max(0, 2*2.5*Math.max(0,gap-3.0-c.v*1.5))));
       const a = vt>c.v ? Math.min(1.3, (vt-c.v)*0.9) : Math.max(-6, (vt-c.v)*2.6);
@@ -2456,7 +2466,10 @@ const Traffic = (()=>{
       let cyc=false; if(c.v<0.2 && c.blockedBy && c.blockedBy.type){ let o=c.blockedBy; for(let k=0;k<8 && o && o.type;k++){ if(o===c){ cyc=true; break; } o=o.blockedBy; }
         if(Math.hypot(c.blockedBy.x-c.x, c.blockedBy.z-c.z)<2.5) cyc=true; }
       const nearP = PLAYER_POS.on && Math.hypot(PLAYER_POS.x-c.x, PLAYER_POS.z-c.z) < 30;
-      if(cyc && !nearP){ c.wait+=dt; if(c.wait>4){ c.ghost=2.5; c.wait=0; } } else c.wait=Math.max(0,c.wait-dt);
+      if(cyc && (!nearP || hk)){ c.wait+=dt; if(c.wait>(hk?1.5:4)){ c.ghost=hk?2.0:2.5; c.wait=0; } } else c.wait=Math.max(0,c.wait-dt);
+      // 信号待ちでもないのに 25 秒以上動けない車（交差点どうしの待ち合い・出口待ちの輪）は、3 秒だけ他の車を無視して抜ける。利用者のそばでは 45 秒待ってから。
+      c.jamT = (c.v<0.2 && !sigHold) ? (c.jamT||0)+dt : 0;
+      if(c.jamT>(nearP?45:25) && !(c.ghost>0)){ c.ghost=3.0; c.jamT=Math.min(c.jamT,10); }
       // 長く止まったまま（信号待ちではない）の車は入れ替える（見えていない所で）
       c.stopT = c.v<0.3 ? (c.stopT||0)+dt : 0;
       if(c.stopT>35 && !inView(c.x,c.z)) { c.dead=true; c.deadT=99; }
@@ -2484,6 +2497,18 @@ const Traffic = (()=>{
     for(const T of TYPES){ const m=meshes[T.name]; m.count=cnt[T.name]; m.instanceMatrix.needsUpdate=true; if(m.instanceColor) m.instanceColor.needsUpdate=true; }
     meshes.tail.count=tc; meshes.tail.instanceMatrix.needsUpdate=true; if(meshes.tail.instanceColor) meshes.tail.instanceColor.needsUpdate=true;
   }
+  /* v41.8: 利用者のクラクション。前方（左右 4.5m＋距離×0.12 の扇形・55m 以内）で、同じ向きに止まっている・遅い車が聞く。
+     対向車・横切る車は対象外。赤信号で止まっている車は動かない（update 側で信号は守る） */
+  function honk(x, z, fx, fz){
+    let n=0;
+    for(const c of cars){ if(!c.type) continue;
+      const px=c.x-x, pz=c.z-z, fwd=px*fx+pz*fz; if(fwd<-2 || fwd>55) continue;
+      const lat=Math.abs(px*fz-pz*fx); if(lat>4.5+fwd*0.12) continue;
+      if(c.dx*fx+c.dz*fz < 0.3) continue;
+      if(c.v>3.0 && !c.blockedBy) continue;        // 普通に走っている車には関係ない
+      c.honkT=8; c.honkDly=0.5+Math.random()*1.0; n++; }
+    return n;
+  }
   function reset(){ cars.length=0; if(jnode) for(const J of jnode.values()) J.owner=null; }
   /* プレイヤーの車の出発点: 指定点に近い、指定方向の車線 */
   function startPose(x, z, dirx, dirz){
@@ -2505,7 +2530,7 @@ const Traffic = (()=>{
   }
   // 街灯の位置（車線の左 3.2m・高さ 8m・30m おき）
   function segsForLamps(){ const out=[]; for(const g of segs){ if(!g.lane) continue; for(let s=10; s<g.P.len; s+=30){ const q=pathPt(g.P,s), t=pathTan(g.P,s); out.push(q.x+t.z*3.2, q.y+8.0, q.z-t.x*3.2); } } return out; }
-  return {init, update, register, reset, startPose, nearestLane, segsForLamps, get cars(){ return cars; }, get ready(){ return ready; }, get segs(){ return segs; }, get jnode(){ return jnode; }};
+  return {init, update, register, reset, startPose, nearestLane, segsForLamps, honk, get cars(){ return cars; }, get ready(){ return ready; }, get segs(){ return segs; }, get jnode(){ return jnode; }};
 })();
 /* ================= バスモード（v11）: 両備バス 西大寺線 岡山駅 → 天満屋 → 県庁前 → 東山 =================
    経路: data/bus.json（OSM の道路・一方通行・停留所の標柱、晴れバスナビの停車順から作成）
@@ -4127,6 +4152,8 @@ const Car = (() => {
   function kindAt(x, z, yref) { if (ext) { const yr = yref === undefined ? C.h : yref; const r = ext.road(x, z, yr); if (r === r) return 1; if (!inG(x, z)) return 0; } const k = cell(x, z); if (k < 0) return 9;
     if (G.UM && yref !== undefined) { const u = G.UM.get(k); if (u !== undefined && Math.abs(yref * 100 - G.UH[u]) < Math.abs(yref * 100 - G.H[k])) return G.UK[u]; }
     return G.K[k]; }
+  // v41.8: addBlock で足した壁を外す（配送センターの倉庫など、ミッションの間だけ置く施設用。元は空き地だった所だけに使う）
+  function clearBlock(x, z, r) { if (!G || !G.B) return; for (let dz = -r; dz <= r; dz += 1) for (let dx = -r; dx <= r; dx += 1) { const i = Math.floor((x + dx - G.x0) / G.bstep), j = Math.floor((z + dz - G.z0) / G.bstep); if (i < 0 || j < 0 || i >= G.bnx || j >= G.bnz) continue; G.B[j * G.brow + (i >> 3)] &= ~(1 << (7 - (i & 7))); } }
   // v23: 橋脚などを衝突判定（1m のビット列）に加える
   function addBlock(x, z, r) { if (!G || !G.B) return; for (let dz = -r; dz <= r; dz += 1) for (let dx = -r; dx <= r; dx += 1) { const i = Math.floor((x + dx - G.x0) / G.bstep), j = Math.floor((z + dz - G.z0) / G.bstep); if (i < 0 || j < 0 || i >= G.bnx || j >= G.bnz) continue; G.B[j * G.brow + (i >> 3)] |= (1 << (7 - (i & 7))); } }
 
@@ -4339,7 +4366,7 @@ const Car = (() => {
     if (!own && ext) { extBody = ext; car.add(ext); }
   }
   function setExt(e) { ext = e; }
-  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, blocked, addBlock, setProfile, setExt, inG, get G() { return G; }, get P() { return P; } };
+  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, blocked, addBlock, clearBlock, setProfile, setExt, inG, get G() { return G; }, get P() { return P; } };
 })();
 
 /* ---------------- 運転 ---------------- */
@@ -4547,8 +4574,17 @@ document.addEventListener("keydown",e=>{ if((S.mode==="car"||S.mode==="bus") && 
 document.addEventListener("keydown",e=>{ if(e.repeat) return; if(e.key==="n"||e.key==="N"){ Env.cycle(); } else if(e.key==="m"||e.key==="M"){ Env.set(null, !Env.st.rain); } });
 document.querySelectorAll(".time-opt").forEach(b=>b.addEventListener("click",()=>Env.set(b.dataset.time)));
 document.querySelectorAll(".rain-opt").forEach(b=>b.addEventListener("click",()=>Env.set(null, !Env.st.rain)));
-document.addEventListener("keydown",e=>{ if(S.mode==="car" && Car.C.active && !e.repeat && (e.key==="h"||e.key==="H")){ Snd.horn(); return; } }, true);
-document.addEventListener("keydown",e=>{ if(S.mode==="bus" && Bus.active && !e.repeat){ if(e.key==="f"||e.key==="F"){ Bus.doorKey(); return; } if(e.key==="h"||e.key==="H"){ Snd.horn(); return; } } }, true);
+/* v41.8: クラクション。音に加えて、前方の止まっている車・道をふさぐ人に聞こえる（車・バス・路面電車・JR 共通） */
+function doHorn(){
+  Snd.horn();
+  let x, z, fx, fz;
+  if((S.mode==="car"||S.mode==="bus") && Car.C.active){ const C=Car.C; fx=Math.sin(C.yaw); fz=Math.cos(C.yaw); x=C.x+fx*Car.P.len/2; z=C.z+fz*Car.P.len/2; }
+  else if(S.track && S.running){ const p=pointAt(S.pos), q=pointAt(S.pos+8); fx=q.x-p.x; fz=q.z-p.z; const L=Math.hypot(fx,fz)||1; fx/=L; fz/=L; x=p.x; z=p.z; }
+  else return;
+  if(Traffic.ready) Traffic.honk(x, z, fx, fz); if(Peds.ready) Peds.honk(x, z, fx, fz);
+}
+document.addEventListener("keydown",e=>{ if(S.mode==="car" && Car.C.active && !e.repeat && (e.key==="h"||e.key==="H")){ doHorn(); return; } }, true);
+document.addEventListener("keydown",e=>{ if(S.mode==="bus" && Bus.active && !e.repeat){ if(e.key==="f"||e.key==="F"){ Bus.doorKey(); return; } if(e.key==="h"||e.key==="H"){ doHorn(); return; } } }, true);
 $("bus-doorbtn").addEventListener("click",()=>Bus.doorKey());
 $("rescue-btn").addEventListener("click",rescue);
 document.addEventListener("keydown",e=>{ if(!S.running || e.repeat) return; switch(e.key){
@@ -4557,9 +4593,9 @@ document.addEventListener("keydown",e=>{ if(!S.running || e.repeat) return; swit
   case "ArrowDown": e.preventDefault(); setBV(Math.min(S.bv>=NB()+1?NB()+1:NB(), S.bv+1)); break; case "ArrowUp": e.preventDefault(); setBV(S.bv-1); break;
   case "c": case "C": setNotch(0); break; case "d": case "D": doorAction(); break;
   case " ": e.preventDefault(); emergency(); break; case "v": case "V": toggleView(); break;
-  case "h": case "H": Snd.horn(); break; } });
+  case "h": case "H": doHorn(); break; } });
 document.querySelectorAll(".touch button").forEach(b=>b.addEventListener("click",()=>{ if(!S.running) return; const a=b.dataset.action;
-  if(a==="power")powerUp(); else if(a==="brake")brakeUp(); else if(a==="coast")setNotch(0); else if(a==="door")doorAction(); else if(a==="emergency")emergency(); else if(a==="horn")Snd.horn(); }));
+  if(a==="power")powerUp(); else if(a==="brake")brakeUp(); else if(a==="coast")setNotch(0); else if(a==="door")doorAction(); else if(a==="emergency")emergency(); else if(a==="horn")doHorn(); }));
 $("view-toggle").addEventListener("click",toggleView);
 $("help-btn").addEventListener("click",()=>$("help-overlay").classList.add("on"));
 $("src-btn").addEventListener("click",()=>$("src-overlay").classList.add("on"));
@@ -4905,7 +4941,7 @@ const MENU = {
   bus: { ic:"bus", title:"路線", go:{ mission:"ダイヤ運行をはじめる", free:"運転をはじめる" },
     play:{ mission:["ダイヤ運行","停留所ごとの定刻どおりに走り、遅れ・早発を採点します"], free:["自由運転","時刻も採点もなし。好きなように走ります"] } },
   car: { ic:"car", go:{ mission:"配達をはじめる", free:"走り出す" },
-    play:{ mission:["配達ミッション","荷物やお客さんを運びます。時間と運転の丁寧さで採点"], free:["自由に走る","市街地でも山陽自動車道でも、好きな所へ"] } },
+    play:{ mission:["配達ミッション","駐車場から出発して荷物やお客さんを運びます。行き先は毎回ちがう。時間と運転の丁寧さで採点"], free:["自由に走る","市街地でも山陽自動車道でも、好きな所へ"] } },
   heli:{ ic:"heli", go:{ mission:"ミッションに出発", free:"飛び立つ" },
     play:{ mission:["空のミッション","荷物や患者さんを運ぶ・名所をめぐる。着陸も採点"], free:["自由に飛ぶ","出発地を選んで、好きなように飛びます"] } },
 };
@@ -5003,7 +5039,7 @@ const Stuck=(()=>{ let t=0, hits=0, lastHit=0, off=0;
     const C=Car.C;
     if(C.hitT>1.1 && performance.now()-lastHit>900){ lastHit=performance.now(); hits++; }
     if(Math.abs(C.v)<0.4 && (C.thr||0)>0.3) t+=dt; else t=Math.max(0,t-dt*0.5);
-    const k=Car.kindAt ? Car.kindAt(C.x,C.z,C.h) : 1; if(k!==1 && !(S.mode==="bus" && Bus.active && Bus.onRoute())) off+=dt; else off=0;
+    const k=Car.kindAt ? Car.kindAt(C.x,C.z,C.h) : 1; if(k!==1 && !(S.mode==="bus" && Bus.active && Bus.onRoute()) && !Quest.inYard(C.x,C.z)) off+=dt; else off=0;
     const stuck = t>2.5 || hits>=3 || off>5;
     $("rescue-btn").classList.toggle("hint", stuck);
     if(stuck && !C._stuckMsg){ C._stuckMsg=true; C.msg="動けないときは「道路に戻る」（T キー）で近くの道路へ戻れます"; C.msgT=5; }
@@ -5197,7 +5233,8 @@ const Peds = (() => {
     return false;
   }
   /* 横位置（進む向きの右が +）: 細い道は人は右端・自転車は左端、歩道・横断歩道は幅の中でばらける */
-  function latOf(o, e){ if(e.k === 5) return o.bike ? -e.lat * (0.8 + 0.2 * Math.abs(o.side)) : e.lat * (0.8 + 0.2 * Math.abs(o.side)); return o.side * e.lat; }
+  function latOf(o, e){ const hy = o.hurryT > 0 ? 1.18 : 1;   // v41.8: クラクションを聞いた人は道の端へ寄る
+    if(e.k === 5) return o.bike ? -e.lat * (0.8 + 0.2 * Math.abs(o.side)) * hy : e.lat * (0.8 + 0.2 * Math.abs(o.side)) * hy; return o.side * e.lat; }
   function chooseNext(o, node){
     const L = ADJ[node]; let best = -1, sum = 0; const cand = [];
     for(const ei of L){ if(ei === o.e && L.length > 1) continue; const e = E[ei]; if(o.bike && (!e.bike || e.k === 4 || e.k === 2)) continue;
@@ -5206,11 +5243,16 @@ const Peds = (() => {
     let r = Math.random() * sum; for(const [ei, w] of cand){ if((r -= w) <= 0){ best = ei; break; } } return best < 0 ? cand[0][0] : best;
   }
   // 横断してよいか（辺 e を node 側から渡り始める時）
-  function mayCross(e, t){
+  function mayCross(e, t, w){
     if(e.k !== 1) return true;
     if(e.g >= 0) return pedState(e.g, e.ph, t) === 0;
-    const m = at(e, e.L / 2, _p), R = Math.max(9, e.L / 2 + 5); let h = Obs.hit(m.x, m.z, R, null, (o) => !!(o && o.ped));
-    if(!h) h = Obs.hit(m.x, m.z, R + 14, null, (o) => !(o && o.type && o.v > 2.5));   // 速い車が近づいている間は渡らない
+    // v41.8: 信号のない横断歩道。渡る線の上に車体（止まっている車・自転車の上）がなければ渡る。
+    //        （以前は横断歩道の中心から 9m 以内に止まった車がいると渡れず、歩行者を待って止まった車と、車を待つ歩行者が、お互いに待って動かなくなっていた）
+    //        12 秒以上渡れずにいる人・クラクションを聞いた人は、止まっている車の横でも渡る（車を待つ歩行者と、歩行者を待つ車の行き詰まり対策）
+    const m = at(e, e.L / 2, _p), R = Math.max(9, e.L / 2 + 5); let h = null, force = !!(w && (w.hurryT > 0 || w.wt > 12));
+    const nS = Math.max(2, Math.ceil(e.L / 1.5)); for(let i = 0; i <= nS && !h && !force; i++){ const q = at(e, e.L * i / nS, _p); h = Obs.hit(q.x, q.z, 0.5, null, (o) => !!(o && o.ped)); }
+    const mm = at(e, e.L / 2, _p), mx = mm.x, mz = mm.z;
+    if(!h) h = Obs.hit(mx, mz, R + 14, null, (o) => !(o && o.type && o.v > 2.5));   // 速い車が近づいている間は渡らない
     return !h;
   }
   /* v35: 横断歩道の現示を、車線側（信号の停止線）から決め直す。
@@ -5264,20 +5306,22 @@ const Peds = (() => {
         // 立ち止まっている人
         if(o.stand > 0){ o.stand -= dt; o.v = 0; }
         else if(o.wait > 0){ o.wait -= dt; o.v = 0;
-          const nxt = E[o.nextE]; if(nxt && o.wait <= 0 && !mayCross(nxt, t)) o.wait = 0.5; }
-        else o.v += (o.v0 * (e.k === 1 && e.g >= 0 && pedState(e.g, e.ph, t) > 0 ? 1.35 : 1) - o.v) * Math.min(1, dt * 2);
+          const nxt = E[o.nextE]; if(nxt && o.wait <= 0 && !mayCross(nxt, t, o)) o.wait = 0.5; }
+        else o.v += (o.v0 * (e.k === 1 && e.g >= 0 && pedState(e.g, e.ph, t) > 0 ? 1.35 : 1) * (o.hurryT > 0 ? (o.bike ? 1.25 : 1.7) : 1) - o.v) * Math.min(1, dt * 2);
+        o.wt = (o.nextE >= 0 && o.v === 0 && !(o.stand > 0)) ? (o.wt || 0) + dt : 0;   // 横断歩道の手前で待っている時間
+        if(o.hurryT > 0) o.hurryT -= dt;
         if(o.v > 0 && o.wait <= 0 && o.stand <= 0){
           o.s += o.dir * o.v * dt;
           if(o.s < 0 || o.s > e.L){
             const node = o.s < 0 ? e.a : e.b, over = o.s < 0 ? -o.s : o.s - e.L;
             const ni = chooseNext(o, node), ne = E[ni];
-            if(ne.k === 1 && !mayCross(ne, t)){ o.s = o.s < 0 ? 0 : e.L; o.nextE = ni; o.wait = 0.5; o.v = 0; o.waitSpot = (o.id % 5) * 0.45; }
+            if(ne.k === 1 && !mayCross(ne, t, o)){ o.s = o.s < 0 ? 0 : e.L; o.nextE = ni; o.wait = 0.5; o.v = 0; o.waitSpot = (o.id % 5) * 0.45; }
             else { o.e = ni; e = ne; o.dir = ne.a === node ? 1 : -1; o.s = o.dir > 0 ? Math.min(ne.L, over) : Math.max(0, ne.L - over); o.nextE = -1; o.waitSpot = 0; }
           }
         } else if(o.wait <= 0 && o.nextE >= 0 && o.stand <= 0 && o.v === 0){
           // 待っていた横断歩道が青になった
           const node = o.s <= 0 ? e.a : e.b, ne = E[o.nextE];
-          if(ne && mayCross(ne, t)){ o.e = o.nextE; e = ne; o.dir = ne.a === node ? 1 : -1; o.s = o.dir > 0 ? 0 : ne.L; o.nextE = -1; o.waitSpot = 0; o.v = 0.3; }
+          if(ne && mayCross(ne, t, o)){ o.e = o.nextE; e = ne; o.dir = ne.a === node ? 1 : -1; o.s = o.dir > 0 ? 0 : ne.L; o.nextE = -1; o.waitSpot = 0; o.v = 0.3; }
         }
         // 位置
         at(e, o.s - o.dir * (o.waitSpot || 0), _p);
@@ -5347,7 +5391,16 @@ const Peds = (() => {
       sigMesh.setColorAt(i * 2, st === 2 ? PR : lampOff); sigMesh.setColorAt(i * 2 + 1, st === 0 || (st === 1 && blink) ? PG : lampOff); }
     sigMesh.instanceColor.needsUpdate = true;
   }
-  return { init, update, register, pedState, get peds(){ return peds; }, get bikes(){ return bikes; }, get ready(){ return ready; }, get E(){ return E; } };
+  /* v41.8: 利用者のクラクション。前方 40m・左右 5m＋距離×0.1 の扇形にいる人は、立ち止まりをやめて足早に・道の端へ寄る */
+  function honk(x, z, fx, fz){
+    let n = 0;
+    for(const L of [peds, bikes]) for(const o of L){ if(!o.on || o.x === undefined) continue;
+      const px = o.x - x, pz = o.z - z, fwd = px * fx + pz * fz; if(fwd < -2 || fwd > 40) continue;
+      if(Math.abs(px * fz - pz * fx) > 5 + fwd * 0.1) continue;
+      o.hurryT = 5; if(o.stand > 0) o.stand = 0; n++; }
+    return n;
+  }
+  return { init, update, register, honk, pedState, get peds(){ return peds; }, get bikes(){ return bikes; }, get ready(){ return ready; }, get E(){ return E; } };
 })();
 /* ---------------- JR の列車・線路・高架橋（v23） ----------------
    線形: data/jr.json（pipeline/jr.py。OSM の山陽新幹線・山陽本線・宇野線・津山線・吉備線の本線）。
@@ -6132,8 +6185,8 @@ const Quest = (() => {
   // 停止して行う地点（kind: load=積む・乗せる / drop=降ろす・届ける / pass=くぐる）
   const st_ = (k, kind, verb, o) => Object.assign({ key: k, kind, verb }, PL[k], o || {});
   const COURSES = [
-    { id: "heli_parcel", mode: "heli", name: "宅配ヘリ", star: 1, cargo: "荷物", start: "station", pod: 0xf08a1c,
-      blurb: "岡山駅で荷物を積んで、街の 3 か所へ着陸して届ける。",
+    { id: "heli_parcel", mode: "heli", name: "宅配ヘリ", star: 1, cargo: "荷物", start: "station", pod: 0xf08a1c, gen: "heli",
+      blurb: "岡山駅から飛び立ち、配送センターの敷地に着陸して荷物を積み、街の広場 3 か所へ届ける。毎回ちがう組み合わせ。",
       stops: [ st_("eki", "load", "荷物を積む", { r: 32 }), st_("tenmaya", "drop", "届ける", { r: 36 }), st_("kencho", "drop", "届ける", { r: 36 }), st_("castle", "drop", "届ける", { r: 42 }) ] },
     { id: "heli_rescue", mode: "heli", name: "急患搬送", star: 2, cargo: "患者さん", start: "castle", pod: 0xe9eef2, gentle: true,
       blurb: "後楽園で患者さんを乗せ、病院へ。時間との勝負 — でも着陸はそっと。",
@@ -6142,18 +6195,18 @@ const Quest = (() => {
       blurb: "空に浮かぶ輪をくぐって、岡山の名所を一周する。着陸は不要。",
       stops: [ st_("eki", "pass", "輪をくぐる", { r: 55, agl: 90 }), st_("orient", "pass", "輪をくぐる", { r: 55, agl: 110 }), st_("korakuen", "pass", "輪をくぐる", { r: 55, agl: 110 }),
                st_("castle", "pass", "輪をくぐる", { r: 55, agl: 120 }), st_("kencho", "pass", "輪をくぐる", { r: 55, agl: 110 }), st_("higashiyama", "pass", "輪をくぐる", { r: 55, agl: 110 }) ] },
-    { id: "car_taxi", mode: "car", veh: "sedan", name: "タクシー送迎", star: 1, cargo: "お客さん", comfortK: 5,
-      blurb: "お客さんを乗せて目的地へ。急発進・急ブレーキ・急ハンドルは減点。",
+    { id: "car_taxi", mode: "car", veh: "sedan", name: "タクシー送迎", star: 1, cargo: "お客さん", comfortK: 5, gen: "taxi",
+      blurb: "駐車場を出て、お客さんの家の前で乗せて送り届ける。毎回ちがう場所。急発進・急ブレーキ・急ハンドルは減点。",
       stops: [ st_("ekimae", "load", "お客さんを乗せる", { r: 13 }), st_("kencho", "drop", "お客さんを降ろす", { r: 13 }), st_("chugin", "load", "次のお客さんを乗せる", { r: 13 }), st_("higashiyama", "drop", "お客さんを降ろす", { r: 13 }) ] },
-    { id: "car_check", mode: "car", veh: "sedan", name: "街角チェックポイント", star: 1, cargo: "",
-      blurb: "道に置かれたチェックポイントを順に通過するタイムアタック。",
+    { id: "car_check", mode: "car", veh: "sedan", name: "街角チェックポイント", star: 1, cargo: "", gen: "check",
+      blurb: "駐車場を出て、幹線道路に置かれたチェックポイントを順に通過するタイムアタック。毎回ちがうコース。",
       stops: [ st_("nishikawa", "pass", "通過", { r: 14 }), st_("yanagawa", "pass", "通過", { r: 14 }), st_("jouge", "pass", "通過", { r: 14 }), st_("kenchodori", "pass", "通過", { r: 14 }),
                st_("tenmaya", "pass", "通過", { r: 14 }), st_("ntt", "pass", "通過", { r: 14 }), st_("ekimae", "pass", "通過", { r: 14 }) ] },
-    { id: "truck_parcel", mode: "car", veh: "truck", name: "宅配トラック", star: 1, cargo: "荷物", comfortK: 3,
-      blurb: "岡山駅前で荷物を積み、街なかの 4 か所へ届ける。",
+    { id: "truck_parcel", mode: "car", veh: "truck", name: "宅配トラック", star: 1, cargo: "荷物", comfortK: 3, gen: "truck",
+      blurb: "駐車場を出て、配送センターで荷物を積み、住宅街の路地や家の前へ 4〜6 件届ける。毎回ちがう配達先。",
       stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("yanagawa", "drop", "届ける", { r: 13 }), st_("ntt", "drop", "届ける", { r: 13 }), st_("tenmaya", "drop", "届ける", { r: 13 }), st_("chugin", "drop", "届ける", { r: 13 }) ] },
-    { id: "truck_far", mode: "car", veh: "truck", name: "長距離配達", star: 3, cargo: "荷物", comfortK: 3,
-      blurb: "電車通りを東へ。古京・東山・清輝橋まで、道を選んで配達する。",
+    { id: "truck_far", mode: "car", veh: "truck", name: "長距離配達", star: 3, cargo: "荷物", comfortK: 3, gen: "truckfar",
+      blurb: "配送センターで積み、市内の遠い住宅街 4 件へ。道を選んで効率よく回る。毎回ちがう配達先。",
       stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("kyoukyo", "drop", "届ける", { r: 13 }), st_("higashiyama", "drop", "届ける", { r: 13 }), st_("seikibashi", "drop", "届ける", { r: 13 }) ] },
   ];
   const Q = { on: false, done: false, def: null, i: 0, t: 0, hold: 0, loaded: false, hits: 0, pen: null, bonus: null, stops: [], parT: 0, lastHit: false, comfortT: 0, speedT: 0, tdSeen: 0, log: [], toastT: 0 };
@@ -6174,6 +6227,170 @@ const Quest = (() => {
       if(best) break;
     }
     return best || { x, z, ok: false };
+  }
+
+  /* ---- v41.8: 自動生成ミッション（配送センター・駐車場・路地・家の前）----
+     data/missions.json は tools/pipeline/mission_sites.py が、土地利用・建物・道路網から検出した「それらしい場所」。実在の配送センター・駐車場ではない。
+     開始のたびに 駐車場（出発）→ 配送センター（積み込み）→ 路地・家の前（配達）を組み合わせる。同じ組み合わせにならないよう、毎回乱数で選ぶ（もう一度は同じ内容）。 */
+  let SITES = null;
+  fetch("data/missions.json").then((r) => r.json()).then((j) => {
+    SITES = { towns: j.towns,
+      drop: j.drop.map((a) => ({ x: a[0], z: a[1], yaw: a[2], typ: a[3], town: a[4], rw: a[5] / 10, side: a[6], y: a[7] })),
+      depot: j.depot.map((a) => ({ bx: a[0], bz: a[1], ux: a[2], uz: a[3], dx: a[4], dz: a[5], gx: a[6], gz: a[7], town: a[8], y: a[10] })),
+      park: j.park.map((a) => ({ x: a[0], z: a[1], yaw: a[2], gx: a[3], gz: a[4], town: a[5], r: a[6], y: a[8] })),
+      heli: j.heli.map((a) => ({ x: a[0], z: a[1], r: a[2], town: a[3], y: a[4] })) };
+  }).catch(() => { SITES = null; });
+  const KJ = "〇一二三四五六七八九";
+  const town = (i) => { const n = (SITES && SITES.towns[i]) || "住宅街"; const m = /^(.*\D)(\d)$/.exec(n); return m ? m[1] + KJ[+m[2]] + "丁目" : n; };   // 「津島東4」→「津島東四丁目」
+  function rngOf(seed){ let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  const dd = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+  const choice = (arr, rnd) => arr[Math.floor(rnd() * arr.length)];
+  /* 駅前から近い順に重みを付けず、条件に合う地点から無作為に選ぶ。前の地点から遠すぎ・近すぎない・互いに 200m 以上離れた所を順につなぐ */
+  function chain(pool, start, n, lo, hi, rnd, alleyP){
+    const picks = []; let cur = start;
+    for(let k = 0; k < n; k++){
+      const far200 = (s) => picks.every((p) => dd(p, s) > 200);
+      let c = pool.filter((s) => { const q = dd(s, cur); return q > lo && q < hi && far200(s); });
+      if(!c.length) c = pool.filter((s) => { const q = dd(s, cur); return q > lo * 0.5 && q < hi * 1.6 && far200(s); });
+      if(!c.length) c = pool.filter(far200);
+      if(!c.length) break;
+      const c3 = c.filter((s) => !picks.some((p) => p.town === s.town)); if(c3.length >= 3) c = c3;   // なるべく別の町へ
+      if(alleyP !== undefined){ const want = rnd() < alleyP, c2 = c.filter((s) => (s.typ === 0) === want); if(c2.length) c = c2; }
+      const s = choice(c, rnd); picks.push(s); cur = s;
+    }
+    return picks;
+  }
+  /* 駐車場の中心から出入口まで、車幅（左右 1m）ぶん塞がれていないか */
+  const parkOk = (p) => { const L = Math.hypot(p.gx - p.x, p.gz - p.z) || 1, n = Math.max(2, Math.ceil(L)), nx = -(p.gz - p.z) / L, nz = (p.gx - p.x) / L;
+    for(let i = 0; i <= n; i++){ const x = p.x + (p.gx - p.x) * i / n, z = p.z + (p.gz - p.z) * i / n; for(const o of [-1, 0, 1]) if(Car.blocked(x + nx * o, z + nz * o)) return false; } return true; };
+  function genTruck(far, rnd){
+    const deps = SITES.depot.filter((s) => Math.hypot(s.bx, s.bz) < 5000);
+    for(let tries = 0; tries < 80 && deps.length; tries++){
+      const dep = choice(deps, rnd), dock = { x: dep.dx, z: dep.dz };
+      const parks = SITES.park.filter((p) => { const k = dd(p, dock); return k > 120 && k < 650 && p.r >= 6.5 && parkOk(p); });
+      if(!parks.length) continue;
+      const park = choice(parks, rnd), n = far ? 4 : 4 + Math.floor(rnd() * 2), rmin = far ? 1000 : 400, rmax = far ? 2200 : 1700;
+      const pool = SITES.drop.filter((s) => { const k = dd(s, dock); return s.rw >= 3.4 && k > rmin && k < rmax; });
+      if(pool.length < n * 6) continue;
+      const picks = chain(pool, dock, n, far ? 350 : 200, far ? 1000 : 900, rnd, 0.4);
+      if(picks.length >= n) return { dep, park, picks };
+    }
+    return null;
+  }
+  function genTaxi(rnd){
+    for(let tries = 0; tries < 80; tries++){
+      const pool = SITES.drop.filter((s) => Math.hypot(s.x, s.z) < 4200 && s.rw >= 3.6);
+      const park = choice(SITES.park.filter((p) => Math.hypot(p.x, p.z) < 4200 && p.r >= 6.5 && parkOk(p)), rnd); if(!park) return null;
+      const near = pool.filter((s) => dd(s, park) > 150 && dd(s, park) < 600); if(near.length < 5) continue;
+      const a = choice(near, rnd);
+      const b = chain(pool, a, 1, 500, 1300, rnd, 0.2)[0]; if(!b) continue;
+      const c = chain(pool.filter((s) => s !== a && s !== b), b, 1, 150, 600, rnd, 0.2)[0]; if(!c) continue;
+      const d = chain(pool.filter((s) => s !== a && s !== b && s !== c), c, 1, 500, 1300, rnd, 0.2)[0]; if(!d) continue;
+      if(tries < 50 && new Set([a, b, c, d].map((q) => q.town)).size < 4) continue;   // なるべく 4 か所とも別の町
+      return { park, picks: [a, b, c, d] };
+    }
+    return null;
+  }
+  let ARTS = null;
+  function arterials(){
+    if(ARTS) return ARTS; ARTS = [];
+    for(const g of Traffic.segs){ if(!g.lane || !(g.c === "p" || g.c === "t" || g.c === "s") || g.P.len < 60) continue;
+      for(let s = 30; s < g.P.len - 30; s += 70){ const q = pathPt(g.P, s); ARTS.push({ x: q.x, z: q.z, y: q.y, seg: g.i }); } }
+    return ARTS;
+  }
+  function genCheck(rnd){
+    const A = arterials().filter((s) => Math.hypot(s.x, s.z) < 3800); if(A.length < 50) return null;
+    for(let tries = 0; tries < 20; tries++){
+      const c0 = choice(A, rnd), picks = [];
+      const park = choice(SITES.park.filter((p) => dd(p, c0) > 150 && dd(p, c0) < 900 && p.r >= 6.5 && parkOk(p)), rnd); if(!park) continue;
+      for(let a = 0; a < 7; a++){ const ang = rnd() * 6.283, R0 = 200 + rnd() * 400, tx = c0.x + Math.cos(ang) * R0, tz = c0.z + Math.sin(ang) * R0;
+        let best = null, bd = 1e9; for(const s of A){ const q = Math.hypot(s.x - tx, s.z - tz); if(q < bd && picks.every((p) => dd(p, s) > 200)) { bd = q; best = s; } }
+        if(best) picks.push(best); }
+      if(picks.length < 6) continue;
+      // 近い順につなぐ（出発の駐車場から）
+      const out = []; let cur = park; const left = picks.slice();
+      while(left.length){ left.sort((u, v) => dd(u, cur) - dd(v, cur)); cur = left.shift(); out.push(cur); }
+      return { park, picks: out };
+    }
+    return null;
+  }
+  function genHeli(rnd){
+    const deps = SITES.depot.filter((s) => Math.hypot(s.bx, s.bz) < 4000);
+    for(let tries = 0; tries < 60 && deps.length; tries++){
+      const dep = choice(deps, rnd), dock = { x: dep.dx, z: dep.dz };
+      const pool = SITES.heli.filter((s) => { const k = dd(s, dock); return k > 700 && k < 3200 && dd(s, dep.bx === undefined ? dock : { x: dep.bx, z: dep.bz }) > 60; });
+      const picks = chain(pool, dock, 3, 500, 2600, rnd);
+      if(picks.length >= 3) return { dep, picks };
+    }
+    return null;
+  }
+  /* ---- 施設の 3D（配送センターの倉庫・駐車場・配達先の標識）---- */
+  const fac = { g: new THREE.Group(), blocks: [], yards: [] }; fac.g.visible = false; scene.add(fac.g);
+  const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+  function boxM(w, h, d, x, y, z, c, parent){ const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lam(c)); m.position.set(x, y, z); parent.add(m); return m; }
+  function planeM(w, d, x, y, z, c, parent){ const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshLambertMaterial({ color: c, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); parent.add(m); return m; }
+  function blockRect(cx, cz, ux, uz, hw, hd){   // 長方形（中心・奥行き方向・半幅・半奥行き）の範囲を、自分の車が通れない壁にする
+    const vx = -uz, vz = ux;
+    for(let a = -hw; a <= hw + 0.01; a += 1.8) for(let b = -hd; b <= hd + 0.01; b += 1.8){ const x = cx + vx * a + ux * b, z = cz + vz * a + uz * b; Car.addBlock(x, z, 1); fac.blocks.push([x, z]); }
+  }
+  function clearFac(){
+    for(const [x, z] of fac.blocks) Car.clearBlock(x, z, 1); fac.blocks.length = 0; fac.yards.length = 0;
+    while(fac.g.children.length){ const o = fac.g.children.pop(); o.traverse((q) => { if(q.geometry) q.geometry.dispose(); if(q.material){ if(q.material.map) q.material.map.dispose(); q.material.dispose(); } }); }
+    fac.g.visible = false;
+  }
+  function signTex(txt, bg, fg, w, h){
+    return canvasTex(w || 512, h || 96, (g, W, H) => { g.fillStyle = bg; g.fillRect(0, 0, W, H); g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 4; g.strokeRect(5, 5, W - 10, H - 10);
+      g.fillStyle = fg; g.font = "bold " + Math.round(H * 0.58) + "px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(txt, W / 2, H / 2 + 2); });
+  }
+  function buildDepot(dep){
+    const g = new THREE.Group(), y = dep.y + 0.03, yaw = Math.atan2(dep.ux, dep.uz);
+    g.position.set(dep.bx, y, dep.bz); g.rotation.y = yaw;
+    // 路面（アスファルト）と積み込み場所の枠
+    planeM(22, 15, 0, 0.02, -11.5, 0x5a5e63, g); planeM(9, 0.25, 0, 0.04, -7.2, 0xf1d54a, g); planeM(9, 0.25, 0, 0.04, -15.8, 0xf1d54a, g);
+    planeM(0.25, 8.6, -4.5, 0.04, -11.5, 0xf1d54a, g); planeM(0.25, 8.6, 4.5, 0.04, -11.5, 0xf1d54a, g);
+    // 倉庫（幅 16m・奥行き 8m・高さ 6m。手前の面に出入口 3 つ・看板）
+    boxM(16, 6, 8, 0, 3, 0, 0xdfe3e6, g); boxM(16.6, 0.4, 8.6, 0, 6.2, 0, 0x7d858c, g); boxM(16.05, 1.1, 8.05, 0, 0.55, 0, 0x4a5560, g);
+    for(const x of [-5, 0, 5]){ boxM(3.4, 3.6, 0.12, x, 1.9, -4.05, 0x2f4a6b, g); for(let k = 0; k < 5; k++) boxM(3.4, 0.05, 0.14, x, 0.5 + k * 0.7, -4.08, 0x24384f, g); }
+    boxM(15, 0.25, 3.2, 0, 4.1, -5.6, 0xb9c0c6, g);
+    const sg = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.7), new THREE.MeshBasicMaterial({ map: signTex("配送センター", "#12407a", "#ffffff", 768, 144) })); sg.position.set(0, 5.1, -4.13); sg.rotation.y = Math.PI; g.add(sg);
+    // 三角コーンと荷物のかご
+    for(const [x, z] of [[-6.2, -7.5], [6.2, -7.5], [-6.2, -15.5], [6.2, -15.5]]) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.55, 8), lam(0xff6a1a)); c.position.set(x, 0.28, z); g.add(c); }
+    for(const [x, z] of [[-7.4, -6.5], [-8.2, -6.5], [7.6, -6.2]]) boxM(0.9, 1.4, 0.7, x, 0.75, z, 0x9aa7b2, g);
+    // 看板柱（道路側から見える）: 門の方向へ 14m 先に小さな標識
+    const gx = dep.gx - dep.bx, gz = dep.gz - dep.bz;
+    fac.g.add(g); fac.g.visible = true;
+    blockRect(dep.bx, dep.bz, dep.ux, dep.uz, 8.2, 4.2);
+    fac.yards.push({ x: dep.dx, z: dep.dz, r: 24 }, { x: dep.bx, z: dep.bz, r: 24 });
+  }
+  function buildPark(p){
+    // 駐車場: 路面・P の標識・（広ければ）左右に駐車枠と停まっている車。中央 6.4m は出ていく通路として空ける。+z が門（道路）の方向
+    const g = new THREE.Group(), y = p.y + 0.03, yaw = p.yaw * Math.PI / 180, W = Math.min(2 * p.r * 0.95, 24), D = Math.min(2 * p.r * 0.95, 16);
+    g.position.set(p.x, y, p.z); g.rotation.y = yaw;
+    planeM(W, D, 0, 0.02, 0, 0x585c61, g);
+    const Ls = W / 2 - 3.2, nSl = Math.floor((D - 1) / 2.9), z0 = -((nSl - 1) * 2.9) / 2;
+    if(Ls >= 4.6 && nSl >= 2){
+      const cols = [0xe8e8e6, 0x2a2e36, 0x9aa3ad, 0xb23a3a, 0x31527a, 0xd9d3c4, 0x6d7f5a];
+      const cy = Math.cos(yaw), sy = Math.sin(yaw);
+      for(const sx of [-1, 1]){
+        for(let k = 0; k <= nSl; k++) planeM(Ls, 0.1, sx * (3.2 + Ls / 2), 0.045, z0 + (k - 0.5) * 2.9, 0xffffff, g);     // 区切りの白線（横）
+        for(let k = 0; k < nSl; k++){ if(Math.random() < 0.4) continue;
+          const lx = sx * (3.2 + Ls / 2), lz = z0 + k * 2.9, cg = new THREE.Group(), c = cols[Math.floor(Math.random() * cols.length)];
+          boxM(4.2, 0.7, 1.7, 0, 0.62, 0, c, cg); boxM(2.3, 0.55, 1.55, -0.2 * sx, 1.2, 0, 0x1d2630, cg); boxM(2.0, 0.12, 1.5, -0.2 * sx, 1.52, 0, c, cg);
+          cg.position.set(lx, 0, lz); g.add(cg);
+          const wx = p.x + cy * lx + sy * lz, wz = p.z - sy * lx + cy * lz; Car.addBlock(wx, wz, 1); fac.blocks.push([wx, wz]); } }
+    }
+    boxM(0.1, 2.6, 0.1, W / 2 - 0.4, 1.3, D / 2 - 0.4, 0x6d7076, g);
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshBasicMaterial({ map: signTex("P", "#1858b8", "#ffffff", 128, 128), side: THREE.DoubleSide })); pl.position.set(W / 2 - 0.4, 2.6, D / 2 - 0.4); g.add(pl);
+    fac.g.add(g); fac.g.visible = true; fac.yards.push({ x: p.x, z: p.z, r: Math.max(12, p.r + 6) });
+  }
+  function buildDropProp(s){
+    // 配達先の標識（道の脇、建物のある側）: 橙の板に「荷」
+    const yaw = s.yaw * Math.PI / 180, nx = Math.cos(yaw), nz = -Math.sin(yaw);   // 進行方向の左
+    const off = (s.rw / 2 + 0.5) * (s.side || 1), g = new THREE.Group();
+    g.position.set(s.x + nx * off, s.y + 0.0, s.z + nz * off);
+    boxM(0.08, 1.9, 0.08, 0, 0.95, 0, 0x6d7076, g);
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ map: signTex("荷", "#e8761a", "#ffffff", 128, 128), side: THREE.DoubleSide })); pl.position.set(0, 1.95, 0); pl.rotation.y = Math.atan2(-nx * (s.side || 1), -nz * (s.side || 1)); g.add(pl);
+    fac.g.add(g); fac.g.visible = true;
   }
 
   /* ---- 3D の目印: 光の柱・地面の輪・空の輪 ---- */
@@ -6231,8 +6448,52 @@ const Quest = (() => {
   }
 
   /* ---- 開始・終了 ---- */
-  function begin(id){
-    const d = def(id); if(!d) return false;
+  /* 生成した組み合わせ → 地点の並び */
+  function stopsOf(d0, gen){
+    const L = stopsOf0(d0, gen), seen = {};
+    for(const s of L){ if(s.kind === "pass") continue; const n = s.name; seen[n] = (seen[n] || 0) + 1; if(seen[n] > 1) s.name = n + "（" + seen[n] + "件目）"; }
+    return L;
+  }
+  function stopsOf0(d0, gen){
+    const dropOf = (s, verb, nm, r) => ({ key: "g", kind: "drop", verb, name: nm, x: s.x, z: s.z, y: s.y, r, noSnap: true, prop: s });
+    if(d0.gen === "truck" || d0.gen === "truckfar"){
+      const dep = gen.dep;
+      return [{ key: "depot", kind: "load", verb: "荷物を積む", name: "配送センター（" + town(dep.town) + "）", x: dep.dx, z: dep.dz, y: dep.y, r: 9, noSnap: true }]
+        .concat(gen.picks.map((s) => dropOf(s, "荷物を届ける", town(s.town) + (s.typ === 0 ? "の路地" : "の家の前"), s.typ === 0 ? 6.5 : 7)));
+    }
+    if(d0.gen === "taxi"){
+      const [a, b, c, d] = gen.picks;
+      const ld = (s, nm) => ({ key: "g", kind: "load", verb: "お客さんを乗せる", name: nm, x: s.x, z: s.z, y: s.y, r: 7, noSnap: true, prop: s });
+      return [ld(a, town(a.town) + "のお客さん宅前"), dropOf(b, "お客さんを降ろす", town(b.town) + "の行き先", 7), ld(c, town(c.town) + "のお客さん宅前"), dropOf(d, "お客さんを降ろす", town(d.town) + "の行き先", 7)];
+    }
+    if(d0.gen === "check") return gen.picks.map((s, i) => ({ key: "c" + i, kind: "pass", verb: "通過", name: "チェックポイント " + (i + 1), x: s.x, z: s.z, y: s.y, r: 14, noSnap: true }));
+    if(d0.gen === "heli"){
+      const dep = gen.dep;
+      return [{ key: "depot", kind: "load", verb: "荷物を積む", name: "配送センター（" + town(dep.town) + "）", x: dep.dx, z: dep.dz, y: dep.y, r: 22 }]
+        .concat(gen.picks.map((s) => ({ key: "g", kind: "drop", verb: "荷物を届ける", name: town(s.town) + "の広場", x: s.x, z: s.z, y: s.y, r: Math.max(18, Math.min(34, s.r + 6)) })));
+    }
+    return d0.stops;
+  }
+  function begin(id, seed){
+    const d0 = def(id); if(!d0) return false;
+    clearFac(); Q.gen = null; Q.seed = undefined; Q.startName = "";
+    let d = d0, gen = null;
+    if(d0.gen && SITES && (d0.gen !== "check" || Traffic.ready)){
+      const sd = seed === undefined ? ((Math.random() * 4294967296) >>> 0) : seed, rnd = rngOf(sd);
+      gen = d0.gen === "truck" ? genTruck(false, rnd) : d0.gen === "truckfar" ? genTruck(true, rnd) : d0.gen === "taxi" ? genTaxi(rnd) : d0.gen === "check" ? genCheck(rnd) : d0.gen === "heli" ? genHeli(rnd) : null;
+      if(gen){ d = Object.assign({}, d0, { stops: stopsOf(d0, gen) }); Q.seed = sd; }
+    }
+    Q.gen = gen;
+    // 車: 駐車場から出発（自分の車をそこへ置く）。施設（倉庫・駐車場・標識）を建てる
+    if(gen && d.mode === "car" && gen.park){
+      const C = Car.C, p = gen.park; C.x = p.x; C.z = p.z; C.yaw = p.yaw * Math.PI / 180; C.h = Car.hAt(p.x, p.z); C.v = 0; C.gear = "D"; C.wheel = 0; C.hitT = 0; Stuck.reset(); Traffic.reset();
+      Q.startName = town(p.town) + "の駐車場";
+    }
+    if(gen){
+      if(gen.dep) buildDepot(gen.dep);
+      if(gen.park && d.mode === "car") buildPark(gen.park);
+      for(const s of d.stops) if(s.prop) buildDropProp(s.prop);
+    }
     Q.def = d; Q.on = true; Q.done = false; Q.i = 0; Q.t = 0; Q.hold = 0; Q.loaded = false; Q.hits = 0; Q.lastHit = false; Q.comfortT = 0; Q.speedT = 0; Q.tdSeen = Heli.H.tdT || 0; Q.log = [];
     Q.pen = { time: 0, hit: 0, hard: 0, comfort: 0, speed: 0 }; Q.bonus = { soft: 0, pin: 0 };
     const heli = d.mode === "heli", m = me();
@@ -6241,21 +6502,23 @@ const Quest = (() => {
     let prev = { x: m.x, z: m.z };
     Q.stops.forEach((s) => {
       if(heli){ s.y = Heli.groundAt(s.x, s.z); if(s.kind === "pass") s.y = Math.max(Heli.topAt(s.x, s.z), s.y) + (s.agl || 100); }
+      else if(s.noSnap){ s.snapOk = true; s.y = Car.hAt(s.x, s.z) + 0.1; }
       else { const q = snapRoad(s.x, s.z); s.sx = s.x; s.sz = s.z; s.x = q.x; s.z = q.z; s.snapOk = q.ok; s.y = Car.hAt(s.x, s.z) + 0.1; }
       s.face = Math.atan2(s.x - prev.x, s.z - prev.z); prev = s;
     });
     // 目安時間（累積）: 距離 ÷ 平均速度 ＋ 停止・着陸の時間
-    const V = heli ? (d.gentle ? 34 : 32) : (Car.C.profile === "truck" ? 8.2 : 9.4), F = heli ? 1.04 : 1.38, DW = heli ? 22 : 12;
+    const V = heli ? (d.gentle ? 34 : 32) : (Car.C.profile === "truck" ? 8.2 : 9.4), F = heli ? 1.04 : (Q.gen ? 1.6 : 1.38), DW = heli ? 22 : 12;
     let t = 0; prev = { x: m.x, z: m.z };
     Q.stops.forEach((s) => { const dist = Math.hypot(s.x - prev.x, s.z - prev.z); t += dist * F / V + (s.kind === "pass" ? 3 : DW); s.parCum = t; prev = s; });
     Q.parT = t;
     buildMarker(Q.stops[0]); grp.visible = true;
     el("q-name").textContent = d.name; el("q-kick").textContent = (heli ? "HELI MISSION" : (d.veh === "truck" ? "TRUCK MISSION" : "DRIVE MISSION"));
     dots(); showHud(true); el("qfin").classList.remove("on"); hud(true);
-    toast(d.name + " スタート — 最初は「" + Q.stops[0].name + "」", "");
+    toast(d.name + " スタート" + (Q.startName ? "（" + Q.startName + "から）" : "") + " — 最初は「" + Q.stops[0].name + "」", "");
     return true;
   }
   function end(){
+    clearFac(); Q.gen = null;
     Q.on = false; Q.done = false; grp.visible = false; buildMarker(null); showHud(false);
     const f = el("qfin"); if(f) f.classList.remove("on"); const t = el("qtoast"); if(t) t.className = "qtoast";
     setPod(false);
@@ -6343,6 +6606,9 @@ const Quest = (() => {
     if(Q.bonus.pin) rows.push(["ぴたり停止", "", "+" + Q.bonus.pin]);
     el("qf-rows").innerHTML = rows.map((r) => '<div class="qr"><span>' + r[0] + '</span><span>' + r[1] + '</span><b>' + r[2] + '</b></div>').join("");
     el("qf-best").textContent = R.newBest && R.n > 1 ? "自己ベスト更新！（これまでの最高 " + R.best + " 点）" : "最高 " + R.best + " 点・" + R.n + " 回目";
+    const rt = el("qf-retry"), nw = el("qf-new");
+    if(rt) rt.firstElementChild.textContent = Q.gen ? "同じ内容でもう一度" : "もう一度";
+    if(nw) nw.style.display = Q.gen ? "" : "none";
     el("qfin").classList.add("on"); Snd.blip("done");
   }
   function mapPts(){ return (Q.on && !Q.done && Q.stops[Q.i]) ? [{ x: Q.stops[Q.i].x, z: Q.stops[Q.i].z, kind: Q.stops[Q.i].kind }] : []; }
@@ -6360,16 +6626,19 @@ const Quest = (() => {
       host.appendChild(b);
     }
   }
-  return { begin, end, tick, list, def, sel, renderPicker, mapPts, Q, snapRoad, COURSES, PL, get on(){ return Q.on; }, get done(){ return Q.done; }, score };
+  const inYard = (x, z) => fac.yards.some((y) => Math.hypot(x - y.x, z - y.z) < y.r);
+  return { begin, end, tick, list, def, sel, renderPicker, mapPts, Q, snapRoad, COURSES, PL, inYard, get sites(){ return SITES; }, get on(){ return Q.on; }, get done(){ return Q.done; }, score };
 })();
 
 // v41.7: ミッションの画面の操作
 $("q-quit").addEventListener("click", () => Quest.end());
 $("qf-free").addEventListener("click", () => Quest.end());
 $("qf-menu").addEventListener("click", () => { Quest.end(); $(S.mode === "heli" ? "heli-menu" : "car-menu").click(); });
-$("qf-retry").addEventListener("click", () => { const d = Quest.Q.def; if(!d) return; Quest.end();
+function questAgain(same){ const d = Quest.Q.def; if(!d) return; const sd = same ? Quest.Q.seed : undefined; Quest.end();
   if(d.mode === "heli"){ Heli.setStart(d.start); Heli.start(); } else { placeCar(); }
-  Quest.begin(d.id); });
+  Quest.begin(d.id, sd); }
+$("qf-retry").addEventListener("click", () => questAgain(true));
+$("qf-new").addEventListener("click", () => questAgain(false));
 /* ---------------- v41.7: 時刻表パネル（電車・バス）----------------
    I キー（または「時刻表」ボタン）で開閉。停留場ごとの 着・発の定刻と、実際の到着のずれ。ダイヤ運行をオフにしている時は停留場の一覧と距離だけ。 */
 const TT = (() => {
@@ -6460,5 +6729,5 @@ applyMenu();
 loadAll().catch(e=>{ console.error(e); $("start-label").textContent="読み込みに失敗しました: "+e.message; });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap;   // v29: 試験用
-window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
+window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
 })();
