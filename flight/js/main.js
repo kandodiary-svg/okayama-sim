@@ -32,7 +32,7 @@ async function init(){
     game.frame(dt); easy.update(dt); try{ fmap.update(dt); }catch(e){ if(!fmap.err){ fmap.err=1; console.error(e); } }
     const cam=game.cam; pm.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
     sky.update(cam,dt); scene.fog.color.copy(sky.fogColor);
-    { const v=game.wxVis(), d=v>0?Math.max(1/52000,1.978/v):1/52000; if(Math.abs(scene.fog.density-d)>d*0.01){ scene.fog.density=d; sky.light.fogDen.value=d; } if(FS.wxfx) FS.wxfx.update(dt,game.wxRain(),game.s.tas||0); }
+    { const v=game.wxVis(), d=v>0?Math.max(1/52000,1.978/v):1/52000; if(Math.abs(scene.fog.density-d)>d*0.01){ scene.fog.density=d; sky.light.fogDen.value=d; } if(FS.wxfx) FS.wxfx.update(dt,game.wxRain(),game.s.tas||0,game.view!=="chase"); }
     const tc=sky.tintCol; terrain.tint.setRGB(tc[0],tc[1],tc[2]); terrain.nlK.value=Math.max(0,sky.night-0.2)*1.0;
     lm.update(cam,game.t); terrain.update(cam,frustum); bld.update(cam,frustum); ap.prepare(cam); for(const k in ap.ap) pk.ensure(k); ap.update(cam,frustum);
     const s=game.s; const pp=(game.state==="fly"||game.state==="crashed")?{x:s.pos[0],y:s.pos[1],z:s.pos[2]}:null;

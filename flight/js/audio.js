@@ -23,6 +23,8 @@ class Sound{
     this.wF=c.createBiquadFilter(); this.wF.type="bandpass"; this.wF.frequency.value=900; this.wF.Q.value=0.5; this.wG=c.createGain(); this.wG.gain.value=0; const n3=noise(); n3.connect(this.wF); this.wF.connect(this.wG); this.wG.connect(this.room);
     // 地上走行（ゴロゴロ）
     this.rF=c.createBiquadFilter(); this.rF.type="lowpass"; this.rF.frequency.value=160; this.rG=c.createGain(); this.rG.gain.value=0; const n4=noise(); n4.connect(this.rF); this.rF.connect(this.rG); this.rG.connect(this.room);
+    // 雨（機体に当たる音）: 高めの帯域のノイズ。強さは update の o.rain
+    this.pF=c.createBiquadFilter(); this.pF.type="bandpass"; this.pF.frequency.value=2600; this.pF.Q.value=0.45; this.pG=c.createGain(); this.pG.gain.value=0; const n5=noise(); n5.connect(this.pF); this.pF.connect(this.pG); this.pG.connect(this.room);
     // 警報
     this.wo=c.createOscillator(); this.wo.type="square"; this.wo.frequency.value=700; this.woG=c.createGain(); this.woG.gain.value=0; this.wo.connect(this.woG); this.woG.connect(this.master); this.wo.start();
     this.ok=true; this.t=0;
@@ -41,6 +43,7 @@ class Sound{
     for(let i=0;i<2;i++){ set(this.osc[i].o.frequency, 160+n1*520+i*5, 0.1); set(this.osc[i].g.gain, run*0.012*n1*n1*(inside?0.5:1.2), 0.15); }
     const V=s.tas; const w=clamp(Math.pow(V/230,2)*(0.2+0.8*(s.pos[1]<8000?1:0.7)),0,1.1); set(this.wG.gain, w*(inside?0.18:0.4)*(s.onGround?0.4:1), 0.2); set(this.wF.frequency, 500+V*3.2, 0.2);
     const rl=s.onGround?clamp(s.gs/70,0,1):0; set(this.rG.gain, rl*(inside?0.6:0.9)*0.55, 0.1); set(this.rF.frequency, 90+rl*150, 0.1);
+    set(this.pG.gain, clamp(o.rain||0,0,1)*(inside?0.16:0.34), 0.4); set(this.pF.frequency, 2200+(o.rain||0)*900, 0.5);
     // 警報
     let on=0, f=700; const ph=Math.floor((this.t=(this.t||0)+(o.dt||0.016))*4)%2;
     if(o.warn==="stall"){ f=520+ (Math.floor(this.t*7)%2)*220; on=0.07; } else if(o.warn==="overspeed"){ f=900; on=ph?0.07:0.0; } else if(o.warn==="gpws"){ f=880; on=Math.floor(this.t*5)%2?0.06:0; }

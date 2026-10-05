@@ -70,6 +70,8 @@ class Game{
     const k=Math.min(1,Math.max(0,(y-p.base)/700)); return p.vis*(1-k)+50000*k;
   }
   /* 雨粒の強さ 0..1（雲底より下で降る） */
+  /* 滑走路の濡れ具合 0..1（雨・霧のとき。FDM の制動・横力が弱まる） */
+  wxWet(){ const p=this.wxp; return p&&p.wet?Math.min(1,p.wet):0; }
   wxRain(){ const p=this.wxp; if(!p||!p.rain) return 0; const fly=(this.state==="fly"||this.state==="crashed"), y=fly?this.s.pos[1]:this.cam.y; return Math.min(1,Math.max(0,1-(y-p.base)/600)); }
   // ---------------- シナリオ ----------------
   startScenario(o){
@@ -224,7 +226,7 @@ class Game{
     const mass=F.AC.emptyMass+F.AC.payload+s.fuel; const kv=(mass-50000)/1000;
     this.vsp={v1:Math.round(132+1.5*kv),vr:Math.round(135+1.5*kv),v2:Math.round(145+1.5*kv),vref:Math.round(135+1.3*kv)};
     ap.route=this.route; ap.wpIndex=0; this.stats.startFuel=s.fuel; this.stats.t0=this.t;
-    this.state="fly"; this.pending=null; $("loadmsg").style.display="none"; this.acft.root.visible=true; this.applyView(this.view); this.sound("start");
+    this.state="fly"; this.pending=null; $("loadmsg").style.display="none"; this.acft.root.visible=true; this.applyView(this.view); this.sound("start"); { const w=this.wxp; if(w&&(w.rain||w.fog)) this.say(w.name+"です。視程 約"+(w.vis/1000)+" km"+(w.rain?"（雲の下）":"（地表付近）")+"。滑走路が濡れていて、止まりにくくなります。","#8ec9ff",6); }
     if(mode==="cruise") this.startAutoFlight(true);   // 巡航中から: 最初からオート航行（降下〜ILS進入まで自動）
   }
   planGate(icao,rwy){
@@ -241,7 +243,7 @@ class Game{
   }
   // ---------------- 毎フレーム ----------------
   frame(dt){
-    this.t+=dt;
+    this.t+=dt; if(this.s) this.s.wet=this.wxWet();
     if(this.state==='fly'||this.state==='crashed'){ const ll=G.xz2ll(this.s.pos[0],this.s.pos[2]); root.MAGVAR_NOW=clamp(4.9+0.24*(ll[0]-26),4,10); }   // 磁気偏角の近似（西偏。那覇 約5° 〜 札幌 約9°）
     if(this.state==="loading"){ this.pollLoad(dt); this.updateEnvironment(); return; }
     if(this.state!=="fly"&&this.state!=="crashed") { this.updateEnvironment(); return; }
@@ -671,7 +673,7 @@ class Game{
   fieldElev(){ const s=this.s; let best=null,bd=1e12; for(const a of Object.values(this.ap.ap)){ const d=Math.hypot(s.pos[0]-a.ref[0],s.pos[2]-a.ref[1]); if(d<bd&&a.fieldElev!=null){ bd=d; best=a.fieldElev; } } return (bd<30000&&best!=null)?best/FT:null; }
   // ---------------- 音とUI ----------------
   sound(kind,v){ const a=this.audio; if(!a||!a.ok) return; if(kind==="touch") a.bump("touch",clamp(0.25+Math.abs(v)*0.35,0.2,1)); else if(kind==="crash") a.bump("touch",1.4); }
-  updateAudio(dt){ const a=this.audio; if(!a||!a.ok||this.state==="loading"||this.state==="menu") return; const w=this.warn[0]; a.update(this.s,{inside:this.view!=="chase",warn:w?w.sound:null,dt}); }
+  updateAudio(dt){ const a=this.audio; if(!a||!a.ok||this.state==="loading"||this.state==="menu") return; const w=this.warn[0]; a.update(this.s,{inside:this.view!=="chase",warn:w?w.sound:null,dt,rain:this.wxRain()}); }
   syncMCP(){ if(this.mcpSync) this.mcpSync(); }
   showEnd(kind){
     const e=$("end"); const s=this.s; let h=""; 

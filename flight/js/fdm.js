@@ -159,9 +159,10 @@ function step(s, ctl, env, dt){
     const vf=vptW[0]*wf[0]+vptW[2]*wf[2], vr=vptW[0]*wr[0]+vptW[2]*wr[2];
     const surf = gr.kind==="runway"?1:(gr.kind==="grass"?0.45:(gr.kind==="water"?0.12:0.8));
     const bk = Pg.brake ? (s.parking?1:s.brake):0;
-    const mu = Math.min(1.0,(0.018+(gr.kind==="grass"?0.10:0)) + bk*0.52*surf);
+    const wetK = gr.kind==="grass" ? 0 : (s.wet||0);                 // 雨・霧で舗装が濡れている度合い（制動 -27%・横力 -10% 程度）
+    const mu = Math.min(1.0,(0.018+(gr.kind==="grass"?0.10:0)) + bk*0.52*surf*(1-0.32*wetK));
     const Ff = -Math.tanh(vf/0.4)*mu*N;                           // 前後（転がり抵抗＋ブレーキ）
-    const Fr = -Math.tanh(vr/0.35)*0.85*surf*N;                  // 横（タイヤの横力）
+    const Fr = -Math.tanh(vr/0.35)*0.85*surf*(1-0.12*wetK)*N;                  // 横（タイヤの横力）
     const fW=[wf[0]*Ff+wr[0]*Fr, N, wf[2]*Ff+wr[2]*Fr];
     const fb=w2b(s.q,fW); Fgx+=fb[0]; Fgy+=fb[1]; Fgz+=fb[2];
     Lg+=pb[1]*fb[2]-pb[2]*fb[1]; Mg+=pb[2]*fb[0]-pb[0]*fb[2]; Ng+=pb[0]*fb[1]-pb[1]*fb[0];
