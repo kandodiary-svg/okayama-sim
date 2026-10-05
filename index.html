@@ -34,28 +34,6 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     radial-gradient(120% 60% at 50% -10%, rgba(0,0,0,.4), transparent 60%);
 }
 
-/* ---------- MENU ---------- */
-#menu{
-  position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
-  padding:calc(28px + env(safe-area-inset-top,0px)) 18px calc(28px + env(safe-area-inset-bottom,0px));
-  background:linear-gradient(180deg, rgba(9,13,10,.55), rgba(9,13,10,.85));
-  backdrop-filter: blur(3px);
-}
-.card{
-  width:min(440px, 100%);
-  max-height:100%;
-  overflow-y:auto;
-  background:var(--panel);
-  border:1px solid var(--line);
-  border-radius:3px;
-  padding:26px 24px 22px;
-  box-shadow:0 30px 70px rgba(0,0,0,.5);
-}
-.brandline{ display:flex; align-items:center; gap:10px; margin-bottom:16px; }
-.brandmark{ font-family:'Shippori Mincho', serif; font-weight:700; font-size:13px; letter-spacing:.14em; color:var(--amber); border:1px solid var(--amber); padding:3px 8px; border-radius:2px; }
-.brandline small{ color:var(--brass); letter-spacing:.08em; font-size:11.5px; }
-.card h1{ font-size:26px; line-height:1.35; margin:0 0 10px; font-weight:700; }
-.card h1 em{ font-style:normal; color:var(--amber); }
 .stopguide{ margin-top:8px; font-size:12px; color:#cfc5ac; }
 .stopguide .sgbar{ position:relative; height:10px; margin-top:4px; background:rgba(241,234,217,.12); border-radius:5px; overflow:hidden; }
 .stopguide .sgzone{ position:absolute; left:calc(50% - 11.6%); width:23.3%; top:0; bottom:0; background:rgba(120,200,120,.35); }
@@ -63,15 +41,11 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .stopguide.ok .sgtxt{ color:#9fe09f; }
 .card p.lead{ margin:0 0 20px; color:#cfc5ac; font-size:14px; line-height:1.7; }
 
-.modes{ display:flex; gap:8px; flex-wrap:wrap; }
-@media (max-width:560px){ .modes:not(.opts) .mode-opt{ flex:1 1 40%; } }
 .iconbtn.rescue{ width:auto; padding:0 12px; font-size:13px; white-space:nowrap; }
 .iconbtn.rescue small{ opacity:.6; margin-left:4px; }
 .iconbtn.rescue.hint{ border-color:var(--amber); color:var(--amber); animation:rescuePulse 1.1s ease-in-out infinite; }
 @keyframes rescuePulse{ 50%{ box-shadow:0 0 14px rgba(230,169,77,.8); } }
 @media (prefers-reduced-motion: reduce){ .iconbtn.rescue.hint{ animation:none; } }
-.modes.opts button{ flex:1; padding:9px 6px; background:var(--panel-2); border:1px solid var(--line); color:#a99f88; border-radius:2px; font-family:inherit; font-size:12.5px; cursor:pointer; }
-.modes.opts button.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
 .locchip{ position:fixed; left:50%; transform:translateX(-50%); top:calc(58px + env(safe-area-inset-top,0px)); z-index:12; display:none; pointer-events:none;
   background:rgba(23,20,15,.78); border:1px solid var(--line); border-radius:14px; padding:4px 12px; font-size:12.5px; color:var(--cream); white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; }
 .locchip.on{ display:block; } .locchip b{ color:var(--amber); font-weight:700; } .locchip i{ font-style:normal; color:#a99f88; margin:0 6px; }
@@ -82,20 +56,13 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .busui .req{ display:inline-block; margin-top:6px; padding:2px 10px; border-radius:3px; background:#2a2418; color:#6d624c; font-weight:900; letter-spacing:.1em; }
 .busui .req.on{ background:#b3261e; color:#fff; box-shadow:0 0 10px #e6503e; }
 .busui .small{ font-size:11.5px; color:#a99f88; margin-top:4px; }
-.busui .brack{ position:absolute; left:12px; top:calc(224px + env(safe-area-inset-top,0px)); display:flex; gap:6px; }
+.busui .brack{ position:absolute; left:12px; top:calc(292px + env(safe-area-inset-top,0px)); display:flex; gap:6px; }
 .busui .brack .icard{ min-width:78px; }
 .busui .doorbtn{ position:absolute; right:18px; bottom:calc(150px + env(safe-area-inset-bottom,0px)); width:126px; height:44px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-family:inherit; font-size:14px; font-weight:700; cursor:pointer; }
 .busui .doorbtn.open{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
 .busui .bmsg{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(96px + env(safe-area-inset-bottom,0px)); width:min(720px, calc(100% - 24px)); text-align:center; font-size:13px; color:#ffe7b8; text-shadow:0 1px 3px #000; }
-.vehs{ display:flex; gap:8px; flex-wrap:wrap; }
-.veh-opt{ flex:1 1 150px; display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:9px 10px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:13px; cursor:pointer; text-align:left; }
-.veh-opt small{ font-size:11px; opacity:.7; }
-.veh-opt .sw{ display:block; width:100%; height:8px; margin-bottom:4px; border-radius:1px; }
-.veh-opt.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
 .fade{ position:fixed; inset:0; z-index:40; background:#000; opacity:0; pointer-events:none; transition:opacity .6s; display:flex; align-items:center; justify-content:center; color:#f1ead9; font-size:16px; }
 .fade.on{ opacity:1; pointer-events:auto; }
-.mode-opt{ flex:1; padding:11px 8px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:14px; cursor:pointer; }
-.mode-opt.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
 /* 運転台視点: 下のコンソールを消し、ボタンだけ小さく残す（ハンドルは3Dの運転台で操作） */
 .ui.cab .console{ background:none; display:block; pointer-events:none; padding-bottom:calc(6px + env(safe-area-inset-bottom,0px)); }
 .ui.cab .state-block, .ui.cab .speedcard, .ui.cab .chead, .ui.cab .notchbar, .ui.cab .legend{ display:none; }
@@ -154,28 +121,8 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 #heli-msg{ top:104px; }
 #heli-auto{ width:auto; padding:0 10px; white-space:nowrap; }
 #heli-auto.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
-.hstarts .hstart-opt{ flex:1; padding:9px 6px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:13px; cursor:pointer; }
-.hstarts .cstart-opt{ flex:1; padding:9px 6px; background:var(--panel-2); border:1px solid var(--line); color:var(--cream); border-radius:2px; font-family:inherit; font-size:13px; cursor:pointer; }
-.hstarts .cstart-opt.on, .cstart-dir.on{ border-color:var(--amber) !important; background:#26200f !important; color:var(--amber) !important; }
-.hstarts .hstart-opt.on{ border-color:var(--amber); background:#26200f; color:var(--amber); }
 @media (max-width:640px){ .hmeter{ gap:8px; padding:6px 8px; bottom:calc(142px + env(safe-area-inset-bottom,0px)); } .hmeter b{ font-size:18px; } .hmeter > div{ min-width:40px; } }
-.sechead{ display:flex; justify-content:space-between; align-items:baseline; margin:18px 0 8px; }
-.sechead span{ font-size:12.5px; letter-spacing:.06em; color:var(--brass); }
-.sechead small{ font-size:11px; color:#8a8067; }
 
-.routes{ display:flex; flex-direction:column; gap:8px; }
-.route-opt{
-  display:flex; align-items:center; gap:12px; width:100%;
-  background:var(--panel-2); border:1px solid var(--line); border-radius:2px;
-  padding:11px 12px; color:var(--cream); text-align:left; cursor:pointer; font-family:inherit;
-}
-.route-opt.on{ border-color:var(--amber); background:#26200f; }
-.rcode{ width:30px; height:30px; flex:0 0 auto; display:grid; place-items:center; border-radius:50%; font-weight:900; font-size:13px; }
-.rcode.h{ background:#e0b23a; color:#241a02; }
-.rcode.s{ background:#4c9cd6; color:#04121e; }
-.route-opt strong{ display:block; font-size:14.5px; }
-.route-opt .dir{ font-size:11.5px; color:#a99f88; }
-.route-opt .dir i{ font-style:normal; color:var(--amber); margin:0 4px; }
 
 .startbtn{
   width:100%; margin-top:18px; padding:14px 16px; border:none; border-radius:2px;
@@ -186,55 +133,6 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .foot{ margin-top:14px; font-size:11px; color:#8a8067; line-height:1.7; }
 
 
-/* ---------- MENU（PC 向け・横長） ---------- */
-#menu{ padding:20px 28px; }
-.card.mcard{ width:min(1240px,100%); height:min(780px,100%); max-height:100%; padding:0; display:flex; flex-direction:column; overflow:hidden; }
-.mhead{ display:flex; align-items:center; gap:24px; padding:12px 26px 10px; border-bottom:1px solid var(--line); }
-.mhead .mtitle{ flex:0 0 auto; }
-.mhead .brandline{ margin-bottom:6px; }
-.mhead h1{ margin:0; font-size:26px; line-height:1.25; white-space:nowrap; }
-.mlead{ flex:1; margin:0; font-size:13px; color:#b9af97; line-height:1.7; }
-.mlink{ flex:0 0 auto; background:var(--panel-2); color:#e9dfc6; border:1px solid var(--line); border-radius:2px; padding:9px 14px; font-family:inherit; font-size:13px; cursor:pointer; white-space:nowrap; }
-.mlink:hover{ border-color:var(--amber); color:var(--amber); }
-.mbody{ flex:1; min-height:0; display:grid; grid-template-columns:320px 1fr; }
-.mside{ padding:14px 20px 14px 26px; border-right:1px solid var(--line); overflow-y:auto; }
-.mmain{ padding:14px 26px; overflow-y:auto; min-width:0; }
-.mside-h{ font-size:13px; letter-spacing:.08em; color:var(--brass); margin:0 0 10px; font-weight:700; }
-.mmain .sechead{ margin:16px 0 8px; } .mmain .sechead:first-of-type{ margin-top:0; }
-.mlist{ flex-direction:column; flex-wrap:nowrap; gap:7px; }
-.mlist .mode-opt{ flex:none; display:flex; align-items:center; gap:12px; text-align:left; padding:8px 14px; font-size:15px; }
-.mlist .mode-opt .mi{ font-style:normal; font-size:24px; width:32px; text-align:center; filter:grayscale(.35); }
-.mlist .mode-opt.on .mi{ filter:none; }
-.mlist .mode-opt b{ display:block; font-size:15.5px; }
-.mlist .mode-opt small{ display:block; margin-top:2px; font-size:11.5px; color:#a99f88; font-weight:400; }
-.mlist .mode-opt.on small{ color:#d9b26a; }
-.mlist .mode-opt:hover{ border-color:#6b5b34; }
-.flightlink{ display:flex; align-items:center; gap:12px; margin-top:10px; padding:8px 14px; background:var(--panel-2); border:1px dashed #6b5b34; color:var(--cream); border-radius:2px; text-decoration:none; }
-.flightlink .mi{ font-style:normal; font-size:24px; width:32px; text-align:center; }
-.flightlink b{ display:block; font-size:15.5px; }
-.flightlink small{ display:block; margin-top:2px; font-size:11.5px; color:#a99f88; font-weight:400; }
-.flightlink em{ margin-left:auto; font-style:normal; color:var(--amber); }
-.flightlink:hover{ border-color:var(--amber); }
-.mmain .routes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(310px,1fr)); gap:8px; }
-.mmain .vehs{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:8px; }
-.mmain .veh-opt{ flex:none; }
-.mmain .foot{ max-width:860px; }
-.mmain .modes.opts button{ flex:0 1 150px; }
-#mw-start-sel{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-#mw-place{ width:auto !important; min-width:260px; }
-.msettings{ display:flex; gap:32px; align-items:flex-end; padding:8px 26px 10px; border-top:1px solid var(--line); background:rgba(0,0,0,.18); }
-.mset-h{ display:flex; gap:10px; align-items:baseline; margin-bottom:6px; } .mset-h span{ font-size:12.5px; letter-spacing:.06em; color:var(--brass); } .mset-h small{ font-size:11px; color:#8a8067; }
-.msettings .modes.opts button{ flex:0 0 auto; padding:7px 14px; }
-.mfoot{ display:flex; align-items:center; gap:24px; padding:10px 26px 12px; border-top:1px solid var(--line); }
-.mfoot-l{ flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; position:relative; }
-.mfoot-l .loadbar{ flex:1 1 100%; margin-top:2px; }
-.mfoot-l .foot{ margin:0; font-size:11.5px; }
-.mfoot .startbtn{ width:360px; margin:0; padding:14px 20px; font-size:16.5px; white-space:nowrap; flex:0 0 auto; }
-.mfoot .startbtn:disabled{ opacity:.65; cursor:wait; }
-.mdet{ font-size:12px; color:#b9af97; } .mdet summary{ cursor:pointer; list-style:none; padding:4px 0; text-decoration:underline dotted; text-underline-offset:3px; } .mdet summary::-webkit-details-marker{ display:none; }
-.mdet[open] summary{ color:var(--amber); }
-.mdet-body{ position:absolute; left:0; bottom:calc(100% + 14px); width:min(760px,92vw); max-height:50vh; overflow:auto; background:var(--panel); border:1px solid var(--amber); border-radius:3px; padding:14px 16px; font-size:12.5px; line-height:1.8; color:#d6ccb4; box-shadow:0 14px 40px rgba(0,0,0,.6); z-index:5; }
-@media (max-width:980px){ .mbody{ grid-template-columns:1fr; overflow-y:auto; } .mside{ border-right:none; border-bottom:1px solid var(--line); } .mhead{ flex-wrap:wrap; } .mlead{ display:none; } .msettings{ flex-wrap:wrap; } .mfoot{ flex-wrap:wrap; } .mfoot .startbtn{ width:100%; } }
 
 .navi{ position:fixed; right:12px; top:calc(62px + env(safe-area-inset-top,0px)); width:220px; z-index:11; display:none; pointer-events:none; }
 .navi.on{ display:block; }
@@ -363,124 +261,438 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 @media (prefers-reduced-motion: reduce){
   *{ transition:none !important; }
 }
+
+/* ---------- v41.7: 時計・ダイヤの帯・時刻表パネル ---------- */
+.ck-in{ display:inline-flex; align-items:baseline; gap:5px; margin-left:10px; padding-left:10px; border-left:1px solid var(--line); font-variant-numeric:tabular-nums; vertical-align:baseline; }
+.ck-in .ckg{ font-style:normal; font-size:10.5px; letter-spacing:.1em; color:var(--brass); }
+.ck-in b{ font-size:17px; color:var(--amber); letter-spacing:.02em; }
+.ck-in .cks{ font-size:11px; color:#a99f88; margin-left:-3px; }
+@media (max-width:619px){ .chip .rlab{ display:none; } .ck-in{ margin-left:8px; padding-left:8px; } .ck-in b{ font-size:15px; } }
+.iconbtn.ttbtn{ width:auto; padding:0 11px; font-size:12.5px; white-space:nowrap; }
+.iconbtn.ttbtn small{ opacity:.55; margin-left:5px; font-size:10.5px; }
+.iconbtn.ttbtn.on{ border-color:var(--amber); color:var(--amber); }
+.pace{ margin-top:6px; }
+.pace .pbar{ position:relative; height:9px; border-radius:5px; overflow:visible;
+  background:linear-gradient(90deg, rgba(92,150,220,.55) 0 45.8%, rgba(110,200,120,.75) 45.8% 54.2%, rgba(230,190,70,.6) 54.2% 66.7%, rgba(214,84,63,.7) 66.7% 100%); }
+.pace .pm{ position:absolute; top:-3px; width:5px; height:15px; margin-left:-2.5px; border-radius:2px; background:#fff; box-shadow:0 0 0 1.5px rgba(0,0,0,.55), 0 0 8px rgba(255,255,255,.5); left:50%; transition:left .25s linear; }
+.pace .pm.late{ background:#ffb09a; } .pace .pm.early{ background:#bfe0ff; } .pace .pm.warn{ background:#ffe29a; }
+.pace .plab{ display:flex; justify-content:space-between; margin-top:3px; font-size:9.5px; letter-spacing:.14em; color:#8a8067; }
+.ttp{ position:fixed; z-index:16; right:12px; top:calc(64px + env(safe-area-inset-top,0px)); width:min(372px, calc(100% - 24px)); max-height:calc(100% - 270px); display:none; flex-direction:column;
+  background:rgba(20,17,12,.95); border:1px solid var(--line); border-radius:6px; backdrop-filter:blur(6px); box-shadow:0 18px 50px rgba(0,0,0,.5); overflow:hidden; }
+.ttp.on{ display:flex; }
+.ttp-h{ display:flex; align-items:center; gap:10px; padding:11px 12px 9px 14px; border-bottom:1px solid var(--line); }
+.ttp-h > div:first-child{ flex:1; min-width:0; }
+.ttp-h h3{ margin:2px 0 0; font-size:15.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ttp-now{ text-align:right; font-variant-numeric:tabular-nums; } .ttp-now small{ display:block; font-size:9.5px; letter-spacing:.16em; color:var(--brass); } .ttp-now b{ font-size:17px; color:var(--amber); }
+.ttp-cols{ display:grid; grid-template-columns:1fr 66px 66px 58px; gap:4px; padding:7px 14px 5px; font-size:10px; letter-spacing:.14em; color:#8a8067; text-align:right; }
+.ttp-cols span:first-child{ text-align:left; }
+.ttp.plain .ttp-cols{ display:none; }
+.ttp-rows{ list-style:none; margin:0; padding:0 6px 4px; overflow-y:auto; flex:1 1 auto; min-height:60px; }
+.ttp-rows .row{ display:grid; grid-template-columns:1fr 66px 66px 58px; gap:4px; align-items:center; padding:5px 8px; border-radius:4px; font-size:12.5px; font-variant-numeric:tabular-nums; text-align:right; color:#cfc5ac; }
+.ttp.plain .ttp-rows .row{ grid-template-columns:1fr 70px; }
+.ttp-rows .row .nm{ text-align:left; color:var(--cream); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ttp-rows .row .t{ font-size:11.5px; } .ttp-rows .row .t.d{ color:#a99f88; }
+.ttp-rows .row.cur{ background:rgba(230,169,77,.14); box-shadow:inset 3px 0 0 var(--amber); } .ttp-rows .row.cur .nm::before{ content:"▶ "; color:var(--amber); font-size:10px; }
+.ttp-rows .row.passed .nm{ text-decoration:line-through; opacity:.6; }
+.ttp-rows .res{ font-weight:700; font-size:11.5px; } .res.ok{ color:#9fe09f; } .res.late{ color:#ff8a5c; } .res.warn{ color:#ffd47a; } .res.early{ color:#7cc4ff; } .res.pass{ color:#ff8a5c; }
+.ttp-sub{ margin:0; padding:6px 14px 8px; font-size:10.5px; line-height:1.55; color:#8f866e; border-top:1px solid var(--line); }
+.ttp-foot{ padding:8px 14px 10px; font-size:12.5px; border-top:1px solid var(--line); background:rgba(0,0,0,.18); }
+.ttp-foot:empty{ display:none; }
+.ttp-foot b{ font-size:18px; color:var(--amber); } .ttp-foot b.g{ margin-left:4px; } .ttp-foot span{ display:block; font-size:10.5px; color:#8f866e; margin-top:2px; }
+@media (min-width:760px){ .ttp{ top:calc(64px + env(safe-area-inset-top,0px)); } }
+.ftt{ margin:0 0 16px; text-align:left; border:1px solid var(--line); border-radius:4px; overflow:hidden; font-variant-numeric:tabular-nums; }
+.ftt-h, .ftt-r{ display:grid; grid-template-columns:1fr 84px 62px; gap:6px; padding:5px 10px; font-size:12px; text-align:right; }
+.ftt-h{ font-size:10px; letter-spacing:.14em; color:#8a8067; background:rgba(0,0,0,.2); } .ftt-h span:first-child, .ftt-r .nm{ text-align:left; }
+.ftt-r{ border-top:1px solid rgba(201,168,106,.12); } .ftt-r .t{ color:#a99f88; font-size:11.5px; } .ftt-r .res{ font-weight:700; }
+
+/* ---------- v41.7: ミッション ---------- */
+.qhud{ position:fixed; z-index:12; left:12px; top:calc(58px + env(safe-area-inset-top,0px)); width:min(300px, calc(100% - 24px)); display:none; pointer-events:none;
+  background:rgba(20,17,12,.88); border:1px solid var(--line); border-radius:6px; padding:9px 12px 10px; backdrop-filter:blur(5px); box-shadow:0 10px 30px rgba(0,0,0,.4); }
+.qhud.on{ display:block; } .qhud button{ pointer-events:auto; }
+.qtop{ display:flex; align-items:center; gap:8px; } .qtop b{ font-size:14px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qkick{ font-size:9.5px; letter-spacing:.16em; color:var(--brass); }
+.qtop button{ font-family:inherit; font-size:11px; color:#cfc5ac; background:transparent; border:1px solid var(--line); border-radius:3px; padding:2px 8px; cursor:pointer; }
+.qtop button:hover{ border-color:var(--amber); color:var(--amber); }
+.qmain{ display:grid; grid-template-columns:46px 1fr auto; align-items:center; gap:10px; margin-top:7px; }
+.qarrow{ width:46px; height:46px; transition:transform .08s linear; } .qarrow svg{ width:46px; height:46px; display:block; }
+.qnow small{ display:block; font-size:10.5px; letter-spacing:.1em; color:var(--brass); } .qnow b{ display:block; font-size:16px; line-height:1.25; }
+.qdist{ text-align:right; font-variant-numeric:tabular-nums; } .qdist b{ font-size:24px; color:var(--amber); } .qdist small{ font-size:11px; color:#a99f88; margin-left:2px; }
+.qbar{ height:5px; margin-top:7px; border-radius:3px; background:rgba(255,255,255,.12); overflow:hidden; } .qbar i{ display:block; height:100%; width:0; background:linear-gradient(90deg,#35d0ff,#7dff9a); }
+.qhint{ margin-top:5px; font-size:11.5px; color:#d6cba9; min-height:16px; }
+.qrow{ display:flex; justify-content:space-between; gap:8px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-size:12px; color:#cfc5ac; font-variant-numeric:tabular-nums; }
+.qrow b{ color:var(--cream); } #q-time.late{ color:#ff8a5c; font-weight:700; } #q-score{ color:var(--amber); font-size:14px; }
+.qfoot{ display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .qfoot small{ font-size:10.5px; color:#a99f88; }
+.qdots{ display:flex; gap:6px; } .qdots i{ width:11px; height:11px; border-radius:50%; border:2px solid rgba(255,255,255,.35); background:transparent; }
+.qdots i.cur{ border-color:#fff; box-shadow:0 0 8px rgba(255,255,255,.6); } .qdots i.done{ background:#7dff9a; border-color:#7dff9a; }
+.qdots i.load.cur{ border-color:#35d0ff; } .qdots i.drop.cur{ border-color:#ffb02e; } .qdots i.pass.cur{ border-color:#7dff9a; }
+.qtoast{ position:fixed; z-index:13; left:50%; top:calc(104px + env(safe-area-inset-top,0px)); transform:translate(-50%,-8px); max-width:min(560px, calc(100% - 24px)); padding:9px 18px; border-radius:22px; font-size:14px; font-weight:700; text-align:center;
+  background:rgba(20,17,12,.92); border:1px solid var(--line); color:var(--cream); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; }
+.qtoast.on{ opacity:1; transform:translate(-50%,0); } .qtoast.good{ border-color:#7dff9a; color:#c9ffd6; } .qtoast.bad{ border-color:#ff8a5c; color:#ffd0bd; } .qtoast.load{ border-color:#35d0ff; color:#c9f2ff; }
+.qfin-card{ width:min(400px,100%); } .qscore{ display:flex; align-items:center; justify-content:center; gap:14px; margin:8px 0 6px; }
+.qscore b{ font-size:50px; font-family:'Shippori Mincho', serif; color:var(--amber); line-height:1; }
+.qgrade{ width:54px; height:54px; border-radius:50%; display:grid; place-items:center; font-size:30px; font-weight:900; border:3px solid currentColor; }
+.qgrade.gS{ color:#ffd84a; } .qgrade.gA{ color:#7dff9a; } .qgrade.gB{ color:#7cc4ff; } .qgrade.gC{ color:#c9c1ac; }
+.qrows{ margin:6px 0 4px; border:1px solid var(--line); border-radius:4px; overflow:hidden; text-align:left; }
+.qr{ display:grid; grid-template-columns:1fr auto 58px; gap:8px; padding:6px 10px; font-size:12.5px; border-top:1px solid rgba(201,168,106,.12); } .qr:first-child{ border-top:0; } .qr span:nth-child(2){ color:#a99f88; font-size:11.5px; } .qr b{ text-align:right; font-variant-numeric:tabular-nums; }
+.qbest{ margin:6px 0 14px; font-size:12px; color:#cfc5ac; }
+.startbtn.alt{ background:#3a3326; color:#f1ead9; margin-top:8px; }
+@media (max-width:619px){ .qhud{ width:calc(100% - 24px); } .qmain{ grid-template-columns:40px 1fr auto; } .qarrow, .qarrow svg{ width:40px; height:40px; } .qnow b{ font-size:15px; } .qtoast{ top:calc(150px + env(safe-area-inset-top,0px)); } }
+/* ---------- v41.7 開始画面: 駅の案内サイン＋行先表示器 ----------
+   紺の枠（乗り物の選択）と白い紙面（あそびかた・コース）。選んだ乗り物の「路線色」が全体に差す。
+   行先表示器は「いま選んでいる内容」をそのまま映す。 */
+@font-face{ font-family:'OkadenDot'; src:url('fonts/dotgothic16-okaden.woff2') format('woff2'); font-display:swap; }
+#menu{
+  --c-tram:#c43b15; --c-jr:#355bbd; --c-bus:#008760; --c-car:#a66d00; --c-heli:#00829f;
+  --navy:#1a222e; --navy-2:#243044; --navy-line:#34415a; --navy-ink:#e8eef7; --navy-sub:#9fb0c7;
+  --paper:#f3f5f7; --paper-2:#e9edf2; --ink:#18202b; --ink-2:#556173; --rule:#d3d9e1; --led:#ffb23e; --lc:var(--c-tram);
+  position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+  padding:calc(18px + env(safe-area-inset-top,0px)) 18px calc(18px + env(safe-area-inset-bottom,0px));
+  background:rgba(8,12,20,.6); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  color-scheme:light; color:var(--ink);
+  font-family:"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Noto Sans JP","Meiryo",system-ui,sans-serif;
+  font-size:14px; line-height:1.5;
+}
+#menu[data-mode="tram"]{ --lc:var(--c-tram); } #menu[data-mode="jr"]{ --lc:var(--c-jr); } #menu[data-mode="bus"]{ --lc:var(--c-bus); }
+#menu[data-mode="car"]{ --lc:var(--c-car); } #menu[data-mode="heli"]{ --lc:var(--c-heli); }
+#menu button, #menu select{ font-family:inherit; }
+#menu button:focus-visible, #menu a:focus-visible, #menu summary:focus-visible, #menu select:focus-visible{ outline:3px solid var(--led); outline-offset:2px; }
+#menu .ic{ display:block; width:100%; height:100%; }
+
+.mn{ width:min(1180px,100%); height:min(760px,100%); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto; background:var(--navy); border-radius:16px; overflow:hidden; box-shadow:0 30px 90px rgba(3,6,12,.6); }
+
+/* 上の帯 */
+.mn-top{ display:flex; align-items:center; gap:20px; padding:14px 22px 12px 28px; color:var(--navy-ink); }
+.mn-brand{ display:flex; align-items:baseline; gap:12px; white-space:nowrap; }
+.mn-brand b{ font-size:20px; font-weight:800; letter-spacing:.06em; }
+.mn-brand span{ font-size:14px; color:var(--navy-sub); }
+.mn-lead{ flex:1; margin:0; font-size:13px; color:var(--navy-sub); }
+.mn-info{ display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid var(--navy-line); border-radius:999px; background:transparent; color:var(--navy-ink); font-size:13px; cursor:pointer; white-space:nowrap; }
+.mn-info .s{ display:none; }
+.mn-info:hover{ border-color:var(--navy-sub); background:rgba(255,255,255,.06); } .mn-info i{ font-style:normal; color:var(--navy-sub); }
+
+.mn-body{ display:grid; grid-template-columns:308px minmax(0,1fr); min-height:0; }
+
+/* 見出し（番号は表示している順に振る） */
+#menu .mn-main{ counter-reset:step 1; }
+.mn-step{ display:flex; align-items:center; gap:10px; margin:0 0 10px; font-size:17px; font-weight:800; counter-increment:step; }
+.mn-step::before{ content:counter(step); display:grid; place-items:center; flex:0 0 auto; width:26px; height:26px; border-radius:50%; background:var(--lc); color:#fff; font-size:14px; font-weight:800; }
+#sec-course > .mn-step{ margin-bottom:0; }
+.mn-step.s1{ counter-increment:none; color:var(--navy-ink); } .mn-step.s1::before{ content:"1"; }
+
+/* 左: 乗り物（選ぶと右の紙面とつながる） */
+.mn-rail{ display:flex; flex-direction:column; min-height:0; overflow-y:auto; padding:8px 0 14px 18px; }
+.mn-rail .mn-step{ margin:6px 14px 18px 4px; }
+.mlist{ display:flex; flex-direction:column; gap:6px; }
+#menu .mode-opt, #menu .flightlink{ position:relative; display:flex; align-items:center; gap:13px; width:100%; padding:9px 14px 9px 10px; border:0; border-radius:14px 0 0 14px; background:transparent; color:#d5deeb; text-align:left; text-decoration:none; font-size:16px; cursor:pointer; }
+#menu .mode-opt:hover, #menu .flightlink:hover{ background:rgba(255,255,255,.08); }
+#menu .mode-opt.on{ background:var(--paper); color:var(--ink); }
+#menu .mode-opt.on::before, #menu .mode-opt.on::after{ content:""; position:absolute; right:0; width:14px; height:14px; pointer-events:none; }
+#menu .mode-opt.on::before{ top:-14px; background:radial-gradient(circle at 0 0, transparent 13.5px, var(--paper) 14px); }
+#menu .mode-opt.on::after{ bottom:-14px; background:radial-gradient(circle at 0 100%, transparent 13.5px, var(--paper) 14px); }
+.mi{ --bd:var(--lc); flex:0 0 auto; display:grid; place-items:center; width:52px; height:46px; padding:7px 6px; border-radius:10px; background:var(--lc); font-style:normal; }
+.mi.sm{ width:46px; height:40px; padding:6px 5px; }
+.mode-opt[data-mode="tram"] .mi{ --lc:var(--c-tram); } .mode-opt[data-mode="jr"] .mi{ --lc:var(--c-jr); } .mode-opt[data-mode="bus"] .mi{ --lc:var(--c-bus); }
+.mode-opt[data-mode="car"] .mi{ --lc:var(--c-car); } .mode-opt[data-mode="heli"] .mi{ --lc:var(--c-heli); }
+.cveh-opt .mi{ --lc:var(--c-car); } .flightlink .mi{ --lc:#556a86; }
+.mt{ min-width:0; } .mt b{ display:block; font-size:16.5px; font-weight:800; line-height:1.3; }
+.mt small{ display:block; margin-top:1px; font-size:12px; font-weight:400; color:#93a5bf; line-height:1.4; }
+#menu .mode-opt.on .mt small{ color:var(--ink-2); }
+#menu .flightlink{ margin-top:12px; border-radius:14px 0 0 14px; border:1px dashed var(--navy-line); border-right:0; } #menu .flightlink b{ font-size:15.5px; }
+
+/* 右: 紙面 */
+.mn-pane{ display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--paper); }
+.mn-main{ flex:1; min-height:0; overflow-y:auto; padding:20px 28px 10px; }
+.mn-sec{ margin:0 0 16px; }
+
+/* 行先表示器 */
+.mn-board{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:18px; margin:0 0 20px; padding:13px 20px; border-radius:12px; background:#0b0e13; box-shadow:inset 0 0 0 2px #1e2634; color:var(--led); font-family:'OkadenDot',"BIZ UDGothic","Yu Gothic UI","Meiryo",monospace; text-shadow:0 0 7px rgba(255,178,62,.42); }
+.bd-badge{ --bd:var(--lc); display:grid; place-items:center; width:64px; height:56px; padding:8px 7px; border-radius:12px; background:var(--lc); text-shadow:none; }
+.bd-txt{ min-width:0; }
+.bd-l1{ font-size:32px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bd-l2{ display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin-top:6px; font-size:16px; line-height:1.5; color:#ffcf86; }
+.bd-tag{ font-style:normal; padding:0 9px; background:var(--led); color:#0b0e13; text-shadow:none; font-size:16px; }
+.bd-side{ text-align:right; white-space:nowrap; } .bd-clock{ font-size:32px; line-height:1.2; } .bd-wx{ margin-top:6px; font-size:16px; line-height:1.5; color:#ffcf86; }
+.mn-board.flip .bd-l1, .mn-board.flip .bd-l2{ animation:bdFlip .2s steps(4,end); }
+@keyframes bdFlip{ from{ opacity:0; transform:translateY(-35%); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce){ .mn-board.flip .bd-l1, .mn-board.flip .bd-l2{ animation:none; } }
+
+/* あそびかた */
+.mn-play{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+#menu .play-opt{ position:relative; padding:12px 18px 13px; border:2px solid var(--rule); border-radius:14px; background:#fff; color:var(--ink); text-align:left; cursor:pointer; box-shadow:0 3px 0 var(--rule); transition:transform .08s, box-shadow .08s; }
+#menu .play-opt:hover{ border-color:#b3bdca; }
+#menu .play-opt:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--rule); }
+.po-t{ display:flex; align-items:center; gap:10px; font-size:19px; font-weight:800; line-height:1.3; }
+.po-t em{ font-style:normal; padding:1px 9px; border-radius:999px; background:var(--paper-2); color:var(--ink-2); font-size:12px; font-weight:700; }
+.po-s{ display:block; margin-top:5px; font-size:13.5px; color:var(--ink-2); line-height:1.55; }
+#menu .play-opt.on{ background:var(--lc); border-color:var(--lc); color:#fff; box-shadow:0 3px 0 rgba(0,0,0,.3); }
+#menu .play-opt.on:active{ box-shadow:0 1px 0 rgba(0,0,0,.3); }
+#menu .play-opt.on .po-s{ color:rgba(255,255,255,.92); } #menu .play-opt.on .po-t em{ background:rgba(255,255,255,.22); color:#fff; }
+
+/* コース・路線・車両・出発地（カード） */
+.mn-sub{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:14px 0 8px; }
+.mn-sub span{ font-size:14px; font-weight:800; } .mn-sub small{ font-size:12.5px; color:var(--ink-2); text-align:right; }
+.routes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:10px; }
+.vehs{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+.cvehs{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+.quests{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+#menu .route-opt, #menu .veh-opt, #menu .quest-opt, #menu .cveh-opt{ position:relative; border:2px solid var(--rule); border-radius:12px; background:#fff; color:var(--ink); text-align:left; cursor:pointer; }
+#menu .route-opt:hover, #menu .veh-opt:hover, #menu .quest-opt:hover, #menu .cveh-opt:hover{ border-color:#aeb8c6; }
+#menu .route-opt.on, #menu .veh-opt.on, #menu .quest-opt.on, #menu .cveh-opt.on{ border-color:var(--lc); box-shadow:0 0 0 3px rgba(0,0,0,.05); box-shadow:0 0 0 3px color-mix(in srgb, var(--lc) 20%, transparent); }
+#menu .route-opt{ display:flex; align-items:center; gap:12px; width:100%; padding:11px 14px; }
+.rcode{ flex:0 0 auto; display:grid; place-items:center; width:36px; height:36px; border-radius:50%; font-size:14px; font-weight:900; }
+.rcode.h{ background:#e0b23a; color:#241a02; } .rcode.s{ background:#4c9cd6; color:#04121e; }
+.route-opt strong{ display:block; font-size:15.5px; } .route-opt .dir{ font-size:12.5px; color:var(--ink-2); line-height:1.5; }
+.route-opt .dir i{ font-style:normal; color:var(--lc); margin:0 5px; font-weight:800; }
+#menu .veh-opt{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:10px 14px 11px; }
+.veh-opt .sw{ display:block; width:100%; height:8px; margin-bottom:5px; border-radius:3px; } .veh-opt b{ font-size:15px; } .veh-opt small{ font-size:12.5px; color:var(--ink-2); line-height:1.5; }
+#menu .cveh-opt{ display:flex; align-items:center; gap:12px; padding:10px 14px; }
+#menu .cveh-opt .mt b{ font-size:15.5px; } #menu .cveh-opt .mt small{ color:var(--ink-2); font-size:12.5px; }
+#menu .quest-opt{ display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:3px 10px; padding:12px 14px 12px; }
+.quest-opt b{ font-size:16px; font-weight:800; } .quest-opt .qs{ grid-column:2; grid-row:1; color:#e19a12; font-size:13px; letter-spacing:1px; } .quest-opt .qs i{ font-style:normal; color:#d6dce5; }
+.quest-opt small{ grid-column:1 / -1; font-size:12.5px; color:var(--ink-2); line-height:1.55; }
+.quest-opt em{ grid-column:1 / -1; justify-self:start; margin-top:3px; padding:0 9px; border-radius:999px; background:var(--paper-2); font-style:normal; font-size:12px; font-weight:800; color:var(--ink); }
+
+/* 出発地・選択肢（小さいボタン） */
+.hstarts{ display:flex; flex-wrap:wrap; gap:8px; }
+#menu .hstart-opt, #menu .cstart-opt, #menu .cstart-dir, #menu .time-opt, #menu .rain-opt, #menu .look-opt, #menu .shadow-opt{ padding:9px 15px; border:2px solid var(--rule); border-radius:999px; background:#fff; color:var(--ink); font-size:14px; font-weight:700; cursor:pointer; }
+#menu .hstart-opt:hover, #menu .cstart-opt:hover, #menu .cstart-dir:hover, #menu .time-opt:hover, #menu .rain-opt:hover, #menu .look-opt:hover, #menu .shadow-opt:hover{ border-color:#aeb8c6; }
+#menu .hstart-opt.on, #menu .cstart-opt.on, #menu .cstart-dir.on, #menu .time-opt.on, #menu .rain-opt.on, #menu .look-opt.on, #menu .shadow-opt.on{ background:var(--lc); border-color:var(--lc); color:#fff; }
+#mw-start-sel{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+#mw-place{ min-width:240px; padding:9px 12px; border:2px solid var(--rule); border-radius:12px; background:#fff; color:var(--ink); font-size:14px; }
+
+/* 補足（開いて読む） */
+.mn-help{ margin:16px 0 4px; font-size:13px; color:var(--ink-2); }
+.mn-help summary{ display:inline-block; padding:4px 0; cursor:pointer; font-weight:700; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:4px; }
+.mn-help[open] summary{ color:var(--ink); }
+#menu .mn-help .foot{ max-width:76ch; margin:8px 0 0; font-size:12.5px; line-height:1.85; color:var(--ink-2); }
+
+/* 下の設定帯 */
+.mn-set{ position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:8px 24px; padding:10px 28px 12px; border-top:1px solid var(--rule); background:var(--paper-2); }
+.mset{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; } .mset .ml{ font-size:13px; font-weight:800; color:var(--ink-2); }
+.chips{ display:flex; flex-wrap:wrap; gap:6px; }
+#menu .mn-set .chips button{ padding:6px 12px; font-size:13px; }
+.dset{ margin-left:auto; } .dset summary{ list-style:none; display:inline-block; padding:6px 14px; border:2px solid var(--rule); border-radius:999px; background:#fff; font-size:13px; font-weight:700; cursor:pointer; user-select:none; }
+.dset summary::-webkit-details-marker{ display:none; } .dset summary::after{ content:" ▾"; color:var(--ink-2); } .dset[open] summary{ border-color:var(--lc); } .dset[open] summary::after{ content:" ▴"; }
+.dset-pop{ position:absolute; right:28px; bottom:calc(100% + 8px); display:flex; flex-wrap:wrap; gap:6px; width:max-content; max-width:calc(100% - 56px); padding:12px; border-radius:14px; background:#fff; box-shadow:0 12px 40px rgba(10,20,40,.28); z-index:6; }
+.dset-pop .ml{ width:100%; font-size:12.5px; font-weight:800; color:var(--ink-2); }
+
+/* 下の帯: 出発ボタン */
+.mn-foot{ position:relative; display:flex; align-items:center; gap:24px; padding:14px 22px 14px 28px; color:var(--navy-ink); }
+.mn-foot-l{ position:relative; flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:4px 20px; }
+.mn-links{ display:flex; gap:18px; }
+#menu .mdet{ font-size:13px; } #menu .mdet summary{ padding:4px 0; cursor:pointer; list-style:none; color:var(--navy-sub); text-decoration:underline; text-decoration-style:dotted; text-underline-offset:4px; }
+#menu .mdet summary::-webkit-details-marker{ display:none; } #menu .mdet[open] summary, #menu .mdet summary:hover{ color:var(--navy-ink); }
+#menu .mdet-body{ position:absolute; left:0; bottom:calc(100% + 16px); width:min(780px,92vw); max-height:52vh; overflow:auto; padding:16px 20px; border-radius:12px; background:var(--paper); color:var(--ink); font-size:13px; line-height:1.85; box-shadow:0 18px 50px rgba(0,0,0,.5); z-index:5; }
+#menu #records{ flex:1 1 260px; margin:0; font-size:12.5px; line-height:1.5; color:var(--navy-sub); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+#menu .mn-foot .loadbar{ position:absolute; left:0; right:0; top:0; height:3px; margin:0; border-radius:0; background:rgba(255,255,255,.08); }
+#menu .mn-foot .loadbar i{ background:var(--led); }
+.mn-foot:has(#start:not(:disabled)) .loadbar{ opacity:0; transition:opacity .6s .3s; }
+#menu .mn-go{ flex:0 0 auto; display:flex; align-items:center; gap:18px; width:auto; min-width:340px; margin:0; padding:16px 24px 16px 28px; border:0; border-radius:14px; background:var(--lc); color:#fff; font-size:19px; font-weight:800; letter-spacing:.02em; white-space:nowrap; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,.4); transition:transform .08s, box-shadow .08s; }
+#menu .mn-go::after{ content:""; margin-left:auto; border-left:13px solid currentColor; border-top:8px solid transparent; border-bottom:8px solid transparent; }
+#menu .mn-go:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,.4); }
+#menu .mn-go:disabled{ background:#3a4658; color:#a9b6c9; box-shadow:0 4px 0 rgba(0,0,0,.3); cursor:wait; font-weight:700; }
+#menu .mn-go:disabled::after{ display:none; }
+
+/* 狭い画面: 乗り物は横一列のタブにする */
+@media (max-width:900px){
+  #menu{ padding:0; align-items:stretch; }
+  .mn{ width:100%; height:100%; border-radius:0; }
+  .mn-lead{ display:none; } .mn-top{ padding:12px 14px 8px 16px; } .mn-brand b{ font-size:18px; } .mn-info{ margin-left:auto; padding:7px 12px; }
+  .mn-body{ grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  .mn-rail{ min-width:0; padding:0 0 0 12px; overflow:visible; }
+  .mn-info .l{ display:none; } .mn-info .s{ display:inline; }
+  .mn-rail .mn-step{ margin:2px 12px 8px 4px; font-size:15px; }
+  .mlist{ flex-direction:row; gap:4px; overflow-x:auto; padding-right:12px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .mlist::-webkit-scrollbar{ display:none; }
+  #menu .mode-opt, #menu .flightlink{ flex:0 0 auto; flex-direction:column; width:88px; gap:5px; padding:8px 4px 8px; border-radius:12px 12px 0 0; text-align:center; }
+  #menu .flightlink{ margin:0; border:0; border-bottom:0; } #menu .flightlink b{ font-size:13px; }
+  .mn-rail .mt small{ display:none; } .mn-rail .mt b{ font-size:13px; }
+  #menu .mode-opt.on::before, #menu .mode-opt.on::after{ display:none; }
+  .mn-pane{ overflow-y:auto; }
+  .mn-main{ flex:none; overflow:visible; padding:16px 16px 6px; }
+  .mn-set{ padding:10px 16px 14px; }
+  .mn-board{ grid-template-columns:auto minmax(0,1fr); gap:12px 14px; padding:14px 16px; margin-bottom:20px; }
+  .bd-side{ grid-column:1 / -1; display:flex; justify-content:space-between; align-items:baseline; text-align:left; gap:12px; padding-top:8px; border-top:1px dashed #3a2c10; }
+  .bd-clock{ font-size:32px; } .bd-wx{ margin:0; }
+  .bd-badge{ width:56px; height:50px; padding:7px 6px; }
+  .mn-play{ grid-template-columns:1fr; gap:10px; }
+  .mn-foot{ flex-direction:column-reverse; align-items:stretch; gap:10px; padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px)); }
+  #menu .mn-go{ min-width:0; width:100%; justify-content:flex-start; padding:13px 20px 13px 22px; font-size:18px; }
+  .mn-foot-l{ gap:2px 14px; } #menu #records{ flex-basis:100%; }
+  #menu .mdet-body{ bottom:auto; top:calc(100% + 8px); }
+}
+@media (max-width:560px){
+  .bd-l1{ font-size:32px; } .routes, .vehs, .quests, .cvehs{ grid-template-columns:1fr; }
+  .mn-sub small{ display:none; }
+}
+
 </style>
 
 <canvas id="world"></canvas>
 <div class="veil"></div>
 
 <!-- MENU -->
-<section id="menu">
-  <div class="card mcard">
-    <header class="mhead">
-      <div class="mtitle">
-        <div class="brandline"><span class="brandmark">OKADEN</span><small>DRIVER CAB SIMULATOR / 岡山</small></div>
-        <h1>実測データの街を、<em>運転する。</em></h1>
-      </div>
-      <p class="mlead">PLATEAU 岡山市の建物・道路・地形に、OpenStreetMap と国土地理院のデータを重ねて再現しています。</p>
-      <button type="button" id="src-btn" class="mlink"><span>このシミュレーターの基準時点・出典・推定している所</span><span>ⓘ</span></button>
+<section id="menu" data-mode="tram">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="ic-tram" viewBox="0 0 32 20"><path d="M11.5 4.2 15.2 1.3h1.6l3.7 2.9" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="4" width="28" height="11.2" rx="3.2" fill="#fff"/><g fill="var(--bd)"><rect x="4.4" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="10.8" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="17.2" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="23.6" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="2" y="11.6" width="28" height="1.1"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="8.5" cy="16.3" r="1.9"/><circle cx="23.5" cy="16.3" r="1.9"/></g><rect x="1" y="18.5" width="30" height="1.2" rx=".6" fill="#fff"/></symbol>
+<symbol id="ic-jr" viewBox="0 0 32 20"><path d="M1 15V8.4C1 6.5 2.5 5 4.4 5H17c4.7 0 9 2.5 12.5 7.6L31 15z" fill="#fff"/><g fill="var(--bd)"><rect x="3.6" y="7.1" width="14" height="2.4" rx="1.1"/><path d="M20.4 7.1h1.7c1.8.7 3.2 2 4.4 3.8h-6.1z"/><rect x="1" y="11.6" width="25" height="1.1"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="7" cy="16.4" r="1.7"/><circle cx="23" cy="16.4" r="1.7"/></g><rect x="1" y="18.5" width="30" height="1.2" rx=".6" fill="#fff"/></symbol>
+<symbol id="ic-bus" viewBox="0 0 32 20"><rect x="2" y="3" width="28" height="12.4" rx="2.8" fill="#fff"/><g fill="var(--bd)"><rect x="4" y="5.2" width="5.2" height="4.8" rx=".9"/><rect x="10.4" y="5.2" width="5.2" height="4.8" rx=".9"/><rect x="16.8" y="5.2" width="5.2" height="4.8" rx=".9"/><rect x="23.4" y="5.2" width="4.8" height="6.4" rx=".9"/><rect x="2" y="12" width="21" height="1"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="8.5" cy="16.4" r="2.3"/><circle cx="23.5" cy="16.4" r="2.3"/></g></symbol>
+<symbol id="ic-car" viewBox="0 0 32 20"><path d="M2 14.4v-3.5c0-.9.5-1.5 1.4-1.8L8 7.6l3-3.4c.4-.5 1-.8 1.7-.8h7.6c.7 0 1.3.3 1.8.7L26 8.2l3 .8c.7.2 1 .7 1 1.4v4z" fill="#fff"/><g fill="var(--bd)"><path d="M11.9 5.4h3.3v3H9.6z"/><path d="M16.6 5.4h3.4c.4 0 .8.2 1.1.5l1.9 2.5h-6.4z"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="9" cy="15" r="2.6"/><circle cx="23" cy="15" r="2.6"/></g></symbol>
+<symbol id="ic-truck" viewBox="0 0 32 20"><rect x="1.5" y="3" width="17.5" height="11.8" rx="1.6" fill="#fff"/><path d="M20.4 6h5c.7 0 1.3.3 1.7.8l2.9 3.7v4.3H20.4z" fill="#fff"/><path d="M22 7.7h3.2c.4 0 .7.2 1 .5l1.6 2.2H22z" fill="var(--bd)"/><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="6.5" cy="15.7" r="2.4"/><circle cx="13.5" cy="15.7" r="2.4"/><circle cx="25" cy="15.7" r="2.4"/></g></symbol>
+<symbol id="ic-heli" viewBox="0 0 32 20"><rect x="2" y="1.8" width="24" height="1.5" rx=".75" fill="#fff"/><rect x="13" y="3" width="1.6" height="2.6" fill="#fff"/><ellipse cx="13.5" cy="10.4" rx="8" ry="4.8" fill="#fff"/><path d="M19.5 9.2 30 6.6v2.5l-9.6 3.6z" fill="#fff"/><path d="M28.3 3.6l2.2.5-1 5z" fill="#fff"/><path d="M15.4 6.9c2.2.1 4.1 1.4 4.8 3.5h-4.8z" fill="var(--bd)"/><path d="M6.5 17.4h15.5M9.5 15.1v2.3M17.5 15.1v2.3" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></symbol>
+<symbol id="ic-plane" viewBox="0 0 32 20"><path d="M30.4 10c0-.8-.7-1.4-1.6-1.4h-5.7L16.6 1.4h-2.5l3.1 7.2H9.4L6.6 5.2H4.8l1.8 4.8-1.8 4.8h1.8l2.8-3.4h7.8l-3.1 7.2h2.5l6.5-7.2h5.7c.9 0 1.6-.6 1.6-1.4z" fill="#fff"/></symbol>
+  </defs></svg>
+  <div class="mn">
+    <header class="mn-top">
+      <div class="mn-brand"><b>OKADEN</b><span>岡山シミュレーター</span></div>
+      <p class="mn-lead">PLATEAU・OpenStreetMap・国土地理院のデータで再現した岡山の街を、運転できます。</p>
+      <button type="button" id="src-btn" class="mn-info"><span class="l">出典・基準時点・推定について</span><span class="s">出典</span><i>ⓘ</i></button>
     </header>
-    <div class="mbody">
-      <aside class="mside">
-        <div class="mside-h">1　モードを選ぶ</div>
+
+    <div class="mn-body">
+      <nav class="mn-rail" aria-label="乗り物">
+        <h2 class="mn-step s1">乗り物をえらぶ</h2>
         <div class="modes mlist">
-        <button type="button" class="mode-opt on" data-mode="tram"><i class="mi">🚋</i><span><b>路面電車</b><small>東山線・清輝橋線（岡電）</small></span></button>
-        <button type="button" class="mode-opt" data-mode="jr"><i class="mi">🚄</i><span><b>JR・新幹線</b><small>山陽新幹線（福山〜相生）・在来線</small></span></button>
-        <button type="button" class="mode-opt" data-mode="bus"><i class="mi">🚌</i><span><b>両備バス</b><small>西大寺線（314系統）</small></span></button>
-        <button type="button" class="mode-opt" data-mode="car"><i class="mi">🚗</i><span><b>車で自由に走る</b><small>市街地・山陽自動車道（約100km）</small></span></button>
-        <button type="button" class="mode-opt" data-mode="heli"><i class="mi">🚁</i><span><b>ヘリコプター</b><small>空から岡山を見る</small></span></button>
-      </div>
-      <a class="flightlink" href="flight/"><i class="mi">✈️</i><span><b>フライト</b><small>全国28空港・ゲート出発〜着陸（別ページ）</small></span><em>→</em></a>
-      </aside>
-      <main class="mmain">
-        <div class="mside-h">2　路線・出発地・車両を選ぶ</div>
+          <button type="button" class="mode-opt on" data-mode="tram"><i class="mi"><svg class="ic"><use href="#ic-tram"/></svg></i><span class="mt"><b>路面電車</b><small>東山線・清輝橋線（岡電）</small></span></button>
+          <button type="button" class="mode-opt" data-mode="jr"><i class="mi"><svg class="ic"><use href="#ic-jr"/></svg></i><span class="mt"><b>JR・新幹線</b><small>山陽新幹線・在来線</small></span></button>
+          <button type="button" class="mode-opt" data-mode="bus"><i class="mi"><svg class="ic"><use href="#ic-bus"/></svg></i><span class="mt"><b>路線バス</b><small>両備バス 西大寺線</small></span></button>
+          <button type="button" class="mode-opt" data-mode="car"><i class="mi"><svg class="ic"><use href="#ic-car"/></svg></i><span class="mt"><b>車・トラック</b><small>街なか・山陽自動車道</small></span></button>
+          <button type="button" class="mode-opt" data-mode="heli"><i class="mi"><svg class="ic"><use href="#ic-heli"/></svg></i><span class="mt"><b>ヘリコプター</b><small>空から岡山を見る・運ぶ</small></span></button>
+          <a class="flightlink" href="flight/"><i class="mi"><svg class="ic"><use href="#ic-plane"/></svg></i><span class="mt"><b>フライト</b><small>全国28空港（別ページ）</small></span></a>
+        </div>
+      </nav>
 
-    <div id="routes-wrap"><div class="sechead"><span>運転する路線</span><small>往復とも選べます</small></div>
-    <div class="routes" id="routes"></div>
-    <div class="sechead"><span>車両</span><small>形式を選べます</small></div>
-    <div class="vehs">
-      <button type="button" class="veh-opt on" data-veh="momo"><i class="sw" style="background:linear-gradient(#c9ced3 55%,#1f4fa0 55%)"></i><b>9200形 MOMO</b><small>2車体連接 18.0m・低床・VVVF</small></button>
-      <button type="button" class="veh-opt" data-veh="t3005"><i class="sw" style="background:linear-gradient(#a9cfb4 58%,#e2772e 58%)"></i><b>3000形 3005号</b><small>東武日光軌道線 復元塗装・12m 単車</small></button>
-      <button type="button" class="veh-opt" data-veh="t3007"><i class="sw" style="background:linear-gradient(#141414 57%,#c9a54a 57%,#c9a54a 61%,#141414 61%)"></i><b>3000形 3007号 KURO</b><small>黒に金帯・赤いパンタ・12m 単車</small></button>
-    </div></div>
-    <div id="jr-wrap" style="display:none"><div class="sechead"><span>運転する路線</span><small>再現範囲（約 11×9km）の中を走ります</small></div>
-    <div class="routes" id="jr-routes"></div>
-    <div class="sechead"><span>車両</span><small>路線に合う形式</small></div>
-    <div class="vehs" id="jr-vehs"></div>
-    <p class="foot" id="jr-foot">線形は OpenStreetMap の本線、駅の位置は OSM の停車位置（railway=stop）。新幹線は高架橋（レール面は地面＋10.5m と仮定）、在来線の橋・高架は地面＋6.5m と仮定。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h、岡山駅構内や駅の前後の減速）とカーブの制限（曲率から算出）は仮定で、実際の線区の速度表ではありません。加速・減速の数値は各形式の公表値に近い簡略モデルです。<br>操作は路面電車と同じ: マスコン（在来線は力行 1〜4・新幹線は P1〜P13）・ブレーキ弁（在来線は B1〜B5・新幹線は B1〜B7、どちらも非常あり）・D でドア。停止位置に車両の先頭を合わせて停め、ドアを開けると到着。新幹線は 285km/h からの制動に約 4km 要るので、画面の「ブレーキ目安」より速度が高ければブレーキを。</p></div>
-    <div id="bus-note" style="display:none">
-      <div class="route-opt on" style="cursor:default"><div class="rcode" style="background:#1d3f86;color:#fff">両</div><div><strong>両備バス 西大寺線（314系統）</strong><div class="dir">岡山駅東口 13番のりば<i>→</i>天満屋<i>→</i>県庁前<i>→</i>古京<i>→</i>東山（11停留所・約4.4km）</div></div></div>
-      <p class="foot">道路・一方通行は OpenStreetMap、停留所の順序と位置は晴れバスナビ（岡山の時刻表検索）の経路ページと OSM の標柱による。天満屋バスステーションは県庁通りから西側の構内へ入り、駅舎の南を回って東側 4番のりばへ（両備バスは 2〜6番。4番は推定）。<br>操作: ↑/W アクセル　↓/S ブレーキ　←→/A D ハンドル　F 扉の開閉　V 視点（運転席／後ろ）　H 警笛。前扉を停留所の標柱に合わせ、歩道に寄せて止めてから扉を開けます。降車ボタンが押されたり、待っている人がいる停留所は必ず停車。</p>
-    </div>
-    <div id="heli-note" style="display:none">
-      <div class="sechead"><span>出発地</span><small>空の上から始まります</small></div>
-      <div class="modes opts hstarts">
-        <button type="button" class="hstart-opt on" data-start="station">岡山駅</button>
-        <button type="button" class="hstart-opt" data-start="castle">岡山城</button>
-        <button type="button" class="hstart-opt" data-start="garden">後楽園</button>
-        <button type="button" class="hstart-opt" data-start="high">上空 650m</button>
-      </div>
-      <p class="foot">小型ヘリコプターで街の上を自由に飛びます。高く上がるほど遠くの建物まで読み込み、地図の外は国土地理院の標高と空中写真による遠景（建物なし）が約 20km 四方に広がります。建物の屋上や地面には着地でき、建物の横から突っ込むと止まります。<br>操作: W/↑ 前進　S/↓ 後退　A/← D/→ 旋回　Q/E 横移動　R・Space 上昇　F・C 下降　Shift 速く　V 視点（後ろ／操縦席／真下）　O 自動で街を周回　マウスのドラッグで見回し・ホイールで距離。画面のボタンでも操作できます。</p>
-    </div>
-    <div id="car-start-wrap" style="display:none">
-      <div class="sechead"><span>出発地</span><small>山陽自動車道は県内を端から端まで走れます</small></div>
-      <div class="modes opts hstarts" id="cstart-btns">
-        <button type="button" class="cstart-opt on" data-cs="city">岡山駅前（市街地）</button>
-        <button type="button" class="cstart-opt" data-cs="mw">山陽自動車道</button>
-      </div>
-      <div id="mw-start-sel" style="display:none;margin-top:6px">
-        <select id="mw-place" style="width:62%;padding:8px 6px;background:var(--panel-2);border:1px solid var(--line);color:var(--cream);font-family:inherit;font-size:13px;border-radius:2px">
-          <option value="-47500,16850">福山東IC（県境・西端）</option>
-          <option value="-37783,14421">笠岡IC</option>
-          <option value="-29674,12527">鴨方IC</option>
-          <option value="-25280,10840">道口PA</option>
-          <option value="-20981,8730">玉島IC</option>
-          <option value="-14110,4356">倉敷IC</option>
-          <option value="-11976,4363">倉敷JCT</option>
-          <option value="-8922,-1468">岡山JCT</option>
-          <option value="-4544,-2878" selected>吉備SA</option>
-          <option value="-3267,-3780">岡山IC</option>
-          <option value="9826,-8748">山陽IC</option>
-          <option value="14443,-11455">瀬戸PA</option>
-          <option value="22396,-13504">和気IC</option>
-          <option value="30979,-12885">備前IC</option>
-          <option value="35491,-12786">福石PA</option>
-          <option value="41877,-12051">赤穂IC（県境・東寄り）</option>
-          <option value="51000,-17800">兵庫県境付近（播磨JCT方面）</option>
-        </select>
-        <button type="button" class="cstart-dir on" data-dir="up" style="padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);color:var(--cream);font-family:inherit;font-size:13px;border-radius:2px;cursor:pointer">上り（東へ）</button>
-        <button type="button" class="cstart-dir" data-dir="down" style="padding:8px 10px;background:var(--panel-2);border:1px solid var(--line);color:var(--cream);font-family:inherit;font-size:13px;border-radius:2px;cursor:pointer">下り（西へ）</button>
-      </div>
-    </div>
-    <p class="foot" id="car-note" style="display:none">出発地で「山陽自動車道」を選ぶと、県内の山陽道（福山東〜兵庫県境の約 100km）を走れます（上り・下り、IC・SA/PA から出発）。線形・IC・橋・トンネルは OpenStreetMap、道路面の高さは国土地理院の標高から推定した縦断です（実際の設計値ではありません）。他の車は走行車線を守り、前の車に追いつくと減速します。<br>岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点　Space サイドブレーキ。画面のハンドルは指で回せます。</p>
+      <div class="mn-pane">
+        <main class="mn-main">
+          <div class="mn-board" id="dest" role="status" aria-live="polite" aria-label="いま選んでいる内容">
+            <i class="bd-badge"><svg class="ic"><use id="dest-ic" href="#ic-tram"/></svg></i>
+            <div class="bd-txt"><div class="bd-l1" id="dest-1">路面電車</div><div class="bd-l2"><span id="dest-2">東山線</span><em class="bd-tag" id="dest-tag">ダイヤ運行</em></div></div>
+            <div class="bd-side"><div class="bd-clock" id="dest-clock">12:00</div><div class="bd-wx" id="dest-wx">昼・晴れ</div></div>
+          </div>
 
+          <section class="mn-sec" id="play-wrap">
+            <h2 class="mn-step"><span id="play-title">あそびかた</span></h2>
+            <div class="mn-play">
+              <button type="button" class="play-opt on" data-play="mission"><span class="po-t">ダイヤ運行<em>採点あり</em></span><span class="po-s">時刻表どおりに走ります</span></button>
+              <button type="button" class="play-opt" data-play="free"><span class="po-t">自由運転<em>採点なし</em></span><span class="po-s">好きなように走ります</span></button>
+            </div>
+          </section>
 
-      </main>
+          <section class="mn-sec" id="sec-course">
+            <h2 class="mn-step"><span id="course-title">路線と車両</span></h2>
+
+            <div id="routes-wrap">
+              <div class="mn-sub"><span>路線</span><small>往復とも選べます</small></div>
+              <div class="routes" id="routes"></div>
+              <div class="mn-sub"><span>車両</span><small>形式を選べます</small></div>
+              <div class="vehs">
+                <button type="button" class="veh-opt on" data-veh="momo"><i class="sw" style="background:linear-gradient(#c9ced3 55%,#1f4fa0 55%)"></i><b>9200形 MOMO</b><small>2車体連接 18.0m・低床・VVVF</small></button>
+                <button type="button" class="veh-opt" data-veh="t3005"><i class="sw" style="background:linear-gradient(#a9cfb4 58%,#e2772e 58%)"></i><b>3000形 3005号</b><small>東武日光軌道線 復元塗装・12m 単車</small></button>
+                <button type="button" class="veh-opt" data-veh="t3007"><i class="sw" style="background:linear-gradient(#141414 57%,#c9a54a 57%,#c9a54a 61%,#141414 61%)"></i><b>3000形 3007号 KURO</b><small>黒に金帯・赤いパンタ・12m 単車</small></button>
+              </div>
+            </div>
+
+            <div id="jr-wrap" style="display:none">
+              <div class="mn-sub"><span>路線</span><small>再現範囲（約 11×9km）の中を走ります</small></div>
+              <div class="routes" id="jr-routes"></div>
+              <div class="mn-sub"><span>車両</span><small>路線に合う形式</small></div>
+              <div class="vehs" id="jr-vehs"></div>
+              <details class="mn-help"><summary>操作方法とデータの出どころ</summary><p class="foot" id="jr-foot">線形は OpenStreetMap の本線、駅の位置は OSM の停車位置（railway=stop）。新幹線は高架橋（レール面は地面＋10.5m と仮定）、在来線の橋・高架は地面＋6.5m と仮定。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h、岡山駅構内や駅の前後の減速）とカーブの制限（曲率から算出）は仮定で、実際の線区の速度表ではありません。加速・減速の数値は各形式の公表値に近い簡略モデルです。<br>操作は路面電車と同じ: マスコン（在来線は力行 1〜4・新幹線は P1〜P13）・ブレーキ弁（在来線は B1〜B5・新幹線は B1〜B7、どちらも非常あり）・D でドア。停止位置に車両の先頭を合わせて停め、ドアを開けると到着。新幹線は 285km/h からの制動に約 4km 要るので、画面の「ブレーキ目安」より速度が高ければブレーキを。</p></details>
+            </div>
+
+            <div id="bus-note" style="display:none">
+              <div class="route-opt on" style="cursor:default"><div class="rcode" style="background:#1d3f86;color:#fff">両</div><div><strong>両備バス 西大寺線（314系統）</strong><div class="dir">岡山駅東口 13番のりば<i>→</i>天満屋<i>→</i>県庁前<i>→</i>古京<i>→</i>東山（11停留所・約4.4km）</div></div></div>
+              <details class="mn-help"><summary>操作方法とデータの出どころ</summary><p class="foot">道路・一方通行は OpenStreetMap、停留所の順序と位置は晴れバスナビ（岡山の時刻表検索）の経路ページと OSM の標柱による。天満屋バスステーションは県庁通りから西側の構内へ入り、駅舎の南を回って東側 4番のりばへ（両備バスは 2〜6番。4番は推定）。<br>操作: ↑/W アクセル　↓/S ブレーキ　←→/A D ハンドル　F 扉の開閉　V 視点（運転席／後ろ）　H 警笛。前扉を停留所の標柱に合わせ、歩道に寄せて止めてから扉を開けます。降車ボタンが押されたり、待っている人がいる停留所は必ず停車。</p></details>
+            </div>
+
+            <div id="car-wrap" style="display:none">
+              <div id="cveh-wrap">
+                <div class="mn-sub"><span>車種</span><small>配達ミッションは車種ごとにコースが変わります</small></div>
+                <div class="cvehs">
+                  <button type="button" class="cveh-opt on" data-cveh="sedan"><i class="mi sm"><svg class="ic"><use href="#ic-car"/></svg></i><span class="mt"><b>乗用車</b><small>小回りがきく・タクシーなど</small></span></button>
+                  <button type="button" class="cveh-opt" data-cveh="truck"><i class="mi sm"><svg class="ic"><use href="#ic-truck"/></svg></i><span class="mt"><b>トラック</b><small>長くて重い・宅配や長距離</small></span></button>
+                </div>
+              </div>
+              <div id="car-start-wrap" style="display:none">
+                <div class="mn-sub"><span>出発地</span><small>山陽自動車道は県内を端から端まで走れます</small></div>
+                <div class="hstarts" id="cstart-btns">
+                  <button type="button" class="cstart-opt on" data-cs="city">岡山駅前（市街地）</button>
+                  <button type="button" class="cstart-opt" data-cs="mw">山陽自動車道</button>
+                </div>
+                <div id="mw-start-sel" style="display:none">
+                  <select id="mw-place" aria-label="山陽自動車道の出発地">
+                    <option value="-47500,16850">福山東IC（県境・西端）</option>
+                    <option value="-37783,14421">笠岡IC</option>
+                    <option value="-29674,12527">鴨方IC</option>
+                    <option value="-25280,10840">道口PA</option>
+                    <option value="-20981,8730">玉島IC</option>
+                    <option value="-14110,4356">倉敷IC</option>
+                    <option value="-11976,4363">倉敷JCT</option>
+                    <option value="-8922,-1468">岡山JCT</option>
+                    <option value="-4544,-2878" selected>吉備SA</option>
+                    <option value="-3267,-3780">岡山IC</option>
+                    <option value="9826,-8748">山陽IC</option>
+                    <option value="14443,-11455">瀬戸PA</option>
+                    <option value="22396,-13504">和気IC</option>
+                    <option value="30979,-12885">備前IC</option>
+                    <option value="35491,-12786">福石PA</option>
+                    <option value="41877,-12051">赤穂IC（県境・東寄り）</option>
+                    <option value="51000,-17800">兵庫県境付近（播磨JCT方面）</option>
+                  </select>
+                  <button type="button" class="cstart-dir on" data-dir="up">上り（東へ）</button>
+                  <button type="button" class="cstart-dir" data-dir="down">下り（西へ）</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="quest-wrap" style="display:none">
+              <div class="mn-sub"><span id="quest-sub">コース</span><small>★が多いほど難しい。最高点はこのブラウザに残ります</small></div>
+              <div class="quests" id="quest-list"></div>
+            </div>
+
+            <div id="heli-note" style="display:none">
+              <div class="mn-sub"><span>出発地</span><small>空の上から始まります</small></div>
+              <div class="hstarts">
+                <button type="button" class="hstart-opt on" data-start="station">岡山駅</button>
+                <button type="button" class="hstart-opt" data-start="castle">岡山城</button>
+                <button type="button" class="hstart-opt" data-start="garden">後楽園</button>
+                <button type="button" class="hstart-opt" data-start="high">上空 650m</button>
+              </div>
+            </div>
+          </section>
+
+          <details class="mn-help" id="heli-help" style="display:none"><summary>操作方法とデータの出どころ</summary><p class="foot">小型ヘリコプターで街の上を自由に飛びます。高く上がるほど遠くの建物まで読み込み、地図の外は国土地理院の標高と空中写真による遠景（建物なし）が約 20km 四方に広がります。建物の屋上や地面には着地でき、建物の横から突っ込むと止まります。<br>操作: W/↑ 前進　S/↓ 後退　A/← D/→ 旋回　Q/E 横移動　R・Space 上昇　F・C 下降　Shift 速く　V 視点（後ろ／操縦席／真下）　O 自動で街を周回　マウスのドラッグで見回し・ホイールで距離。画面のボタンでも操作できます。</p></details>
+          <details class="mn-help" id="car-note" style="display:none"><summary>操作方法とデータの出どころ</summary><p class="foot">出発地で「山陽自動車道」を選ぶと、県内の山陽道（福山東〜兵庫県境の約 100km）を走れます（上り・下り、IC・SA/PA から出発）。線形・IC・橋・トンネルは OpenStreetMap、道路面の高さは国土地理院の標高から推定した縦断です（実際の設計値ではありません）。他の車は走行車線を守り、前の車に追いつくと減速します。<br>岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点　Space サイドブレーキ。画面のハンドルは指で回せます。</p></details>
+        </main>
+
+        <div class="mn-set">
+          <div class="mset"><span class="ml">出発の時刻</span><div class="chips">
+            <button type="button" class="time-opt" data-time="morning">朝 7:30</button>
+            <button type="button" class="time-opt on" data-time="noon">昼 12:00</button>
+            <button type="button" class="time-opt" data-time="evening">夕方 17:30</button>
+            <button type="button" class="time-opt" data-time="night">夜 20:00</button>
+            <button type="button" class="rain-opt">天気: 晴れ</button>
+          </div></div>
+          <details class="dset"><summary>表示設定</summary><div class="dset-pop"><span class="ml">PC の性能に合わせて切り替えられます</span>
+            <button type="button" class="look-opt on" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写</button>
+            <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁で描く簡略表示（軽い）。色は写真から推定">建物: 簡略（軽い）</button>
+            <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
+          </div></details>
+          <button type="button" class="dia-opt on" hidden tabindex="-1" aria-hidden="true">ダイヤ運行: あり</button>
+        </div>
+      </div>
     </div>
-    <div class="msettings">
-    <div class="mset"><div class="mset-h"><span>表示</span><small>PC の性能に合わせて</small></div><div class="modes opts">
-      <button type="button" class="look-opt on" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写（PLATEAU）</button>
-      <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁で描く簡略表示。色は写真から推定">建物: 簡略（軽い）</button>
-      <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
-    </div></div>
-    <div class="mset"><div class="mset-h"><span>運行（路面電車）</span><small>定刻どおりに走る・遅れと早発を採点</small></div><div class="modes opts">
-      <button type="button" class="dia-opt on" title="停留所ごとの到着・発車の定刻を表示し、遅れ・早発を定時点で採点します（所要時間は公表値: 東山線 約15分・清輝橋線 約12分）">ダイヤ運行: あり</button>
-    </div></div>
-    <div class="mset"><div class="mset-h"><span>時間帯・天気</span><small>走行中も N・M キーで切り替え</small></div><div class="modes opts">
-      <button type="button" class="time-opt" data-time="morning">朝</button>
-      <button type="button" class="time-opt on" data-time="noon">昼</button>
-      <button type="button" class="time-opt" data-time="evening">夕方</button>
-      <button type="button" class="time-opt" data-time="night">夜</button>
-      <button type="button" class="rain-opt">天気: 晴れ</button>
-    </div></div>
-  </div>
-    <footer class="mfoot">
-      <div class="mfoot-l">
-        <details class="mdet"><summary>操作方法</summary><div class="mdet-body">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます</div></details>
-        <details class="mdet"><summary>データについて</summary><div class="mdet-body">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</div></details>
+
+    <footer class="mn-foot">
+      <div class="mn-foot-l">
+        <div class="mn-links">
+          <details class="mdet"><summary>操作方法</summary><div class="mdet-body">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます</div></details>
+          <details class="mdet"><summary>データについて</summary><div class="mdet-body">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。開始画面の行先表示器のドット文字は DotGothic16（© The DotGothic16 Project Authors、SIL Open Font License 1.1）。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</div></details>
+        </div>
         <p class="foot" id="records"></p>
         <div class="loadbar"><i id="loadbar"></i></div>
       </div>
-      <button id="start" class="startbtn" disabled><span id="start-label">3D都市モデルを読み込み中…</span><span>→</span></button>
+      <button id="start" class="startbtn mn-go" disabled><span id="start-label">3D都市モデルを読み込み中…</span></button>
     </footer>
   </div>
 </section>
@@ -488,8 +700,9 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 <!-- GAME UI -->
 <div class="ui" id="ui">
   <header class="topbar">
-    <div class="chip"><span class="rname">ROUTE <b id="route-name">東山線</b></span></div>
+    <div class="chip"><span class="rname"><span class="rlab">ROUTE </span><b id="route-name">東山線</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
     <div class="topright">
+      <button class="iconbtn ttbtn" id="tt-btn" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn" id="view-toggle" title="視点切替">⟲</button>
       <button class="iconbtn" id="sound-btn" title="音を消す">音</button>
       <button class="iconbtn" id="help-btn">?</button>
@@ -502,6 +715,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <div class="progtrack"><i id="stop-progress"></i></div>
     <div class="mfoot"><span>駅間進行</span><span id="stop-seq">1 / 10</span></div>
     <div class="diarow" id="diarow" style="display:none"><span class="dk">ダイヤ</span><span id="dia-t">--</span><b id="dia-d" class="ok">定刻</b></div>
+    <div class="pace" id="pace" style="display:none"><div class="pbar"><i class="pm" id="pace-m"></i></div><div class="plab"><span>進み</span><span>定刻</span><span>遅れ</span></div></div>
     <div class="stopguide" id="stopguide"><div class="sgtxt" id="sgtxt">停止位置: ホーム先端の標識に車両先頭を合わせる</div><div class="sgbar"><i class="sgzone"></i><i class="sgmark" id="sgmark"></i></div></div>
   </section>
 
@@ -568,8 +782,9 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
   <div class="navi-info"><div id="navi-rd"></div><div id="navi-ll"></div></div></div>
 <div class="carui" id="carui">
   <header class="car-top">
-    <div class="chip"><span class="rname">MODE <b id="car-mode-lbl">車で自由に走る</b></span></div>
+    <div class="chip"><span class="rname"><span class="rlab">MODE </span><b id="car-mode-lbl">車で自由に走る</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
     <div class="topright">
+      <button class="iconbtn ttbtn" id="tt-btn2" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn rescue" id="rescue-btn" title="すぐそばの道路へ戻る（T）">道路に戻る <small>T</small></button>
       <button class="iconbtn" id="car-view" title="視点切替">⟲</button>
       <button class="iconbtn" id="car-menu" title="メニューへ">≡</button>
@@ -583,7 +798,8 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
       <div class="progtrack"><i id="bus-progress"></i></div>
       <div class="row small"><span>停留所</span><span id="bus-seq">1 / 10</span></div>
       <span class="req" id="bus-req">とまります</span> <span class="small" id="bus-wait"></span>
-      <div class="diarow" id="bus-diarow" style="display:none"><span class="dk">ダイヤ</span><b id="bus-dia" class="ok">--</b></div>
+      <div class="diarow" id="bus-diarow" style="display:none"><span class="dk">ダイヤ</span><span id="bus-dia-t">--</span><b id="bus-dia" class="ok">--</b></div>
+      <div class="pace" id="bus-pace" style="display:none"><div class="pbar"><i class="pm" id="bus-pace-m"></i></div><div class="plab"><span>進み</span><span>定刻</span><span>遅れ</span></div></div>
       <div class="stopguide" id="bus-guide"><div class="sgtxt small" id="bus-zone"></div><div class="sgbar"><i class="sgzone" style="left:40%;width:20%"></i><i class="sgmark" id="bus-gmark"></i></div></div>
     </section>
     <section class="brack">
@@ -611,7 +827,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 <!-- HELI UI (v17) -->
 <div class="carui heliui" id="heliui">
   <header class="car-top">
-    <div class="chip"><span class="rname">MODE <b>ヘリコプター</b></span></div>
+    <div class="chip"><span class="rname"><span class="rlab">MODE </span><b id="heli-mode-lbl">ヘリコプター</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
     <div class="topright">
       <button class="iconbtn" id="heli-auto" title="自動で街を周回（O）">自動周回 <small>O</small></button>
       <button class="iconbtn" id="heli-view" title="視点切替（V）">⟲</button>
@@ -638,6 +854,42 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <button type="button" id="hp-d">下降</button>
   </div>
 </div>
+
+<!-- v41.7: ミッション（配達・搬送・名所めぐり） -->
+<section class="qhud" id="qhud" aria-label="ミッション">
+  <div class="qtop"><span class="qkick" id="q-kick">MISSION</span><b id="q-name">宅配ヘリ</b><button type="button" id="q-quit" title="ミッションをやめて、このまま自由に操縦する">中止</button></div>
+  <div class="qmain">
+    <div class="qarrow" id="q-arrow" aria-hidden="true"><svg viewBox="-24 -24 48 48"><circle r="22" fill="rgba(0,0,0,.35)" stroke="rgba(201,168,106,.55)" stroke-width="1.5"/><path d="M0 -17 L11 12 L0 6 L-11 12 Z" fill="#ffb02e" stroke="#1a1408" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+    <div class="qnow"><small id="q-verb">荷物を積む</small><b id="q-target">岡山駅 東口</b></div>
+    <div class="qdist"><b id="q-dist">0</b><small id="q-du">m</small></div>
+  </div>
+  <div class="qbar"><i id="q-hold"></i></div>
+  <div class="qhint" id="q-hint"></div>
+  <div class="qrow"><span id="q-time">目安まで 0:00</span><span>経過 <b id="q-el">0:00</b></span><span><b id="q-score">1000</b> 点</span></div>
+  <div class="qfoot"><div class="qdots" id="q-dots"></div><small id="q-cargo"></small></div>
+</section>
+<div class="qtoast" id="qtoast" role="status" aria-live="polite"></div>
+<div class="overlay" id="qfin">
+  <div class="ocard finish-card qfin-card">
+    <span class="kicker">MISSION COMPLETE</span>
+    <h2 id="qf-name" style="margin:2px 0 0;font-size:19px;">ミッション</h2>
+    <div class="qscore"><b id="qf-score">0</b><span class="qgrade" id="qf-grade">A</span></div>
+    <div class="qrows" id="qf-rows"></div>
+    <p class="qbest" id="qf-best"></p>
+    <button type="button" id="qf-retry" class="startbtn"><span>もう一度</span><span>↻</span></button>
+    <button type="button" id="qf-free" class="startbtn alt"><span>このまま自由に操縦する</span><span>→</span></button>
+    <button type="button" id="qf-menu" class="startbtn alt"><span>メニューへ戻る</span><span>≡</span></button>
+  </div>
+</div>
+
+<!-- v41.7: 時刻表パネル -->
+<aside class="ttp" id="ttp" aria-label="時刻表">
+  <header class="ttp-h"><div><div class="kicker" id="ttp-tag">TIMETABLE</div><h3 id="ttp-title">時刻表</h3></div><div class="ttp-now"><small>いま</small><b id="ttp-clock">12:00:00</b></div><button class="closebtn" id="ttp-x" type="button" aria-label="閉じる">×</button></header>
+  <div class="ttp-cols"><span>停留場</span><span>着</span><span>発</span><span>実績</span></div>
+  <ol class="ttp-rows" id="ttp-rows"></ol>
+  <p class="ttp-sub" id="ttp-sub"></p>
+  <footer class="ttp-foot" id="ttp-foot"></footer>
+</aside>
 
 <!-- HELP -->
 <div class="overlay" id="src-overlay">
@@ -697,6 +949,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <h2 style="margin:0;font-size:19px;">運転終了</h2>
     <div id="finish-score">0</div>
     <p id="finish-text"></p>
+    <div class="ftt" id="finish-tt" style="display:none"></div>
     <button id="turnback" class="startbtn" type="button" style="margin-bottom:8px"><span id="turnback-label">折り返し運転</span><span>⇄</span></button>
     <button id="restart" class="startbtn" type="button" style="background:#3a3326;color:#f1ead9"><span>運転を終えてメニューへ</span><span>→</span></button>
   </div>
@@ -717,7 +970,7 @@ const S = {
   scene:null, routes:null, key:"higashi", route:null,
   track:null, arc:null, total:0, stops:[], cum:[], signals:[], speedLim:null,
   topH:90, pos:0, speed:0, acc:0, emergency:false, notch:0, doorOpen:true, running:false, view:"cab",
-  mode:"tram", mc:0, bv:0, look:"photo",
+  mode:"tram", mc:0, bv:0, look:"photo", play:"mission", cveh:"sedan", playBy:{ tram:"mission", bus:"mission", car:"mission", heli:"mission" },
   score:1000, comfortHits:0, stopIndex:1, sigIndex:0, clock:9*3600, announced:new Set(), t:0
 };
 
@@ -1240,10 +1493,35 @@ const Env = (() => {
       head.target.updateMatrixWorld();
     }
   }
-  function set(time, rainOn){ if(time) st.time=time; if(rainOn!==undefined) st.rain=rainOn; apply(); }
+  let timeHook = null;   // v41.7: 時間帯が変わったら時計も合わせる（Clock が登録）
+  function set(time, rainOn){ const prev = st.time; if(time) st.time=time; if(rainOn!==undefined) st.rain=rainOn; apply(); if(time && time!==prev && timeHook) timeHook(time); }
   const order=["morning","noon","evening","night"];
   function cycle(){ set(order[(order.indexOf(st.time)+1)%order.length]); }
-  return { patch, set, tick, cycle, st, apply, NIGHT_U };
+  return { patch, set, tick, cycle, st, apply, NIGHT_U, setTimeHook(f){ timeHook = f; } };
+})();
+
+/* ---------------- v41.7: 時計（どのモードでも、画面に「今の時刻」を出す） ----------------
+   S.clock = 1 日の中の秒。始めるとき、選んだ時間帯（朝 7:30・昼 12:00・夕方 17:30・夜 20:00）の時刻から。
+   走行中に時間帯を切り替える（N キー）と時計もその時刻へ進み、ダイヤの定刻も同じだけずらす（遅れ・早発の判定がずれないように）。 */
+const Clock = (() => {
+  const PRESET = { morning: 7*3600 + 30*60, noon: 12*3600, evening: 17*3600 + 30*60, night: 20*3600 };
+  const TAGS = { morning: "朝", noon: "昼", evening: "夕方", night: "夜" };
+  const shifts = [];
+  const pad = (n) => String(n).padStart(2, "0");
+  const menuEl = () => document.getElementById("menu");
+  const inSession = () => { const m = menuEl(); return !!m && m.style.display === "none"; };
+  const startT = () => PRESET[Env.st.time] || PRESET.noon;
+  function reset(){ S.clock = startT(); }
+  function jump(t){ const d = t - S.clock; if(!d) return; S.clock = t; for(const f of shifts) f(d); }
+  Env.setTimeHook(() => { if(inSession()) jump(startT()); });
+  const eT = document.querySelectorAll(".ckt"), eS = document.querySelectorAll(".cks"), eG = document.querySelectorAll(".ckg"); let lastKey = "";
+  function render(){
+    if(!inSession()) return;
+    const t = Math.floor(S.clock), key = t + Env.st.time; if(key === lastKey) return; lastKey = key;
+    const hhmm = pad(Math.floor(t / 3600) % 24) + ":" + pad(Math.floor(t / 60) % 60), sec = ":" + pad(t % 60), tag = TAGS[Env.st.time] || "";
+    eT.forEach((e) => { e.textContent = hhmm; }); eS.forEach((e) => { e.textContent = sec; }); eG.forEach((e) => { e.textContent = tag; });
+  }
+  return { PRESET, TAGS, startT, reset, jump, onShift(f){ shifts.push(f); }, render, inSession };
 })();
 
 /* 試験用: window.__MEMLOG があれば、読み込みの段ごとに JS のメモリを記録する（普段は何もしない） */
@@ -1302,7 +1580,7 @@ async function loadAll(){
   Prefs.restore();
   Trams.populate(S.key, S.cum[0]+40, S.vehicle);
   await _memlog("end");
-  $("loadbar").style.width="100%"; $("start").disabled=false; $("start-label").textContent="運転を開始する";
+  $("loadbar").style.width="100%"; $("start").disabled=false; applyMenu();
 }
 
 /* ---------------- タイルの読み込み・解放（v16） ----------------
@@ -3237,6 +3515,70 @@ function ryobiFrontTex(dest){
     g.fillStyle="#fff"; g.font="bold 16px Arial"; g.fillText("RYOBI", w/2, h*0.9);
   });
 }
+/* ---------------- v41.7: トラック（2t 級・キャブオーバー・箱型の荷台）----------------
+   寸法は 2t 標準ロングの公表値に近い値: 全長 約 6.0m・全幅 1.88m（ワイドキャブ）・軸距 3.35m・荷台の内側 長さ約 4.0m。社名・ロゴは架空（実在の運送会社ではない）。
+   +z = 前・+x = 左・y = 上（車の原点は後輪軸から 1.9m 前）。運転席は右ハンドル（x = -0.5）。 */
+function makeTruck(){
+  const g = new THREE.Group();
+  const W = 1.88, y0 = 0.62;
+  const white = new THREE.MeshPhongMaterial({ color: 0xf2f3f1, shininess: 45, specular: 0x555555 });
+  const cabM = new THREE.MeshPhongMaterial({ color: 0xe9ecee, shininess: 60, specular: 0x667788 });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x1d2024 });
+  const glassM = new THREE.MeshPhongMaterial({ color: 0x182229, specular: 0xaabbcc, shininess: 100 });
+  const frameM = new THREE.MeshLambertMaterial({ color: 0x35383c });
+  // 荷台の側面: 長さ 4.0m × 高さ 2.0m（箱の高さ 2.0m）。左右で文字が逆さ・鏡文字にならないよう、右側面は横を反転
+  const sideTex = canvasTex(1024, 512, (c, w, h) => {
+    c.fillStyle = "#f6f6f3"; c.fillRect(0, 0, w, h);
+    c.fillStyle = "#1c5fb0"; c.fillRect(0, h * 0.82, w, h * 0.1); c.fillStyle = "#f08a1c"; c.fillRect(0, h * 0.93, w, h * 0.04);
+    c.fillStyle = "#1c5fb0"; c.font = "900 150px 'Hiragino Sans','Noto Sans JP','Yu Gothic',sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("お届け便", w * 0.5, h * 0.36);
+    c.fillStyle = "#f08a1c"; c.font = "800 54px 'Hiragino Sans','Noto Sans JP',sans-serif"; c.fillText("DELIVERY SERVICE", w * 0.5, h * 0.64);
+    c.strokeStyle = "rgba(0,0,0,.12)"; c.lineWidth = 4; c.strokeRect(2, 2, w - 4, h - 4);
+  });
+  const sideL = new THREE.MeshPhongMaterial({ map: sideTex, shininess: 40, specular: 0x444444 });
+  const sideR = new THREE.MeshPhongMaterial({ map: sideTex.clone(), shininess: 40, specular: 0x444444 });
+  sideR.map.needsUpdate = true; sideR.map.wrapS = THREE.RepeatWrapping; sideR.map.repeat.x = -1; sideR.map.offset.x = 1;
+  const rearTex = canvasTex(256, 256, (c, w, h) => { c.fillStyle = "#f6f6f3"; c.fillRect(0, 0, w, h); c.fillStyle = "#1c5fb0"; c.fillRect(0, h * 0.84, w, h * 0.1);
+    c.fillStyle = "#c8202c"; c.fillRect(14, h * 0.7, 26, 30); c.fillRect(w - 40, h * 0.7, 26, 30); c.fillStyle = "#1c5fb0"; c.font = "900 44px 'Hiragino Sans','Noto Sans JP',sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("お届け便", w / 2, h * 0.3); });
+  const rear = new THREE.MeshPhongMaterial({ map: rearTex, shininess: 30 });
+  const outer = [];
+  // 荷台（長さ 4.0m: z -3.0 〜 1.0・高さ 2.0m: y 0.85 〜 2.85）
+  const box = new THREE.Mesh(new THREE.BoxGeometry(W, 2.0, 4.0), [sideL, sideR, white, dark, white, rear]); box.position.set(0, 1.85, -1.0); g.add(box); outer.push(box);
+  // 荷台の下のフレーム・泥よけ・バンパー
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.22, 5.6), dark); frame.position.set(0, 0.68, -0.3); g.add(frame);
+  const bump = new THREE.Mesh(new THREE.BoxGeometry(W - 0.1, 0.22, 0.2), dark); bump.position.set(0, 0.55, -3.1); g.add(bump);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(W + 0.01, 0.07, 4.01), new THREE.MeshLambertMaterial({ color: 0xc9ccce })); stripe.position.set(0, 0.9, -1.0); g.add(stripe); outer.push(stripe);
+  // キャブ（キャブオーバー: z 1.1 〜 2.8・高さ 1.55: y 0.78 〜 2.33）
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(W, 1.55, 1.7), cabM); cab.position.set(0, 1.555, 1.95); g.add(cab); outer.push(cab);
+  const roofDef = new THREE.Mesh(new THREE.BoxGeometry(W * 0.92, 0.12, 1.3), cabM); roofDef.position.set(0, 2.38, 1.7); g.add(roofDef); outer.push(roofDef);   // ルーフのエアデフレクタ風の段
+  const ws = new THREE.Mesh(new THREE.BoxGeometry(W - 0.14, 0.86, 0.04), glassM); ws.position.set(0, 1.78, 2.805); g.add(ws); outer.push(ws);
+  for(const s of [1, -1]){
+    const sw = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.78, 1.0), glassM); sw.position.set(s * (W / 2 + 0.005), 1.8, 2.15); g.add(sw); outer.push(sw);
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.05), new THREE.MeshBasicMaterial({ color: 0xfff6dd })); hl.position.set(s * 0.68, 1.0, 2.82); g.add(hl); outer.push(hl);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.4, 0.04), new THREE.MeshBasicMaterial({ color: 0x8a1010 })); tl.position.set(s * 0.8, 1.25, -3.01); g.add(tl);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.04, 0.04), dark); arm.position.set(s * (W / 2 + 0.2), 2.0, 2.55); g.add(arm); outer.push(arm);
+    const mir = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.36, 0.22), dark); mir.position.set(s * (W / 2 + 0.42), 1.95, 2.55); g.add(mir); outer.push(mir);
+  }
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.34, 0.04), dark); grille.position.set(0, 1.0, 2.82); g.add(grille); outer.push(grille);
+  const fbump = new THREE.Mesh(new THREE.BoxGeometry(W - 0.06, 0.22, 0.22), dark); fbump.position.set(0, 0.62, 2.72); g.add(fbump); outer.push(fbump);
+  // 車輪（前 z=1.45・後 z=-1.9 は 4 本の双輪）。回転・操舵を動かせるようにグループで持つ
+  const spin = [], wg = new THREE.CylinderGeometry(0.42, 0.42, 0.26, 20); wg.rotateZ(Math.PI / 2);
+  const rimG = new THREE.CylinderGeometry(0.22, 0.22, 0.28, 12); rimG.rotateZ(Math.PI / 2); const rimM = new THREE.MeshLambertMaterial({ color: 0x9aa0a6 });
+  const mkWheel = (x, z, front) => { const grp = new THREE.Group(); grp.position.set(x, 0.42, z); const m = new THREE.Mesh(wg, dark); grp.add(m); const r = new THREE.Mesh(rimG, rimM); m.add(r); g.add(grp); spin.push({ m, grp, front }); };
+  for(const s of [1, -1]){ mkWheel(s * (W / 2 - 0.12), 1.45, true); mkWheel(s * (W / 2 - 0.12), -1.9, false); mkWheel(s * (W / 2 - 0.5), -1.9, false); }
+  // 運転席（運転席視点で表示）: 右ハンドル・ダッシュボード・計器・窓枠
+  const inner = new THREE.Group(); inner.visible = false; g.add(inner);
+  const dashM = new THREE.MeshLambertMaterial({ color: 0x2b2e31 }), trimM = new THREE.MeshLambertMaterial({ color: 0x3c4044 });
+  const dash = new THREE.Mesh(new THREE.BoxGeometry(W - 0.12, 0.34, 0.5), dashM); dash.position.set(0, 1.42, 2.5); inner.add(dash);
+  const inst = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.12), new THREE.MeshLambertMaterial({ color: 0x14171a })); inst.position.set(-0.5, 1.68, 2.3); inst.rotation.x = -0.45; inner.add(inst);
+  const wheelG = new THREE.Group(); wheelG.position.set(-0.5, 1.55, 2.0); wheelG.rotation.x = -0.95; inner.add(wheelG);
+  wheelG.add(new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.022, 10, 36), new THREE.MeshLambertMaterial({ color: 0x1c1c1c })));
+  wheelG.add(new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.035, 0.02), trimM));
+  for(const s of [1, -1]){ const pil = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.95, 0.06), trimM); pil.position.set(s * (W / 2 - 0.06), 2.0, 2.78); pil.rotation.x = 0.22; inner.add(pil); }
+  const top = new THREE.Mesh(new THREE.BoxGeometry(W - 0.1, 0.1, 0.14), trimM); top.position.set(0, 2.38, 2.7); inner.add(top);
+  g.userData = { outer, cab: inner, wheelG, spin, len: 6.0 };
+  g.traverse(o => { if(o.isMesh) o.castShadow = true; });
+  return g;
+}
 function makeRyobiBus(dest){
   const g = new THREE.Group();
   const Lb=10.5, W=2.49, y0=0.3, y1=3.1;
@@ -3442,7 +3784,7 @@ const Bus = (() => {
     st.alight = D.stops.map(()=>0);
     setBusDoors(model,1); placePeople(); orientPlates(); buildStopMarks();
     st.atStop=0; st.dwell=0; st.dwellNeed=3+1.1*st.waiting[0];
-    ribbon.visible=true; active=true; bdBuild();
+    ribbon.visible=true; active=true; bd.clk=S.clock; bdBuild();
     $("busui").classList.add("on"); $("bus-route").textContent=D.short+"（"+D.via+"）"; hudStops();
     busAnn("start"); setTimeout(()=>busSay("岡山駅東口 13番のりばに停車中。お客様が乗り終わったら（約"+Math.ceil(st.dwellNeed)+"秒）F で扉を閉め、青い帯に沿って発車してください。"), 400);
     return true;
@@ -3511,10 +3853,10 @@ const Bus = (() => {
   /* ---- 放送（録音があれば再生、無ければ字幕のみ） ---- */
   function busAnn(id, extra){ const txt = BUS_ANN[id] ? BUS_ANN[id].text : null; if(txt) busSay("（放送）"+txt); Snd.ann && Snd.ann("bus_"+id); }
   /* ---- ダイヤ（時刻表）: ゲーム内ダイヤ。区間ごとに 長さ ÷ 6.2 m/s ＋ 12 秒、停車は 20 秒。電車のダイヤ（Dia）と同じ評価 ---- */
-  const bd = { clk: 32400, sc: null, pen: 0, rec: [], early: [], passed: 0, hold: null, stopClk: 0, moving: false };
+  const bd = { clk: 32400, sc: null, pen: 0, rec: [], early: [], passed: 0, passedList: [], hold: null, stopClk: 0, moving: false };
   const bdOn = () => active && Dia.on && bd.sc && !st.done;
   function bdBuild(){
-    bd.sc = null; bd.pen = 0; bd.rec = []; bd.early = []; bd.passed = 0; bd.hold = null; bd.stopClk = 0; bd.moving = false;
+    bd.sc = null; bd.pen = 0; bd.rec = []; bd.early = []; bd.passed = 0; bd.passedList = []; bd.hold = null; bd.stopClk = 0; bd.moving = false; bd._ding = -1;
     const n = D.stops.length; if(!Dia.on || n < 3) return;
     const sc = []; let t = bd.clk + Math.max(30, st.dwellNeed + 15); sc[0] = { arr: null, dep: t };
     for(let i = 1; i < n; i++){ const arr = sc[i - 1].dep + (D.stops[i].arc - D.stops[i - 1].arc) / 6.2 + 12; sc[i] = { arr, dep: i < n - 1 ? arr + 20 : arr }; }
@@ -3522,15 +3864,19 @@ const Bus = (() => {
   }
   function bdHud(){
     const el = $("bus-dia"), row = $("bus-diarow"); if(!el || !row) return;
-    if(!bdOn()){ row.style.display = "none"; return; } row.style.display = "";
-    const a = (st.doors && st.atStop >= 0) ? st.atStop : -1; let txt, cls = "ok";
-    if(a >= 0){ if(a >= D.stops.length - 1){ txt = "終点"; } else { const rem = bd.sc[a].dep - bd.clk; if(rem > 0.5){ txt = "発車 " + Dia.hms(bd.sc[a].dep) + "（あと " + Math.ceil(rem) + " 秒）"; cls = "wait"; } else { txt = "定刻です"; if(rem < -5){ txt = "遅れ " + Math.round(-rem) + " 秒"; cls = "late"; } } } }
-    else { const i = st.stopI, sc = bd.sc[i]; if(!sc || sc.arr == null){ row.style.display = "none"; return; }
+    if(!bdOn()){ row.style.display = "none"; paceSet("bus-pace", 0, false); return; } row.style.display = "";
+    const lab = $("bus-dia-t");
+    const a = (st.doors && st.atStop >= 0) ? st.atStop : -1; let txt, cls = "ok", d = 0, showBar = true;
+    if(a >= 0){ if(a >= D.stops.length - 1){ txt = "終点"; if(lab) lab.textContent = "終点に到着"; showBar = false; }
+      else { const rem = bd.sc[a].dep - bd.clk; d = -rem; if(lab) lab.textContent = "発車定刻 " + Dia.hms(bd.sc[a].dep);
+        if(rem > 0.5){ txt = "あと " + fmtRem(rem); cls = "wait"; }
+        else { txt = "発車OK"; if(bd._ding !== a){ bd._ding = a; Snd.blip("ok"); } if(rem < -5){ txt = "遅れ " + Math.round(-rem) + " 秒"; cls = "late"; } } } }
+    else { const i = st.stopI, sc = bd.sc[i]; if(!sc || sc.arr == null){ row.style.display = "none"; paceSet("bus-pace", 0, false); return; }
       const prev = bd.sc[i - 1], a0 = D.stops[i - 1].arc, a1 = D.stops[i].arc, u = Math.max(0, Math.min(1, (st.s + 4.6 - a0) / Math.max(1, a1 - a0)));
       let lo = 0, hi = 1; for(let k = 0; k < 14; k++){ const m = (lo + hi) / 2; if(3 * m * m - 2 * m * m * m < u) lo = m; else hi = m; }
-      const d = bd.clk - (prev.dep + (sc.arr - prev.dep) * (lo + hi) / 2);
-      txt = "到着 " + Dia.hms(sc.arr) + "　" + (d > 5 ? "遅れ " + Math.round(d) + " 秒" : d < -5 ? "進み " + Math.round(-d) + " 秒" : "定刻"); cls = d > 5 ? "late" : d < -5 ? "early" : "ok"; }
-    el.textContent = txt; el.className = cls;
+      d = bd.clk - (prev.dep + (sc.arr - prev.dep) * (lo + hi) / 2); if(lab) lab.textContent = "到着定刻 " + Dia.hms(sc.arr);
+      txt = d > 5 ? "遅れ " + Math.round(d) + " 秒" : d < -5 ? "進み " + Math.round(-d) + " 秒" : "定刻"; cls = d > 5 ? "late" : d < -5 ? "early" : "ok"; }
+    el.textContent = txt; el.className = cls; paceSet("bus-pace", d, showBar);
   }
   function bdOpen(i){
     if(!bdOn() || !bd.sc[i] || bd.sc[i].arr == null || bd.rec.some(r => r.i === i)) return;
@@ -3542,7 +3888,7 @@ const Bus = (() => {
     if(!bdOn() || !bd.sc[i] || i >= D.stops.length - 1) return; const rem = bd.sc[i].dep - bd.clk;
     if(rem > 0.5){ bd.hold = i; return "発車定刻は " + Dia.hms(bd.sc[i].dep) + "（あと " + Math.ceil(rem) + " 秒）。定刻まで待ってから発車してください。"; }
   }
-  function bdPass(i){ if(bdOn() && bd.sc[i] && bd.sc[i].arr != null && i < D.stops.length - 1 && !bd.rec.some(r => r.i === i)){ bd.passed++; bd.pen += Dia.cfg.PASS_PEN; } }
+  function bdPass(i){ if(bdOn() && bd.sc[i] && bd.sc[i].arr != null && i < D.stops.length - 1 && !bd.rec.some(r => r.i === i)){ bd.passed++; bd.passedList.push(i); bd.pen += Dia.cfg.PASS_PEN; } }
   function bdTick(dt, v){
     bd.clk += dt; if(Math.abs(v) < 0.3){ if(bd.moving){ bd.moving = false; bd.stopClk = bd.clk; } } else bd.moving = true;
     if(!bdOn()) { bdHud(); return; }
@@ -3550,6 +3896,14 @@ const Bus = (() => {
       if(!sc || bd.clk >= sc.dep - 0.5) bd.hold = null;
       else if(!st.doors && Math.abs(v) * 3.6 > 3){ const early = sc.dep - bd.clk, pen = Math.min(60, early * Dia.cfg.EARLY_K); bd.pen += pen; bd.early.push({ i: bd.hold, sec: Math.round(early) }); busSay("定刻前に発車しました（" + Math.round(early) + " 秒早い・ダイヤ -" + Math.round(pen) + "点）。"); bd.hold = null; } }
     bdHud();
+  }
+  function bdShift(d){ bd.clk += d; if(bd.stopClk > 0) bd.stopClk += d; if(bd.sc) for(const c of bd.sc){ if(!c) continue; if(c.arr != null) c.arr += d; if(c.dep != null) c.dep += d; } }
+  function bdModel(){
+    if(!(active && Dia.on && bd.sc)) return { on: false, kind: "bus", title: D.short + "（" + D.via + "）", rows: D.stops.map((s, i) => ({ name: s.name, arc: s.arc - D.stops[0].arc, cur: i === st.stopI })) };
+    const rows = [];
+    for(let i = 0; i < D.stops.length; i++){ const c = bd.sc[i]; if(!c) continue; const rec = bd.rec.find(q => q.i === i);
+      rows.push({ name: D.stops[i].name, arr: c.arr, dep: c.dep, dev: rec ? rec.dev : null, passed: bd.passedList.includes(i), cur: i === ((st.doors && st.atStop >= 0) ? st.atStop : st.stopI), here: st.doors && st.atStop === i }); }
+    return { on: true, kind: "bus", title: D.short + "（" + D.via + "）時刻表", rows, pen: bd.pen, ok: true };
   }
   function bdSummary(){
     if(!bd.sc || !(bd.rec.length || bd.passed)) return null;
@@ -3602,7 +3956,7 @@ const Bus = (() => {
     $("finish-text").textContent="両備バス 西大寺線 岡山駅 → 東山　ランク "+(s>=950?"S":s>=850?"A":s>=700?"B":"C")+"　乗り心地 "+Math.max(0,100-st.comfortHits*5)+"%";
     { const r=bdSummary(); if(r){ $("finish-text").textContent+="\nダイヤ運行: 定時点 "+r.dia+" / 1000（"+r.g+"）・定刻どおりの到着 "+r.ok+"/"+r.n+" 停留所・最大遅れ "+r.late+" 秒"+(r.passed?"・通過 "+r.passed+" 停留所":"")+(r.early?"・早発 "+r.early+" 回":"");
         const R2=Prefs.record("dia:bus", r.dia); setTimeout(()=>{ if(R2.newBest && R2.n>1) $("finish-text").textContent+="\nダイヤ自己ベスト更新！"; }, 0); } }
-    $("finish-overlay").classList.add("on"); $("turnback").style.display="none";
+    TT.fillFinish(bdModel()); $("finish-overlay").classList.add("on"); $("turnback").style.display="none";
     busAnn("terminal");
   }
   /* ---- 毎フレーム ---- */
@@ -3693,7 +4047,7 @@ const Bus = (() => {
     const q=pathPt(P,s), t=pathTan(P,s); st.idx=Math.max(0,bi-2); return {x:q.x, z:q.z, yaw:Math.atan2(t.x,t.z)};
   }
   function onRoute(){ return !st.off; }
-  return { init, begin, end, tick, doorKey, nearestOnRoute, onRoute, bd, bdSummary, bdBuild, get active(){ return active; }, get data(){ return D; }, st, setLimit:(v)=>{ st.lim=v; } };
+  return { init, begin, end, tick, doorKey, nearestOnRoute, onRoute, bd, bdSummary, bdBuild, bdShift, bdModel, get active(){ return active; }, get data(){ return D; }, st, setLimit:(v)=>{ st.lim=v; } };
 })();
 
 /* 放送文（バス）。読み仮名は tts に */
@@ -3857,6 +4211,14 @@ function setSubtitle(t){ $("subtitle").textContent=t; }
    ・停留所ごとの配分は、区間の距離・制限速度・信号の数から按分した推定（実際の時刻表の値ではない）。停車時間（DWELL）も仮定。
    ・到着は「停止した時刻」で測る。定刻より GRACE 秒を超えて遅れると減点、早着は減点なし（その代わり発車は定刻まで待つ）。
    ・定刻前の発車（早発）は 1 秒につき 3 点（最大 60 点）。 */
+/* v41.7: 定刻とのずれ（秒。+ は遅れ）を横の帯に出す。左 = 進み・中央 = 定刻・右 = 遅れ（20 秒を超えると減点）。±60 秒で端 */
+function paceSet(id, d, on){
+  const p = document.getElementById(id), m = document.getElementById(id + "-m"); if(!p || !m) return;
+  p.style.display = on ? "" : "none"; if(!on) return;
+  m.style.left = (50 + Math.max(-60, Math.min(60, d)) / 60 * 50).toFixed(1) + "%";
+  m.className = "pm " + (d > 20 ? "late" : d > 5 ? "warn" : d < -5 ? "early" : "ok");
+}
+const fmtRem = (s) => { s = Math.max(0, Math.ceil(s)); return s >= 60 ? Math.floor(s / 60) + "分" + String(s % 60).padStart(2, "0") + "秒" : s + "秒"; };
 const Dia = (() => {
   const cfg = { TOTAL: { higashi: 1080, seiki: 870 }, DWELL: 25, GRACE: 20, START_WAIT: 30, LATE_K: 0.6, LATE_MAX: 40, EARLY_K: 3, PASS_PEN: 60 };
   const D = { on: true, sc: null, i0: 0, pen: 0, rec: [], early: [], passed: [], hold: null, moving: false, stopClock: 0, key: "" };
@@ -3891,18 +4253,21 @@ const Dia = (() => {
   function show(on){ const r = $("diarow"); if(r) r.style.display = on ? "" : "none"; }
   function hud(){
     const r = $("diarow"); if(!r) return;
-    if(!active()){ r.style.display = "none"; return; } r.style.display = "";
-    const L = $("dia-t"), V = $("dia-d"); let a = atStop(), cls = "ok", txt = "";
+    if(!active()){ r.style.display = "none"; paceSet("pace", 0, false); return; } r.style.display = "";
+    const L = $("dia-t"), V = $("dia-d"); let a = atStop(), cls = "ok", txt = "", d = 0, showBar = true;
     if(a >= 0 && D.sc[a]){
       const last = a >= S.stops.length - 1;
-      if(last){ L.textContent = "終点"; txt = "定時点 " + Math.max(0, Math.round(1000 - D.pen)); }
-      else { const rem = D.sc[a].dep - S.clock; L.textContent = "発車 " + hms(D.sc[a].dep); if(rem > 0.5){ txt = "あと " + Math.ceil(rem) + " 秒"; cls = "wait"; } else { txt = "定刻です"; cls = "ok"; if(rem < -5){ txt = "遅れ " + Math.round(-rem) + " 秒"; cls = "late"; } } }
+      if(last){ L.textContent = "終点に到着"; txt = "定時点 " + Math.max(0, Math.round(1000 - D.pen)); showBar = false; }
+      else { const rem = D.sc[a].dep - S.clock; L.textContent = "発車定刻 " + hms(D.sc[a].dep); d = -rem;
+        if(rem > 0.5){ txt = "あと " + fmtRem(rem); cls = "wait"; }
+        else { txt = "発車OK"; cls = "ok"; if(D._ding !== a){ D._ding = a; Snd.blip("ok"); }
+          if(rem < -5){ txt = "遅れ " + Math.round(-rem) + " 秒"; cls = "late"; } } }
     } else {
-      const i = S.stopIndex; if(!D.sc[i] || D.sc[i].arr == null || i - 1 < D.i0){ r.style.display = "none"; return; }
-      const d = S.clock - expAt(i); L.textContent = "到着 " + hms(D.sc[i].arr);
+      const i = S.stopIndex; if(!D.sc[i] || D.sc[i].arr == null || i - 1 < D.i0){ r.style.display = "none"; paceSet("pace", 0, false); return; }
+      d = S.clock - expAt(i); L.textContent = "到着定刻 " + hms(D.sc[i].arr);
       if(d > 5){ txt = "遅れ " + Math.round(d) + " 秒"; cls = "late"; } else if(d < -5){ txt = "進み " + Math.round(-d) + " 秒"; cls = "early"; } else txt = "定刻";
     }
-    V.textContent = txt; V.className = cls;
+    V.textContent = txt; V.className = cls; paceSet("pace", d, showBar);
   }
   function tick(){
     if(S.speed < 0.3){ if(D.moving){ D.moving = false; D.stopClock = S.clock; } } else D.moving = true;
@@ -3945,7 +4310,17 @@ const Dia = (() => {
     return "\nダイヤ運行: 定時点 " + r.dia + " / 1000（" + r.g + "）・定刻どおりの到着 " + r.ok + "/" + r.n + " 停留所・最大遅れ " + r.late + " 秒" + (r.passed ? "・通過 " + r.passed + " 停留所（-" + r.passed * cfg.PASS_PEN + "点）" : "") + (r.early ? "・早発 " + r.early + " 回" : "");
   }
   function setOn(v){ D.on = !!v; if(!v){ D.sc = null; show(false); } else if(S.running && S.mode === "tram") build(); }
-  return { build, tick, onOpen, onPass, onClose, summary, result, setOn, cfg, D, get on(){ return D.on; }, hms };
+  // v41.7: 時計を d 秒進めた（時間帯の切り替え）ぶん、定刻も同じだけずらす
+  function shift(d){ if(D.sc) for(const c of D.sc){ if(!c) continue; if(c.arr != null) c.arr += d; if(c.dep != null) c.dep += d; } if(D.stopClock > 0) D.stopClock += d; }
+  // v41.7: 時刻表パネル用（停留場ごとの定刻と実績）
+  function model(force){
+    if(!(D.on && S.mode === "tram" && !VEH().jr && (S.running || force) && D.sc)) return null;
+    const rows = [], a = atStop();
+    for(let i = D.i0; i < S.stops.length; i++){ const c = D.sc[i]; if(!c) continue; const rec = D.rec.find(q => q.i === i);
+      rows.push({ name: S.stops[i].name.replace(/・.*$/, ""), arr: c.arr, dep: c.dep, dev: rec ? rec.dev : null, passed: D.passed.includes(i), cur: i === (a >= 0 ? a : S.stopIndex), here: i === a }); }
+    return { title: (S.route && S.route.name || "路面電車") + " 時刻表", rows, pen: D.pen, ok: true, kind: "tram" };
+  }
+  return { build, tick, onOpen, onPass, onClose, summary, result, setOn, shift, model, cfg, D, get on(){ return D.on; }, hms };
 })();
 
 /* ---------------- 音と車内放送 ----------------
@@ -4151,6 +4526,11 @@ const Snd = (() => {
     if(S.mode === "car"){ play("car_horn", {gain: 0.75}); return; }
     play("bell", {gain: 0.9}); play("bell", {gain: 0.8, delay: 0.42}); }
   function hsChime(){ return play("hs_chime", {gain: 0.7}); }   // v40: 新幹線の「まもなく到着」チャイム（提供音源）
+  // v41.7: ミッションや発車時刻の合図（kind: ok=ピポッ / load=積み込み / done=到着・完了 / bad=減点）
+  function blip(kind){ if(!ctx || !on) return; const t=ctx.currentTime;
+    const seq = kind==="bad" ? [[196,0,"triangle"],[147,0.15,"triangle"]] : kind==="done" ? [[784,0],[988,0.11],[1319,0.22],[1568,0.36]] : kind==="load" ? [[659,0],[880,0.09]] : [[880,0],[1175,0.13]];
+    for(const [f,d,ty] of seq){ const o=ctx.createOscillator(); o.type=ty||"sine"; o.frequency.value=f; const g=ctx.createGain(); const pk = kind==="bad" ? 0.3 : 0.22;
+      g.gain.setValueAtTime(0.0001,t+d); g.gain.exponentialRampToValueAtTime(pk,t+d+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+d+(kind==="done"?0.55:0.32)); o.connect(g).connect(sfxBus); o.start(t+d); o.stop(t+d+0.7); } }
   function chime(){ if(!ctx || !on) return; const t=ctx.currentTime;
     for(const [f,d] of [[1318.5,0],[1046.5,0.32]]){ const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=f; const g=ctx.createGain();
       g.gain.setValueAtTime(0.0001,t+d); g.gain.exponentialRampToValueAtTime(0.35,t+d+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+d+0.9); o.connect(g).connect(sfxBus); o.start(t+d); o.stop(t+d+1); } }
@@ -4255,7 +4635,7 @@ const Snd = (() => {
     }
     const t = ctx.currentTime, set = (n, v, tc) => { if(n) n.g.gain.setTargetAtTime(v, t, tc || 0.1); };
     if(!on || !C.active){ for(const k of ["car","bus","road","cabin","sq"]) set(eng[k], 0); eng.bp.gain.setTargetAtTime(0, t, 0.02); wasMoving = false; return; }
-    const bus = S.mode === "bus", sp = Math.abs(C.v), inside = C.view === "driver";
+    const bus = S.mode === "bus" || C.profile === "truck", sp = Math.abs(C.v), inside = C.view === "driver";
     const r = Math.max(0, Math.min(1, (C.rpm - 800) / 5200));
     if(bus){
       set(eng.car, 0);
@@ -4286,7 +4666,7 @@ const Snd = (() => {
   function debug(){ const g = o => o ? +o.g.gain.value.toFixed(3) : null; return { ctx: ctx && ctx.state, bufs: Object.keys(buf).length, plays, last: Snd._last,
     car: eng && { car: g(eng.car), bus: g(eng.bus), road: g(eng.road), cabin: g(eng.cabin), rate: eng.car && +eng.car.src.playbackRate.value.toFixed(2), brate: eng.bus && +eng.bus.src.playbackRate.value.toFixed(2) },
     heli: hs && { rotor: g(hs.rotor), body: g(hs.body), cabin: g(hs.cabin) } }; }
-  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, get on(){ return on; }};
+  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, blip, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, get on(){ return on; }};
 })();
 
 /* 放送文は audio/ann.json（提供の書き起こしを整えた文面。広告は除外、運賃は改定があるため入れていない）。 */
@@ -4654,6 +5034,10 @@ const Car = (() => {
     sedan: { L: 2.7, rearOff: 1.35, vmax: 180 / 3.6, drive: 3.4, brake: 8.0, grip: 0.9, ratio: 14.5, maxW: 7.85, speedSens: 75,
              corners: [[2.2, 0.85], [2.2, -0.85], [-2.2, 0.85], [-2.2, -0.85], [2.3, 0]], len: 4.5, wid: 1.8,
              drv: { x: -0.37, y: 1.22, f: 0.15 }, cam: { back: 8.5, up: 3.2, look: 3 } },
+    // v41.7: 2t トラック（キャブオーバー・箱型）: 軸距 3.35m・全長 6.0m・全幅 1.88m・最小回転半径 約 5.2m。最高 90km/h（速度抑制装置相当）
+    truck: { L: 3.35, rearOff: 1.9, vmax: 90 / 3.6, drive: 2.2, brake: 6.2, grip: 0.7, ratio: 15, maxW: 7.85, speedSens: 105, pitchK: 0.0055, rollK: 0.011,
+             corners: [[2.8, 0.92], [2.8, -0.92], [-3.0, 0.92], [-3.0, -0.92], [2.8, 0], [1.2, 0.95], [1.2, -0.95], [-0.8, 0.95], [-0.8, -0.95], [-2.0, 0.95], [-2.0, -0.95]], len: 6.0, wid: 1.88,
+             drv: { x: -0.5, y: 2.05, f: 1.75 }, cam: { back: 11.5, up: 4.3, look: 4, lookH: 1.8 } },
     // 三菱ふそう エアロスター（ノンステップ 10.5m 級）相当: 軸距 5.3m・全幅 2.49m・最小回転半径 約 8.3m
     bus:   { L: 5.3, rearOff: 2.75, vmax: 80 / 3.6, drive: 1.35, brake: 5.5, grip: 0.62, ratio: 13.5, maxW: 7.85, speedSens: 140,
              corners: [[5.2, 1.2], [5.2, -1.2], [-5.2, 1.2], [-5.2, -1.2], [5.3, 0], [2.6, 1.25], [2.6, -1.25], [0, 1.25], [0, -1.25], [-2.6, 1.25], [-2.6, -1.25]], len: 10.5, wid: 2.49,
@@ -4849,7 +5233,7 @@ const Car = (() => {
     const lz = clW(hAt(C.x + sx * P.wid * 0.45, C.z + sz * P.wid * 0.45, C.h)), rz = clW(hAt(C.x - sx * P.wid * 0.45, C.z - sz * P.wid * 0.45, C.h));
     { const hn = (hf + hb + lz + rz) / 4, vmax = (3 + 0.2 * Math.abs(C.v)) * dt;   // 上下は秒速 3m + 速度×0.2 まで（段差でも瞬間移動しない）
       C.h = Math.abs(hn - C.h) > 4 ? hn : C.h + Math.max(-vmax, Math.min(vmax, hn - C.h)); }
-    const pitchT = Math.atan(grade) - (a - Math.sign(C.v) * brakeA) * (P === PROFILES.bus ? 0.006 : 0.004), rollT = Math.atan((lz - rz) / (P.wid * 0.9)) + Math.sign(C.v) * yawRate * Math.abs(C.v) * (P === PROFILES.bus ? 0.012 : 0.006);
+    const pitchT = Math.atan(grade) - (a - Math.sign(C.v) * brakeA) * (P.pitchK || (P === PROFILES.bus ? 0.006 : 0.004)), rollT = Math.atan((lz - rz) / (P.wid * 0.9)) + Math.sign(C.v) * yawRate * Math.abs(C.v) * (P.rollK || (P === PROFILES.bus ? 0.012 : 0.006));
     C.pitch += (pitchT - C.pitch) * Math.min(1, dt * 6); C.roll += (rollT - C.roll) * Math.min(1, dt * 6);
     // エンジン回転（6速 AT の簡易シフト）
     const kmh = sp * 3.6, gearN = C.gear === "R" ? 1 : Math.min(6, 1 + Math.floor(kmh / 22));
@@ -4862,12 +5246,13 @@ const Car = (() => {
     car.position.set(C.x, C.h, C.z);
     car.rotation.set(0, 0, 0); car.rotateY(C.yaw); body.rotation.set(-C.pitch, 0, C.roll); if (extBody) extBody.rotation.set(-C.pitch, 0, C.roll);
     for (const w of wheels) { w.m.rotation.x += C.v * 0.016 / 0.32; if (w.front) w.w.rotation.y = C.steer; }
+    if (extBody && extBody.userData.spin) for (const w of extBody.userData.spin) { w.m.rotation.x += C.v * 0.016 / 0.42; if (w.front) w.grp.rotation.y = C.steer; }
     swG.rotation.z = -C.wheel;
   }
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   function updateCam(dt) {
     const fx = Math.sin(C.yaw), fz = Math.cos(C.yaw);
-    const isBus = P === PROFILES.bus;
+    const isBus = P !== PROFILES.sedan;   // v41.7: バス・トラックなど外観を差し込む車（運転席・窓の扱いが乗用車と違う）
     if (C.view === "driver") {
       inner.visible = !isBus; cabin.visible = false; roof.visible = false; if (C.onDriverView) C.onDriverView(true);
       const sx = Math.cos(C.yaw), sz = -Math.sin(C.yaw), d = P.drv;
@@ -4881,7 +5266,7 @@ const Car = (() => {
       camPos.lerp(want, Math.min(1, dt * 4));
       const gh = hAt(camPos.x, camPos.z, camPos.y) + 0.6; if (camPos.y < gh) camPos.y = gh;
       if (C.camCeil) { const cy = C.camCeil(camPos.x, camPos.z); if (camPos.y > cy) camPos.y = Math.max(gh, cy); }
-      camLook.set(C.x + fx * P.cam.look, C.h + (isBus ? 2.0 : 1.0), C.z + fz * P.cam.look);
+      camLook.set(C.x + fx * P.cam.look, C.h + (P.cam.lookH || (isBus ? 2.0 : 1.0)), C.z + fz * P.cam.look);
       camera.position.copy(camPos); camera.lookAt(camLook);
     }
   }
@@ -5043,7 +5428,7 @@ function finishRide(){ S.running=false; const tn=S.routes.turn && S.routes.turn[
   $("turnback-label").textContent = tn ? (tn.deadhead ? "折り返し運転（回送で乗り場を移って出発）" : (tn.pull.length ? "折り返し運転（引上線で運転台を交換）" : "折り返し運転（運転台を交換）")) : ""; $("finish-score").textContent=Math.round(S.score); const g=S.score>900?"S":S.score>750?"A":S.score>550?"B":"C";
   { const R=Prefs.record("tram:"+(S.baseKey||S.key), Math.round(S.score)); setTimeout(()=>{ if(R.newBest && R.n>1) $("finish-text").textContent+="\n自己ベスト更新！"; }, 0); }
   $("finish-text").textContent=S.route.name+" "+S.stops[0].name.replace(/・.*$/,"")+" → "+S.stops[S.stops.length-1].name.replace(/・.*$/,"")+"（"+Math.round(S.endArc-S.cum[0])+" m）\n評価: "+g+"（快適スコア "+Math.round(S.score)+" / 1000）\n衝撃減点回数: "+S.comfortHits+"回"; { const dr=Dia.result(); if(dr){ $("finish-text").textContent+=Dia.summary(); const R2=Prefs.record("dia:"+(S.baseKey||S.key), dr.dia); if(R2.newBest && R2.n>1) $("finish-text").textContent+="（ダイヤ自己ベスト更新！）"; } }
-  $("finish-overlay").classList.add("on"); }
+  TT.fillFinish(Dia.model(true)); $("finish-overlay").classList.add("on"); }
 
 /* マスコン(S.mc: 切・1〜4) とブレーキ弁(S.bv: 運転・1〜5・非常=6) を別々に持ち、実際の指令(S.notch)を合成する。
    ブレーキ弁が運転位置以外なら制動が優先（力行は遮断）。キー・ボタンは従来どおり1本の軸で操作できる。 */
@@ -5222,8 +5607,13 @@ const Heli = (() => {
   const beacon = add(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1a }), 0, 2.98, -1.6);
   const navL = add(new THREE.SphereGeometry(0.07, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff3020 }), 1.2, 1.5, 0.2);
   const navR = add(new THREE.SphereGeometry(0.07, 6, 4), new THREE.MeshBasicMaterial({ color: 0x20ff50 }), -1.2, 1.5, 0.2);
+  // v41.7: ミッションの荷物ポッド（スキッドの間・胴の下。積んでいる時だけ表示）
+  const podM = new THREE.MeshPhongMaterial({ color: 0xf08a1c, shininess: 40 });
+  const pod = add(new THREE.BoxGeometry(0.95, 0.5, 1.9), podM, 0, 0.42, 0.3); pod.visible = false;
+  add(new THREE.BoxGeometry(0.98, 0.52, 0.14), dark, 0, 0, 0.55, pod); add(new THREE.BoxGeometry(0.98, 0.52, 0.14), dark, 0, 0, -0.35, pod);   // 荷締めベルト
   heli.traverse(o => { if(o.isMesh){ o.castShadow = true; } });
   disc.castShadow = false;
+  function setPod(on, color){ pod.visible = !!on; if(on && color != null) podM.color.setHex(color); }
 
   // ---- 入力 ----
   const key = {}, pad = { f:0, b:0, l:0, r:0, u:0, d:0, fast:0 };
@@ -5314,9 +5704,9 @@ const Heli = (() => {
     H.x = nx; H.z = nz;
     H.y += H.vY * dt;
     H.y = Math.min(H.y, 1500);
-    const top = footTop(H.x, H.z, H.yaw);
+    const top = footTop(H.x, H.z, H.yaw), wasLanded = H.landed;
     H.landed = H.y <= top + 0.02;
-    if(H.y < top){ H.y = top; if(H.vY < 0) H.vY = 0; }
+    if(H.y < top){ if(H.vY < -0.05 && !wasLanded){ H.tdV = -H.vY; H.tdT = performance.now(); } H.y = top; if(H.vY < 0) H.vY = 0; }   // v41.7: 接地した瞬間の降下速度（ミッションの着陸採点）
     if(H.landed){ H.vF *= Math.max(0, 1 - dt * 2.5); H.vS *= Math.max(0, 1 - dt * 2.5); }
     H.ground = groundAt(H.x, H.z); H.agl = H.y - Math.max(H.ground, roofAt(H.x, H.z));
     // 見た目の傾き（前進で機首下げ・旋回でバンク）
@@ -5376,10 +5766,10 @@ const Heli = (() => {
     const overWater = waterAt(H.x, H.z) > groundAt(H.x, H.z) + 0.3;
     $("heli-msg").textContent = H.msgT > 0 ? H.msg : H.landed ? (overWater ? "水面の上です（着陸できません）— 上昇してください" : "着地しています — R・Space（または 上昇）で離陸") : "";
   }
-  return { H, heli, pad, setHmax, setFar, tick, updateCam, focus, hud, start, stop, bindUI, setStart, topAt, groundAt, farH, roofAt, get fogK(){ return Math.max(1, Math.min(6, 1 + (H.y - 20) / 160)); } };
+  return { H, heli, pad, setHmax, setFar, tick, updateCam, focus, hud, start, stop, bindUI, setStart, setPod, topAt, groundAt, farH, roofAt, get fogK(){ return Math.max(1, Math.min(6, 1 + (H.y - 20) / 160)); } };
 })();
 
-function beginRide(){ leaveJR(); setupRoute(S.key,false); if(S.vehicle && S.vehicle!=="momo") setVehicle(S.vehicle); S.baseKey=S.key; S._camD=null; mapCache=null; $("route-name").textContent=S.route.name; $("next-stop").textContent=S.stops[1].name;
+function beginRide(){ leaveJR(); Clock.reset(); setupRoute(S.key,false); if(S.vehicle && S.vehicle!=="momo") setVehicle(S.vehicle); S.baseKey=S.key; S._camD=null; mapCache=null; $("route-name").textContent=S.route.name; $("next-stop").textContent=S.stops[1].name;
   $("stop-seq").textContent="1 / "+(S.stops.length-1); $("menu").style.display="none"; $("ui").classList.add("on"); $("finish-overlay").classList.remove("on");
   S.mode="tram"; Car.stop(); $("carui").classList.remove("on"); buildNotchBar(); S.mc=0; S.bv=0; applyHandles();
   $("ui").classList.toggle("cab", S.view==="cab");
@@ -5411,7 +5801,7 @@ function buildJRPicker(){
 }
 function beginJR(){
   if(!JRSEL || !JRSEL.def){ alert("JR の線路データを読み込めませんでした。"); return; }
-  const def=JRSEL.def, vk=JRSEL.vkey, r=JR.buildRoute(def, vk);
+  Clock.reset(); const def=JRSEL.def, vk=JRSEL.vkey, r=JR.buildRoute(def, vk);
   S.routes[def.key]=r; S.vehicle=vk; S.mode="tram"; Car.stop(); $("carui").classList.remove("on");
   setupRoute(def.key,false); setVehicle(vk); S.baseKey=def.key; S._camD=null; mapCache=null; JR.begin(r); Cab.setDial(VEH().dial, Math.round(VEH().dial/VEH().dstep)); Cab.setNotches(NP(), NB(), !!VEH().hs); buildNotchBar(); S.mc=0; S.bv=0; applyHandles();
   $("route-name").textContent=S.route.name; $("next-stop").textContent=S.stops[1]?S.stops[1].name:S.stops[0].name; $("stop-seq").textContent="1 / "+Math.max(1,S.stops.length-1);
@@ -5421,30 +5811,38 @@ function beginJR(){
   setSubtitle(S.stops[0].name+"。ドアを閉め、ブレーキ弁を運転位置に戻してマスコンを入れてください。次は "+(S.stops[1]?S.stops[1].name:"")+"。");
   Snd.init(); Snd.hush(); S._appr=false;
   Trams.populate(null, 0, "none"); Traffic.reset(); }
-$("start").addEventListener("click",()=>{ if($("start").disabled) return; const sel=document.querySelector(".mode-opt.on"); const m=sel ? sel.dataset.mode : S.mode;
+$("start").addEventListener("click",()=>{ if($("start").disabled) return; applyMenu(); const sel=document.querySelector(".mode-opt.on"); const m=sel ? sel.dataset.mode : S.mode;
   if(m==="car") beginCar(); else if(m==="bus") beginBus(); else if(m==="heli") beginHeli(); else if(m==="jr") beginJR(); else beginRide(); });
 function beginHeli(){
-  leaveJR(); S.mode="heli"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.remove("on"); $("heliui").classList.add("on");
+  leaveJR(); Clock.reset(); S.mode="heli"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.remove("on"); $("heliui").classList.add("on");
   Car.stop(); setupRoute("higashi", true); S.pos=S.cum[0]+60;
-  Snd.init(); Snd.hush(); Heli.start();
+  Snd.init(); Snd.hush(); Quest.end();
+  const mission = S.play==="mission" && Quest.def(Quest.sel.heli);
+  if(mission) Heli.setStart(mission.start); else { const o=document.querySelector(".hstart-opt.on"); if(o) Heli.setStart(o.dataset.start); }
+  Heli.start();
   Trams.populate(null, 0, "none"); Traffic.reset(); if(S.car) S.car.visible=false;
-  Stream.tick(); }
-$("heli-menu").addEventListener("click",()=>{ Heli.stop(); Snd.heliSound(Heli.H); S.mode="menu"; Loc.hide(); $("heliui").classList.remove("on"); $("menu").style.display="flex"; });
+  Stream.tick(); if(mission) Quest.begin(mission.id); }
+$("heli-menu").addEventListener("click",()=>{ Quest.end(); Heli.stop(); Snd.heliSound(Heli.H); S.mode="menu"; Loc.hide(); $("heliui").classList.remove("on"); $("menu").style.display="flex"; applyMenu(); });
 document.querySelectorAll(".hstart-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".hstart-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on"); Heli.setStart(b.dataset.start); }));
 Heli.bindUI();
 function beginCar(){
-  MWT.reset();   leaveJR(); S.mode="car"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.add("on");
-  Car.setProfile("sedan"); $("car-mode-lbl").textContent="車で自由に走る"; $("busui").classList.remove("on");
+  MWT.reset();   leaveJR(); Clock.reset(); S.mode="car"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.add("on");
+  Quest.end(); const truck = S.cveh==="truck", mission = S.play==="mission" && Quest.def(Quest.sel.car);
+  if(truck){ TRUCK = makeTruck(); Car.setProfile("truck", TRUCK); Car.C.onDriverView = truckDV; } else { TRUCK = null; Car.setProfile("sedan"); Car.C.onDriverView = null; }
+  $("car-mode-lbl").textContent = mission ? mission.name : truck ? "トラックで自由に走る" : "車で自由に走る"; $("busui").classList.remove("on");
   setupRoute("higashi", true); S.pos=S.cum[0]+60;
-  Snd.init(); Snd.hush(); Car.start();
-  // 出発点: 桃太郎大通りの東行き車線（左側通行）
-  const sp = Traffic.ready ? Traffic.startPose(40, -12, 1, 0) : null; if(sp){ Car.C.x=sp.x; Car.C.z=sp.z; Car.C.yaw=sp.yaw; }
-  // v37: 山陽自動車道から出発
-  if(S.carStart==="mw" && MW.ready){ const [px,pz]=$("mw-place").value.split(",").map(Number), q=MW.spawn(px,pz,S.mwDir||"up",0);
+  Snd.init(); Snd.hush(); placeCar();
+  // v37: 山陽自動車道から出発（ミッションは市街地から）
+  if(!mission && S.carStart==="mw" && MW.ready){ const [px,pz]=$("mw-place").value.split(",").map(Number), q=MW.spawn(px,pz,S.mwDir||"up",0);
     if(q){ const C=Car.C; C.x=q.x; C.z=q.z; C.yaw=q.yaw; C.h=q.y; C.v=0; C.gear="D"; C.hitT=0; MW.tick({x:q.x,z:q.z},true); Outer.tick({x:q.x,z:q.z,y:q.y},true); } }
-  Trams.populate(null, 0, "none"); Traffic.reset(); if(S.car) S.car.visible=false; }
+  Trams.populate(null, 0, "none"); Traffic.reset(); if(S.car) S.car.visible=false;
+  if(mission) Quest.begin(mission.id); }
+let TRUCK = null;
+const truckDV = (drv) => { if(!TRUCK) return; for(const o of TRUCK.userData.outer) o.visible = !drv; TRUCK.userData.cab.visible = drv; TRUCK.userData.wheelG.rotation.z = -Car.C.wheel; };
+// 出発点: 桃太郎大通りの東行き車線（左側通行）
+function placeCar(){ Car.start(); const sp = Traffic.ready ? Traffic.startPose(40, -12, 1, 0) : null; if(sp){ Car.C.x=sp.x; Car.C.z=sp.z; Car.C.yaw=sp.yaw; Car.C.h=Car.hAt(sp.x, sp.z); } }
 function beginBus(){
-  leaveJR();
+  leaveJR(); Clock.reset();
   if(!Bus.data){ alert("バスの経路データを読み込めませんでした。"); return; }
   S.mode="bus"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.add("on");
   $("car-mode-lbl").textContent="両備バス 西大寺線"; $("finish-overlay").classList.remove("on");
@@ -5452,12 +5850,66 @@ function beginBus(){
   Snd.init(); Snd.hush();
   Bus.begin();
   Trams.populate(null, 0, "none"); Traffic.reset(); if(S.car) S.car.visible=false; }
-$("car-menu").addEventListener("click",()=>{ if(Bus.active) Bus.end(); Car.stop(); Snd.carSound(Car.C); S.mode="menu"; Loc.hide(); $("carui").classList.remove("on"); $("menu").style.display="flex"; });
+$("car-menu").addEventListener("click",()=>{ Quest.end(); if(Bus.active) Bus.end(); else { Car.setProfile("sedan"); Car.C.onDriverView=null; TRUCK=null; } Car.stop(); Snd.carSound(Car.C); S.mode="menu"; Loc.hide(); $("carui").classList.remove("on"); $("menu").style.display="flex"; applyMenu(); });
 document.querySelectorAll(".veh-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".veh-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on");
   S.vehicle=b.dataset.veh; if(S.car) setVehicle(S.vehicle); }));
+/* ---------- v41.7: 開始画面（乗り物 → あそびかた → コース） ----------
+   選んだ乗り物ごとに「あそびかた」（ミッション／自由）を覚える。路面電車とバスは Dia（ダイヤ運行）のオン・オフに、
+   車とヘリはミッション（Quest）の有無に対応する。上の行先表示器は選んだ内容をそのまま映す */
+const MENU = {
+  tram:{ ic:"tram", title:"路線と車両", go:{ mission:"ダイヤ運行をはじめる", free:"運転をはじめる" },
+    play:{ mission:["ダイヤ運行","時刻表どおりに走り、遅れ・早発を採点します"], free:["自由運転","時刻も採点もなし。好きなように走ります"] } },
+  jr:  { ic:"jr", title:"路線と車両", go:{ free:"運転をはじめる" }, noplay:true },
+  bus: { ic:"bus", title:"路線", go:{ mission:"ダイヤ運行をはじめる", free:"運転をはじめる" },
+    play:{ mission:["ダイヤ運行","停留所ごとの定刻どおりに走り、遅れ・早発を採点します"], free:["自由運転","時刻も採点もなし。好きなように走ります"] } },
+  car: { ic:"car", go:{ mission:"配達をはじめる", free:"走り出す" },
+    play:{ mission:["配達ミッション","荷物やお客さんを運びます。時間と運転の丁寧さで採点"], free:["自由に走る","市街地でも山陽自動車道でも、好きな所へ"] } },
+  heli:{ ic:"heli", go:{ mission:"ミッションに出発", free:"飛び立つ" },
+    play:{ mission:["空のミッション","荷物や患者さんを運ぶ・名所をめぐる。着陸も採点"], free:["自由に飛ぶ","出発地を選んで、好きなように飛びます"] } },
+};
+let _bd = "";
+function applyMenu(){
+  const o = document.querySelector(".mode-opt.on"), m = o ? o.dataset.mode : "tram", C = MENU[m] || MENU.tram, menu = $("menu");
+  if(!menu) return;
+  menu.dataset.mode = m;
+  const play = C.noplay ? "free" : (S.playBy[m] || "mission"), mis = play === "mission", car = m === "car", heli = m === "heli", truck = car && S.cveh === "truck";
+  S.play = play;
+  if(m === "tram" || m === "bus"){ const d = document.querySelector(".dia-opt"); if(d && d.classList.contains("on") !== mis) d.click(); }   // ダイヤ運行 = ミッション
+  const show = (id, v) => { const e = $(id); if(e) e.style.display = v ? "" : "none"; };
+  show("play-wrap", !C.noplay); show("routes-wrap", m === "tram"); show("jr-wrap", m === "jr"); show("bus-note", m === "bus");
+  show("car-wrap", car); show("car-start-wrap", car && !mis); show("quest-wrap", (car || heli) && mis); show("heli-note", heli && !mis); show("heli-help", heli); show("car-note", car);
+  $("mw-start-sel").style.display = (car && S.carStart === "mw") ? "" : "none";
+  document.querySelectorAll(".play-opt").forEach(b => { b.classList.toggle("on", b.dataset.play === play); if(C.play){ const t = C.play[b.dataset.play]; b.querySelector(".po-t").firstChild.textContent = t[0]; b.querySelector(".po-s").textContent = t[1]; } });
+  document.querySelectorAll(".cveh-opt").forEach(b => b.classList.toggle("on", b.dataset.cveh === S.cveh));
+  $("course-title").textContent = C.title || (car ? (mis ? "車種とコース" : "車種と出発地") : (mis ? "コース" : "出発地"));
+  $("quest-sub").textContent = car ? "配達先・コース" : "コース";
+  if((car || heli) && mis) Quest.renderPicker($("quest-list"), m, car ? S.cveh : undefined, () => setTimeout(applyMenu, 0));
+  // 行先表示器
+  const q = (s) => document.querySelector(s), txt = (e) => e ? e.textContent.trim() : "";
+  let l1 = "", l2 = "", ic = C.ic;
+  if(m === "tram"){ l1 = "路面電車 " + txt(q("#routes .route-opt.on strong")); l2 = txt(q("#routes .route-opt.on .dir")).replace(/（.*$/, ""); }
+  else if(m === "jr"){ l1 = txt(q("#jr-routes .route-opt.on strong")) || "JR・新幹線"; l2 = txt(q("#jr-vehs .veh-opt.on b")); }
+  else if(m === "bus"){ l1 = "両備バス 314"; l2 = "西大寺線 岡山駅東口 → 東山"; }
+  else if(car){ ic = truck ? "truck" : "car"; const vl = truck ? "トラック" : "乗用車", qd = mis ? Quest.def(Quest.sel.car) : null;
+    if(mis && qd){ l1 = qd.name; l2 = vl + "　" + "★".repeat(qd.star) + "☆".repeat(3 - qd.star); }
+    else { l1 = (truck ? "トラックで" : "車で") + "自由に走る"; l2 = vl + "　" + (S.carStart === "mw" ? "山陽自動車道 " + txt(q("#mw-place option:checked")).replace(/（.*$/, "") : "岡山駅前"); } }
+  else { const qd = mis ? Quest.def(Quest.sel.heli) : null;
+    if(mis && qd){ l1 = qd.name; l2 = "ヘリコプター　" + "★".repeat(qd.star) + "☆".repeat(3 - qd.star); }
+    else { l1 = "ヘリで自由に飛ぶ"; l2 = "出発地　" + txt(q(".hstart-opt.on")); } }
+  const tag = C.noplay ? "" : mis ? (car || heli ? "ミッション" : "ダイヤ運行") : "自由";
+  const tm = Clock.PRESET[Env.st.time] || Clock.PRESET.noon, hh = String(Math.floor(tm / 3600)).padStart(2, "0") + ":" + String(Math.floor(tm / 60) % 60).padStart(2, "0");
+  const key = [m, l1, l2, tag, ic, hh, Env.st.rain].join("|");
+  $("dest-1").textContent = l1; $("dest-2").textContent = l2; const te = $("dest-tag"); te.textContent = tag; te.style.display = tag ? "" : "none";
+  $("dest-ic").setAttribute("href", "#ic-" + ic); $("dest-clock").textContent = hh; $("dest-wx").textContent = (Clock.TAGS[Env.st.time] || "") + "・" + (Env.st.rain ? "雨" : "晴れ");
+  if(key !== _bd){ if(_bd){ const bd = $("dest"); bd.classList.remove("flip"); void bd.offsetWidth; bd.classList.add("flip"); } _bd = key; }
+  if(!$("start").disabled) $("start-label").textContent = C.go[play] || C.go.free;
+}
 document.querySelectorAll(".mode-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".mode-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on");
-  S.mode=["car","bus","heli"].includes(b.dataset.mode)?b.dataset.mode:"tram"; $("routes-wrap").style.display=b.dataset.mode==="tram"?"":"none"; $("jr-wrap").style.display=b.dataset.mode==="jr"?"":"none"; $("car-note").style.display=S.mode==="car"?"":"none"; $("car-start-wrap").style.display=S.mode==="car"?"":"none"; $("bus-note").style.display=S.mode==="bus"?"":"none"; $("heli-note").style.display=S.mode==="heli"?"":"none";
-  $("start-label").textContent=S.mode==="car"?"車で走り出す":S.mode==="bus"?"バスの運転を始める":S.mode==="heli"?"ヘリで飛び立つ":b.dataset.mode==="jr"?"JR を運転する":"運転を開始する"; }));
+  S.mode=["car","bus","heli"].includes(b.dataset.mode)?b.dataset.mode:"tram"; applyMenu(); }));
+document.querySelectorAll(".play-opt").forEach(b=>b.addEventListener("click",()=>{ const o=document.querySelector(".mode-opt.on"); if(o) S.playBy[o.dataset.mode]=b.dataset.play; applyMenu(); }));
+document.querySelectorAll(".cveh-opt").forEach(b=>b.addEventListener("click",()=>{ S.cveh=b.dataset.cveh; applyMenu(); }));
+$("menu").addEventListener("click",(e)=>{ if(e.target.closest(".route-opt,.veh-opt,.hstart-opt,.cstart-opt,.cstart-dir,.time-opt,.rain-opt")) setTimeout(applyMenu,0); });
+$("mw-place").addEventListener("change",applyMenu);
 document.querySelectorAll(".cstart-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".cstart-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on"); S.carStart=b.dataset.cs; $("mw-start-sel").style.display=S.carStart==="mw"?"":"none"; }));
 document.querySelectorAll(".cstart-dir").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".cstart-dir").forEach(x=>x.classList.remove("on")); b.classList.add("on"); S.mwDir=b.dataset.dir; }));
 document.querySelectorAll(".look-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".look-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on"); setLook(b.dataset.look); }));
@@ -5476,7 +5928,7 @@ $("sound-btn").addEventListener("click",()=>{ Snd.init(); const on=Snd.toggle();
 $("start").addEventListener("click",()=>{ setTimeout(()=>{ if(!Prefs.soundOn && Snd.on){ Snd.init(); Snd.toggle(); $("sound-btn").textContent="消"; $("sound-btn").title="音を出す"; } }, 80); });
 $("turnback").addEventListener("click", turnBack);
 $("restart").addEventListener("click",()=>{ Snd.hush(); $("finish-overlay").classList.remove("on"); $("menu").style.display="flex"; $("ui").classList.remove("on");
-  if(Bus.active){ Bus.end(); Car.stop(); $("carui").classList.remove("on"); S.mode="bus"; } Loc.hide(); $("turnback").style.display=""; });
+  if(Bus.active){ Bus.end(); Car.stop(); $("carui").classList.remove("on"); S.mode="bus"; } Loc.hide(); $("turnback").style.display=""; applyMenu(); });
 
 /* 案内パネル（次の停留場）の高さが変わっても、信号・制限速度・スコアの行が重ならないよう下に並べる */
 let _hudT=0;
@@ -6362,15 +6814,16 @@ const Mirrors = (() => {
   }
   function render(renderer, scene) {
     const C = Car.C; if (!C.active || C.view !== "driver") return;
-    const bus = Car.P === undefined ? false : Car.P.len > 8;
+    const bus = Car.P === undefined ? false : Car.P.len > 8, tr = C.profile === "truck";   // v41.7: トラックは左右ミラーだけ（荷台でルームミラーは使えない）
     const W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
     frameN++;
-    const use = bus ? ["L", "R"] : ["L", "R", "C"];
+    const use = (bus || tr) ? ["L", "R"] : ["L", "R", "C"];
     if (frameN % 2 === 0) {
       // ミラーには自分の車体（バスの外板）も写す
       if (C.onDriverView) C.onDriverView(false);
       const sm = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
       if (bus) { aim(M.L, C, Car.P, 1.45, 5.7, 2.1, 14, 3); aim(M.R, C, Car.P, -1.45, 5.7, 2.1, 14, 3); }
+      else if (tr) { aim(M.L, C, Car.P, 1.4, 2.55, 1.95, 12, 3); aim(M.R, C, Car.P, -1.4, 2.55, 1.95, 12, 3); }
       else { aim(M.L, C, Car.P, 0.98, 0.55, 1.02, 16, 2); aim(M.R, C, Car.P, -0.98, 0.55, 1.02, 16, 2); aim(M.C, C, Car.P, -0.1, -0.2, 1.28, 0, 1); }
       for (const k of use) { renderer.setRenderTarget(M[k].rt); renderer.clear(); renderer.render(scene, M[k].cam); }
       renderer.setRenderTarget(null); renderer.shadowMap.autoUpdate = sm;
@@ -6382,7 +6835,7 @@ const Mirrors = (() => {
     place(M.L.q, 18 + mw / 2, y, mw, mh); place(M.R.q, W - 18 - mw / 2, y, mw, mh);
     const cw = Math.min(W * 0.26, 360), ch = cw * 0.28;
     place(M.C.q, W / 2, H - 92 - ch / 2, cw, ch);
-    M.C.q.img.visible = M.C.q.frame.visible = !bus;
+    M.C.q.img.visible = M.C.q.frame.visible = !(bus || tr);
     renderer.autoClear = false; renderer.clearDepth(); renderer.render(ov, ocam); renderer.autoClear = true;
   }
   return { render, renderTram };
@@ -6399,12 +6852,13 @@ const Prefs = (() => {
     const q = (s) => document.querySelector(s);
     const m = q(".mode-opt.on"), l = q(".look-opt.on"), h = q(".hstart-opt.on"), sh = q(".shadow-opt"), dp = q(".dia-opt");
     st.set = { mode: m && m.dataset.mode, route: S.key, veh: S.vehicle, look: l && l.dataset.look, shadow: sh ? sh.classList.contains("on") : true, dia: dp ? dp.classList.contains("on") : true,
-               time: Env.st.time, rain: Env.st.rain, hstart: h && h.dataset.start, sound: st.set.sound !== false };
+               time: Env.st.time, rain: Env.st.rain, hstart: h && h.dataset.start, sound: st.set.sound !== false,
+               play: Object.assign({}, S.playBy), cveh: S.cveh, qsel: { heli: Quest.sel.heli, car: Quest.sel.car } };
     write();
   }
   function setSound(on){ st.set.sound = on; write(); }
   function restore(){
-    const s = st.set; if(!s || !s.mode) { render(); return; }
+    const s = st.set; if(!s || !s.mode) { applyMenu(); render(); return; }
     restoring = true;
     try {
       const click = (sel) => { const e = document.querySelector(sel); if(e && !e.classList.contains("on")) e.click(); };
@@ -6412,30 +6866,34 @@ const Prefs = (() => {
       if(s.veh) click('.veh-opt[data-veh="' + s.veh + '"]');
       if(s.look) click('.look-opt[data-look="' + s.look + '"]');
       const sh = document.querySelector(".shadow-opt"); if(sh && s.shadow === false && sh.classList.contains("on")) sh.click();
-      const dp = document.querySelector(".dia-opt"); if(dp && s.dia === false && dp.classList.contains("on")) dp.click();
+      if(s.play && typeof s.play === "object"){ for(const k of ["tram", "bus", "car", "heli"]) if(s.play[k] === "mission" || s.play[k] === "free") S.playBy[k] = s.play[k]; }
+      else if(s.dia === false){ S.playBy.tram = "free"; S.playBy.bus = "free"; }   // v41.6 までの「ダイヤ運行: なし」
+      if(s.cveh === "sedan" || s.cveh === "truck") S.cveh = s.cveh;
+      if(s.qsel){ if(typeof s.qsel.heli === "string") Quest.sel.heli = s.qsel.heli; if(typeof s.qsel.car === "string") Quest.sel.car = s.qsel.car; }
       if(s.time || s.rain != null) Env.set(s.time || null, !!s.rain);
       if(s.hstart) click('.hstart-opt[data-start="' + s.hstart + '"]');
       click('.mode-opt[data-mode="' + s.mode + '"]');
     } catch(e){ console.warn("prefs", e); }
-    restoring = false; render();
+    restoring = false; applyMenu(); render();
   }
   const RANK = (k, s) => k === "bus" ? (s >= 950 ? "S" : s >= 850 ? "A" : s >= 700 ? "B" : "C") : (s > 900 ? "S" : s > 750 ? "A" : s > 550 ? "B" : "C");
   function record(key, score){
     const r = st.rec[key] || { best: 0, n: 0 }; r.n++; const newBest = score > r.best; if(newBest){ r.best = Math.round(score); r.at = new Date().toISOString().slice(0, 10); }
     st.rec[key] = r; write(); render(); return { newBest, best: r.best, n: r.n };
   }
+  const best = (k) => (st.rec[k] ? st.rec[k].best : 0);
   function render(){
     const el = document.getElementById("records"); if(!el) return;
     const parts = [];
     for(const [k, r] of Object.entries(st.rec)){
       const name = k === "bus" ? "バス 西大寺線" : k === "dia:bus" ? "ダイヤ運行 バス 西大寺線" : k.startsWith("dia:") ? "ダイヤ運行 " + (S.routes && S.routes[k.slice(4)] ? S.routes[k.slice(4)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k.slice(4)) : (S.routes && S.routes[k.slice(5)] ? S.routes[k.slice(5)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k);
-      parts.push(name + " 最高 " + r.best + " 点（" + RANK(k, r.best) + "）・" + r.n + " 回");
+      parts.push((k.startsWith("quest:") ? "ミッション " + ((Quest.def(k.slice(6)) || {}).name || k.slice(6)) : name) + " 最高 " + r.best + " 点（" + RANK(k, r.best) + "）・" + r.n + " 回");
     }
     el.textContent = parts.length ? "これまでの記録（このブラウザ）: " + parts.join(" ／ ") : "";
   }
-  document.addEventListener("click", (e) => { if(e.target.closest(".mode-opt,.route-opt,.veh-opt,.look-opt,.shadow-opt,.dia-opt,.time-opt,.rain-opt,.hstart-opt")) setTimeout(save, 0); });
+  document.addEventListener("click", (e) => { if(e.target.closest(".mode-opt,.route-opt,.veh-opt,.look-opt,.shadow-opt,.dia-opt,.time-opt,.rain-opt,.hstart-opt,.play-opt,.cveh-opt,.quest-opt")) setTimeout(save, 0); });
   document.addEventListener("keydown", (e) => { if(e.key === "n" || e.key === "N" || e.key === "m" || e.key === "M") setTimeout(save, 0); });
-  return { save, restore, record, render, setSound, get soundOn(){ return st.set.sound !== false; } };
+  return { save, restore, record, render, setSound, best, get soundOn(){ return st.set.sound !== false; } };
 })();
 /* ゲームパッド（標準配置: Xbox / PlayStation 系）
    電車: RB・LB（または十字キー上下）= マスコン進め・戻し、RT・LT = ブレーキ強め・弱め、A = ドア、B = 非常ブレーキ、X = 警笛、Y = 視点
@@ -6558,6 +7016,16 @@ const NaviMap = (() => {
     g.translate(R, R); g.rotate(a); g.scale(k, k); g.imageSmoothingEnabled = true;
     g.drawImage(base, -N / 2 + (cache.x - p.x) / mpp, -N / 2 + (cache.z - p.z) / mpp);
     g.restore();
+    // v41.7: ミッションの目的地（円の外ならふちに三角で方向を示す）
+    for(const q of Quest.mapPts()){
+      const sx = (q.x - p.x) / mpp * k, sz = (q.z - p.z) / mpp * k, ca = Math.cos(a), sa = Math.sin(a);
+      let X = sx * ca - sz * sa, Y = sx * sa + sz * ca; const dist = Math.hypot(X, Y), lim = R - 20; let edge = false; if(dist > lim){ X *= lim / dist; Y *= lim / dist; edge = true; }
+      const col = q.kind === "load" ? "#35d0ff" : q.kind === "drop" ? "#ffb02e" : "#7dff9a";
+      g.save(); g.translate(R + X, R + Y);
+      if(edge){ g.rotate(Math.atan2(Y, X) + Math.PI / 2); g.beginPath(); g.moveTo(0, -11); g.lineTo(9, 7); g.lineTo(-9, 7); g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = 2; g.strokeStyle = "#1a1408"; g.stroke(); }
+      else { g.beginPath(); g.arc(0, 0, 10, 0, Math.PI * 2); g.fillStyle = col; g.fill(); g.lineWidth = 3; g.strokeStyle = "#fff"; g.stroke(); g.beginPath(); g.arc(0, 0, 3.5, 0, Math.PI * 2); g.fillStyle = "#1a1408"; g.fill(); }
+      g.restore();
+    }
     // 自車の矢印（進行方向を上。北固定の時は回転）
     g.save(); g.translate(R, R); g.rotate(northUp ? -(p.yaw + Math.PI) : 0);
     g.beginPath(); g.moveTo(0, -R * 0.1); g.lineTo(R * 0.065, R * 0.07); g.lineTo(0, R * 0.035); g.lineTo(-R * 0.065, R * 0.07); g.closePath();
@@ -6592,6 +7060,329 @@ const NaviMap = (() => {
   return { update, zoom, get on(){ return on; }, get zoomIndex(){ return zi; }, stats(){ const G = Car.G; const h = new Array(16).fill(0); if(G) for(let i = 0; i < G.K.length; i += 97) h[G.K[i] & 15]++; return h; } };
 })();
 
+/* ---------------- v41.7: ミッション（配達・搬送・名所めぐり）----------------
+   ヘリ・車（乗用車／トラック）で「目的地へ行って → 荷物を積む／降ろす」を順にこなす。自由に操縦するモードはそのまま残してあり、
+   メニューの「あそびかた」でミッション／自由を選ぶ。走行中でも「中止」で自由走行に切り替えられる。
+   地点は実在の場所（OSM の停留場・PLATEAU/OSM のランドマーク。座標は x=東・z=南、岡山駅前が原点）。荷物・患者・客は架空の設定。
+   採点: 1000 点から 遅れ（目安時間を超えた分）・衝突・ハードランディング・乗り心地・速度超過 を引き、ソフトランディングや「ぴたり」を足す。 */
+const Quest = (() => {
+  const PL = {
+    eki:       { name: "岡山駅 東口", x: -85, z: 36 },
+    ekimae:    { name: "岡山駅前", x: 192, z: -20 },
+    nishikawa: { name: "西川緑道公園", x: 331, z: -8 },
+    yanagawa:  { name: "柳川", x: 575, z: -16 },
+    jouge:     { name: "城下", x: 939, z: -17 },
+    ntt:       { name: "NTT岡山前", x: 619, z: 254 },
+    kenchodori:{ name: "県庁通り", x: 988, z: 331 },
+    tenmaya:   { name: "天満屋", x: 808, z: 406 },
+    chugin:    { name: "中銀前", x: 1043, z: 349 },
+    kencho:    { name: "県庁前", x: 1355, z: 359 },
+    harenowa:  { name: "ハレノワ前", x: 996, z: 777 },
+    kobashi:   { name: "小橋", x: 1530, z: 865 },
+    kyoukyo:   { name: "古京", x: 1910, z: 576 },
+    higashiyama:{ name: "東山", x: 2105, z: 1024 },
+    seikibashi:{ name: "清輝橋", x: 559, z: 1518 },
+    castle:    { name: "岡山城", x: 1498, z: 35 },
+    korakuen:  { name: "後楽園", x: 1513, z: -172 },
+    orient:    { name: "オリエント美術館", x: 958, z: -96 },
+    kawasaki:  { name: "川崎医科大学総合医療センター", x: 740, z: 604 },
+  };
+  // 停止して行う地点（kind: load=積む・乗せる / drop=降ろす・届ける / pass=くぐる）
+  const st_ = (k, kind, verb, o) => Object.assign({ key: k, kind, verb }, PL[k], o || {});
+  const COURSES = [
+    { id: "heli_parcel", mode: "heli", name: "宅配ヘリ", star: 1, cargo: "荷物", start: "station", pod: 0xf08a1c,
+      blurb: "岡山駅で荷物を積んで、街の 3 か所へ着陸して届ける。",
+      stops: [ st_("eki", "load", "荷物を積む", { r: 32 }), st_("tenmaya", "drop", "届ける", { r: 36 }), st_("kencho", "drop", "届ける", { r: 36 }), st_("castle", "drop", "届ける", { r: 42 }) ] },
+    { id: "heli_rescue", mode: "heli", name: "急患搬送", star: 2, cargo: "患者さん", start: "castle", pod: 0xe9eef2, gentle: true,
+      blurb: "後楽園で患者さんを乗せ、病院へ。時間との勝負 — でも着陸はそっと。",
+      stops: [ st_("korakuen", "load", "患者さんを乗せる", { r: 40 }), st_("kawasaki", "drop", "病院へ送り届ける", { r: 38 }) ] },
+    { id: "heli_rings", mode: "heli", name: "名所めぐり", star: 2, cargo: "", start: "station",
+      blurb: "空に浮かぶ輪をくぐって、岡山の名所を一周する。着陸は不要。",
+      stops: [ st_("eki", "pass", "輪をくぐる", { r: 55, agl: 90 }), st_("orient", "pass", "輪をくぐる", { r: 55, agl: 110 }), st_("korakuen", "pass", "輪をくぐる", { r: 55, agl: 110 }),
+               st_("castle", "pass", "輪をくぐる", { r: 55, agl: 120 }), st_("kencho", "pass", "輪をくぐる", { r: 55, agl: 110 }), st_("higashiyama", "pass", "輪をくぐる", { r: 55, agl: 110 }) ] },
+    { id: "car_taxi", mode: "car", veh: "sedan", name: "タクシー送迎", star: 1, cargo: "お客さん", comfortK: 5,
+      blurb: "お客さんを乗せて目的地へ。急発進・急ブレーキ・急ハンドルは減点。",
+      stops: [ st_("ekimae", "load", "お客さんを乗せる", { r: 13 }), st_("kencho", "drop", "お客さんを降ろす", { r: 13 }), st_("chugin", "load", "次のお客さんを乗せる", { r: 13 }), st_("higashiyama", "drop", "お客さんを降ろす", { r: 13 }) ] },
+    { id: "car_check", mode: "car", veh: "sedan", name: "街角チェックポイント", star: 1, cargo: "",
+      blurb: "道に置かれたチェックポイントを順に通過するタイムアタック。",
+      stops: [ st_("nishikawa", "pass", "通過", { r: 14 }), st_("yanagawa", "pass", "通過", { r: 14 }), st_("jouge", "pass", "通過", { r: 14 }), st_("kenchodori", "pass", "通過", { r: 14 }),
+               st_("tenmaya", "pass", "通過", { r: 14 }), st_("ntt", "pass", "通過", { r: 14 }), st_("ekimae", "pass", "通過", { r: 14 }) ] },
+    { id: "truck_parcel", mode: "car", veh: "truck", name: "宅配トラック", star: 1, cargo: "荷物", comfortK: 3,
+      blurb: "岡山駅前で荷物を積み、街なかの 4 か所へ届ける。",
+      stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("yanagawa", "drop", "届ける", { r: 13 }), st_("ntt", "drop", "届ける", { r: 13 }), st_("tenmaya", "drop", "届ける", { r: 13 }), st_("chugin", "drop", "届ける", { r: 13 }) ] },
+    { id: "truck_far", mode: "car", veh: "truck", name: "長距離配達", star: 3, cargo: "荷物", comfortK: 3,
+      blurb: "電車通りを東へ。古京・東山・清輝橋まで、道を選んで配達する。",
+      stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("kyoukyo", "drop", "届ける", { r: 13 }), st_("higashiyama", "drop", "届ける", { r: 13 }), st_("seikibashi", "drop", "届ける", { r: 13 }) ] },
+  ];
+  const Q = { on: false, done: false, def: null, i: 0, t: 0, hold: 0, loaded: false, hits: 0, pen: null, bonus: null, stops: [], parT: 0, lastHit: false, comfortT: 0, speedT: 0, tdSeen: 0, log: [], toastT: 0 };
+  const sel = { heli: "heli_parcel", car: "car_taxi" };
+  const heliMode = () => Q.def && Q.def.mode === "heli";
+  const fmt = (s) => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  const list = (mode, veh) => COURSES.filter((c) => c.mode === mode && (!veh || !c.veh || c.veh === veh));
+  const def = (id) => COURSES.find((c) => c.id === id);
+
+  /* ---- 道路への吸着（車の地点: 一番近い車道の升目へ） ---- */
+  function snapRoad(x, z){
+    if(!Car.G) return { x, z, ok: false };
+    let best = null, bd = 1e18;
+    for(let r = 0; r <= 80; r += 2){
+      const n = Math.max(1, Math.round(r / 2.5) * 4);
+      for(let a = 0; a < n; a++){ const t = a / n * Math.PI * 2, px = x + Math.cos(t) * r, pz = z + Math.sin(t) * r;
+        if(Car.kindAt(px, pz) === 1 && !Car.blocked(px, pz)){ const d = r; if(d < bd){ bd = d; best = { x: px, z: pz, ok: true, d }; } } }
+      if(best) break;
+    }
+    return best || { x, z, ok: false };
+  }
+
+  /* ---- 3D の目印: 光の柱・地面の輪・空の輪 ---- */
+  const grp = new THREE.Group(); grp.visible = false; scene.add(grp);
+  const matBeam = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide });
+  const matSolid = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false, fog: false, side: THREE.DoubleSide });   // 明るい空でも見える輪（加算合成だと白く飛ぶ）
+  let mk = null;   // { kind, beam, ring, wall, torus, y }
+  const COL = { load: 0x35d0ff, drop: 0xffb02e, pass: 0x7dff9a };
+  function buildMarker(s){
+    if(mk){ grp.remove(mk.g); mk.g.traverse((o) => { if(o.geometry) o.geometry.dispose(); if(o.material) o.material.dispose(); }); mk = null; }
+    if(!s) return;
+    const g = new THREE.Group(), col = COL[s.kind] || 0xffffff, heli = heliMode();
+    if(s.kind === "pass" && heli){
+      const t = new THREE.Mesh(new THREE.TorusGeometry(s.r, 2.2, 10, 56), matSolid(0x1fd45f, 0.92)); g.add(t);
+      const inner = new THREE.Mesh(new THREE.CircleGeometry(s.r, 40), matSolid(0x1fd45f, 0.10)); g.add(inner);
+      g.position.set(s.x, s.y, s.z); g.rotation.y = s.face || 0; mk = { g, kind: "ring", t, inner };
+    } else if(s.kind === "pass"){
+      const t = new THREE.Mesh(new THREE.TorusGeometry(s.r * 0.55, 0.35, 8, 40), matBeam(col, 0.9)); t.position.y = s.r * 0.55; g.add(t);
+      const gate = new THREE.Mesh(new THREE.CircleGeometry(s.r * 0.55, 32), matBeam(col, 0.1)); gate.position.y = s.r * 0.55; g.add(gate);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 90, 10, 1, true), matBeam(col, 0.4)); beam.position.y = 45; g.add(beam);
+      g.position.set(s.x, s.y, s.z); g.rotation.y = s.face || 0; mk = { g, kind: "gate", t, gate, beam };
+    } else {
+      const H = heli ? 700 : 150, bw = heli ? 2.6 : 1.4;
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(bw, bw, H, 12, 1, true), matBeam(col, 0.42)); beam.position.y = H / 2; g.add(beam);
+      const glow = new THREE.Mesh(new THREE.CylinderGeometry(s.r, s.r, heli ? 12 : 5, 40, 1, true), matBeam(col, 0.2)); glow.position.y = heli ? 6 : 2.5; g.add(glow);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(s.r - 1.4, s.r, 56), matBeam(col, 0.9)); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.15; g.add(ring);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(s.r, 48), matBeam(col, 0.14)); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.12; g.add(disc);
+      g.position.set(s.x, s.y, s.z); mk = { g, kind: "zone", beam, glow, ring, disc };
+    }
+    grp.add(g);
+  }
+  function animMarker(dt){
+    if(!mk) return; const k = performance.now() / 1000;
+    if(mk.kind === "zone"){ const p = 0.6 + 0.4 * Math.sin(k * 3.2); mk.beam.material.opacity = 0.28 + 0.2 * p; mk.ring.material.opacity = 0.6 + 0.35 * p; mk.ring.scale.setScalar(1 + 0.02 * Math.sin(k * 3.2)); }
+    else if(mk.kind === "ring"){ mk.t.material.opacity = 0.78 + 0.18 * Math.sin(k * 4); mk.inner.material.opacity = 0.09 + 0.04 * Math.sin(k * 4); }
+    else if(mk.kind === "gate"){ mk.t.material.opacity = 0.65 + 0.3 * Math.sin(k * 4); mk.beam.material.opacity = 0.25 + 0.15 * Math.sin(k * 4); }
+  }
+
+  /* ---- 画面（HUD） ---- */
+  const E = {};
+  const el = (id) => E[id] || (E[id] = document.getElementById(id));
+  function toast(msg, kind){
+    const t = el("qtoast"); if(!t) return; t.textContent = msg; t.className = "qtoast on " + (kind || ""); Q.toastT = 3.2;
+    if(kind === "good") Snd.blip("done"); else if(kind === "bad") Snd.blip("bad"); else if(kind === "load") Snd.blip("load"); else Snd.blip("ok");
+  }
+  function dots(){
+    const d = el("q-dots"); let h = "";
+    Q.stops.forEach((s, i) => { h += '<i class="' + (i < Q.i ? "done" : i === Q.i ? "cur" : "") + " " + s.kind + '"></i>'; });
+    d.innerHTML = h;
+  }
+  function showHud(on){ const h = el("qhud"); if(h) h.classList.toggle("on", !!on); }
+  function me(){
+    if(heliMode()){ const H = Heli.H; return { x: H.x, z: H.z, y: H.y, v: Math.hypot(H.vF, H.vS), on: H.landed, yaw: H.yaw, hit: H.hitT > 0.3, heli: true }; }
+    const C = Car.C; return { x: C.x, z: C.z, y: C.h, v: Math.abs(C.v), on: true, yaw: C.yaw, hit: C.hitT > 1.0, acc: C.acc || 0, lat: C.aLat || 0, heli: false };
+  }
+
+  /* ---- 開始・終了 ---- */
+  function begin(id){
+    const d = def(id); if(!d) return false;
+    Q.def = d; Q.on = true; Q.done = false; Q.i = 0; Q.t = 0; Q.hold = 0; Q.loaded = false; Q.hits = 0; Q.lastHit = false; Q.comfortT = 0; Q.speedT = 0; Q.tdSeen = Heli.H.tdT || 0; Q.log = [];
+    Q.pen = { time: 0, hit: 0, hard: 0, comfort: 0, speed: 0 }; Q.bonus = { soft: 0, pin: 0 };
+    const heli = d.mode === "heli", m = me();
+    // 地点を解決（車: 道路へ吸着・高さ。ヘリ: 地面の高さ・輪の向き）
+    Q.stops = d.stops.map((s) => Object.assign({}, s));
+    let prev = { x: m.x, z: m.z };
+    Q.stops.forEach((s) => {
+      if(heli){ s.y = Heli.groundAt(s.x, s.z); if(s.kind === "pass") s.y = Math.max(Heli.topAt(s.x, s.z), s.y) + (s.agl || 100); }
+      else { const q = snapRoad(s.x, s.z); s.sx = s.x; s.sz = s.z; s.x = q.x; s.z = q.z; s.snapOk = q.ok; s.y = Car.hAt(s.x, s.z) + 0.1; }
+      s.face = Math.atan2(s.x - prev.x, s.z - prev.z); prev = s;
+    });
+    // 目安時間（累積）: 距離 ÷ 平均速度 ＋ 停止・着陸の時間
+    const V = heli ? (d.gentle ? 34 : 32) : (Car.C.profile === "truck" ? 8.2 : 9.4), F = heli ? 1.04 : 1.38, DW = heli ? 22 : 12;
+    let t = 0; prev = { x: m.x, z: m.z };
+    Q.stops.forEach((s) => { const dist = Math.hypot(s.x - prev.x, s.z - prev.z); t += dist * F / V + (s.kind === "pass" ? 3 : DW); s.parCum = t; prev = s; });
+    Q.parT = t;
+    buildMarker(Q.stops[0]); grp.visible = true;
+    el("q-name").textContent = d.name; el("q-kick").textContent = (heli ? "HELI MISSION" : (d.veh === "truck" ? "TRUCK MISSION" : "DRIVE MISSION"));
+    dots(); showHud(true); el("qfin").classList.remove("on"); hud(true);
+    toast(d.name + " スタート — 最初は「" + Q.stops[0].name + "」", "");
+    return true;
+  }
+  function end(){
+    Q.on = false; Q.done = false; grp.visible = false; buildMarker(null); showHud(false);
+    const f = el("qfin"); if(f) f.classList.remove("on"); const t = el("qtoast"); if(t) t.className = "qtoast";
+    setPod(false);
+  }
+  /* ---- ヘリの機体に付ける荷物ポッド ---- */
+  function setPod(on, color){ if(Heli.setPod) Heli.setPod(on, color); }
+
+  /* ---- 毎フレーム ---- */
+  function nextStop(){
+    const s = Q.stops[Q.i], i = Q.i;
+    if(s.kind === "load"){ Q.loaded = true; setPod(heliMode(), Q.def.pod); toast(s.name + " — " + s.verb + "。次は「" + (Q.stops[i + 1] ? Q.stops[i + 1].name : "") + "」へ", "load"); }
+    else if(s.kind === "drop"){ const more = Q.stops[i + 1] && Q.stops[i + 1].kind === "drop"; if(!more){ Q.loaded = false; setPod(false); }
+      toast(s.name + " に" + s.verb + "（" + (i + 1) + "/" + Q.stops.length + "）", "good"); }
+    else toast(s.name + " 通過（" + (i + 1) + "/" + Q.stops.length + "）", "good");
+    Q.i++; Q.hold = 0;
+    if(Q.i >= Q.stops.length){ finish(); return; }
+    buildMarker(Q.stops[Q.i]); dots();
+  }
+  function tick(dt){
+    if(!Q.on) return;
+    const t = el("qtoast"); if(Q.toastT > 0){ Q.toastT -= dt; if(Q.toastT <= 0 && t) t.className = "qtoast"; }
+    if(Q.done) return;
+    const heli = heliMode(); if((heli && S.mode !== "heli") || (!heli && S.mode !== "car")) return;
+    const m = me(), s = Q.stops[Q.i]; if(!s) return;
+    Q.t += dt; animMarker(dt);
+    const dx = s.x - m.x, dz = s.z - m.z, d = Math.hypot(dx, dz);
+    // ---- 到着の判定 ----
+    if(s.kind === "pass"){
+      const dy = heli ? m.y - s.y : 0;
+      if(d < s.r * (heli ? 0.9 : 1) && Math.abs(dy) < (heli ? s.r * 0.9 : 99)) nextStop();
+    } else {
+      const ok = heli ? (m.on && d < s.r && m.v < 3) : (d < s.r && m.v < 1.3);
+      if(ok){ Q.hold += dt; if(Q.hold >= (heli ? 2.0 : 1.4)){
+        if(!heli && d < 4) { Q.bonus.pin += 10; Q.log.push("ぴたり +10（" + s.name + "）"); }
+        if(heli && d < s.r * 0.35) { Q.bonus.pin += 10; Q.log.push("ぴたり +10（" + s.name + "）"); }
+        nextStop(); } }
+      else Q.hold = Math.max(0, Q.hold - dt * 1.5);
+    }
+    if(Q.done) return;
+    // ---- 減点・加点 ----
+    if(m.hit && !Q.lastHit){ Q.pen.hit += 30; Q.hits++; toast("衝突 −30 点", "bad"); } Q.lastHit = m.hit;
+    if(Q.t > Q.parT) Q.pen.time = Math.min(300, (Q.t - Q.parT) * 1.2);
+    if(heli){
+      const H = Heli.H;
+      if(H.tdT && H.tdT !== Q.tdSeen){ Q.tdSeen = H.tdT; const v = H.tdV || 0, near = Q.stops[Q.i] && Math.hypot(Q.stops[Q.i].x - H.x, Q.stops[Q.i].z - H.z) < Q.stops[Q.i].r + 25, g = !!Q.def.gentle;
+        if(v > (g ? 1.6 : 4.5)){ const p = g ? (v > 3 ? 150 : 60) : (v > 6 ? 150 : 100); Q.pen.hard += p; toast("ハードランディング −" + p + " 点（降下 " + v.toFixed(1) + " m/s）", "bad"); }
+        else if(v > (g ? 0.9 : 2.8)){ const p = g ? 25 : 30; Q.pen.hard += p; toast("着陸が少し荒い −" + p + " 点（降下 " + v.toFixed(1) + " m/s）", "bad"); }
+        else if(near && Q.stops[Q.i].kind !== "pass"){ const b = g ? 25 : 15; Q.bonus.soft += b; toast("ソフトランディング +" + b + " 点", "good"); } }
+    } else {
+      // 乗り心地（乗せている間）・速度超過
+      if(Q.loaded && Q.def.comfortK && m.v > 0.5 && (Math.abs(m.acc) > 3.4 || m.lat > 3.6) && Q.comfortT <= 0){ Q.pen.comfort += Q.def.comfortK; Q.comfortT = 4; toast((Q.def.cargo === "お客さん" ? "急な操作でお客さんが驚いた" : "荷物が揺れた") + " −" + Q.def.comfortK + " 点", "bad"); }
+      Q.comfortT = Math.max(0, Q.comfortT - dt);
+      const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + 10){ Q.pen.speed += dt * 1.2; Q.speedT -= dt; if(Q.speedT <= 0){ Q.speedT = 6; toast("制限速度 " + lim + " km/h を超えています", "bad"); } }
+    }
+    hud();
+  }
+  const score = () => Math.max(0, Math.min(1000, Math.round(1000 - Q.pen.time - Q.pen.hit - Q.pen.hard - Q.pen.comfort - Q.pen.speed + Q.bonus.soft + Q.bonus.pin)));
+  let lastH = "";
+  function hud(force){
+    const s = Q.stops[Q.i]; if(!s) return; const m = me();
+    const dx = s.x - m.x, dz = s.z - m.z, d = Math.hypot(dx, dz);
+    const a = el("q-arrow"); if(a){ const rel = Math.atan2(dx, dz) - m.yaw; a.style.transform = "rotate(" + (-rel * 180 / Math.PI).toFixed(1) + "deg)"; }
+    const ahead = s.parCum - Q.t, late = ahead < 0;
+    const key = [s.name, d < 100 ? d.toFixed(0) : Math.round(d / 10) * 10, Math.round(ahead), score(), Math.round(Q.hold * 4), Q.i, Q.loaded].join("|");
+    if(!force && key === lastH) return; lastH = key;
+    el("q-verb").textContent = s.verb; el("q-target").textContent = s.name;
+    el("q-dist").textContent = d >= 1000 ? (d / 1000).toFixed(2) : Math.round(d); el("q-du").textContent = d >= 1000 ? "km" : "m";
+    const tm = el("q-time"); tm.textContent = (late ? "遅れ " : "目安まで ") + fmt(Math.abs(ahead)); tm.className = late ? "late" : "";
+    el("q-score").textContent = score(); el("q-el").textContent = fmt(Q.t);
+    el("q-hold").style.width = (Math.min(1, Q.hold / (heliMode() ? 2.0 : 1.4)) * 100).toFixed(0) + "%";
+    const hint = el("q-hint");
+    if(s.kind === "pass") hint.textContent = heliMode() ? "輪の中をくぐる" : "チェックポイントを通過";
+    else if(heliMode()) hint.textContent = d > s.r ? "目標の円の上へ" : (m.on ? "着陸中… そのまま" : "降下して着陸（降下は ゆっくり）");
+    else hint.textContent = d > s.r ? "光の柱の円の中へ" : (m.v >= 1.3 ? "止まる（ブレーキ）" : "停止中… そのまま");
+    el("q-cargo").textContent = Q.loaded ? "積載中: " + (Q.def.cargo || "") : (Q.def.cargo ? "積載なし" : "");
+  }
+  function finish(){
+    Q.done = true; grp.visible = false; buildMarker(null); showHud(false);
+    const sc = score(), g = sc >= 900 ? "S" : sc >= 750 ? "A" : sc >= 550 ? "B" : "C", R = Prefs.record("quest:" + Q.def.id, sc);
+    el("qf-name").textContent = Q.def.name; el("qf-score").textContent = sc; el("qf-grade").textContent = g; el("qf-grade").className = "qgrade g" + g;
+    const rows = [["所要時間", fmt(Q.t) + "（目安 " + fmt(Q.parT) + "）", Q.pen.time ? "−" + Math.round(Q.pen.time) : "±0"],
+                  ["衝突", Q.hits + " 回", Q.pen.hit ? "−" + Q.pen.hit : "±0"]];
+    if(heliMode()) rows.push(["ランディング", Q.pen.hard ? "荒い着陸あり" : (Q.bonus.soft ? "ソフトランディング" : "—"), (Q.pen.hard ? "−" + Q.pen.hard : "") + (Q.bonus.soft ? " +" + Q.bonus.soft : "") || "±0"]);
+    else { rows.push(["乗り心地・荷物", Q.pen.comfort ? "急な操作あり" : "なめらか", Q.pen.comfort ? "−" + Q.pen.comfort : "±0"]); rows.push(["速度超過", Q.pen.speed > 0.5 ? "あり" : "なし", Q.pen.speed > 0.5 ? "−" + Math.round(Q.pen.speed) : "±0"]); }
+    if(Q.bonus.pin) rows.push(["ぴたり停止", "", "+" + Q.bonus.pin]);
+    el("qf-rows").innerHTML = rows.map((r) => '<div class="qr"><span>' + r[0] + '</span><span>' + r[1] + '</span><b>' + r[2] + '</b></div>').join("");
+    el("qf-best").textContent = R.newBest && R.n > 1 ? "自己ベスト更新！（これまでの最高 " + R.best + " 点）" : "最高 " + R.best + " 点・" + R.n + " 回目";
+    el("qfin").classList.add("on"); Snd.blip("done");
+  }
+  function mapPts(){ return (Q.on && !Q.done && Q.stops[Q.i]) ? [{ x: Q.stops[Q.i].x, z: Q.stops[Q.i].z, kind: Q.stops[Q.i].kind }] : []; }
+
+  /* ---- メニュー用: コース一覧の描画 ---- */
+  function best(id){ return Prefs.best ? Prefs.best("quest:" + id) : 0; }
+  function renderPicker(host, mode, veh, onPick){
+    const L = list(mode, veh); if(!L.some((c) => c.id === sel[mode])) sel[mode] = L[0] && L[0].id;
+    host.innerHTML = "";
+    for(const c of L){
+      const b = document.createElement("button"); b.type = "button"; b.className = "quest-opt" + (c.id === sel[mode] ? " on" : ""); b.dataset.qid = c.id;
+      const bs = best(c.id);
+      b.innerHTML = '<span class="qs">' + "★".repeat(c.star) + '<i>' + "★".repeat(3 - c.star) + '</i></span><b>' + c.name + '</b><small>' + c.blurb + '</small>' + (bs ? '<em>最高 ' + bs + '</em>' : "");
+      b.addEventListener("click", () => { host.querySelectorAll(".quest-opt").forEach((x) => x.classList.toggle("on", x === b)); sel[mode] = c.id; if(onPick) onPick(c); });
+      host.appendChild(b);
+    }
+  }
+  return { begin, end, tick, list, def, sel, renderPicker, mapPts, Q, snapRoad, COURSES, PL, get on(){ return Q.on; }, get done(){ return Q.done; }, score };
+})();
+
+// v41.7: ミッションの画面の操作
+$("q-quit").addEventListener("click", () => Quest.end());
+$("qf-free").addEventListener("click", () => Quest.end());
+$("qf-menu").addEventListener("click", () => { Quest.end(); $(S.mode === "heli" ? "heli-menu" : "car-menu").click(); });
+$("qf-retry").addEventListener("click", () => { const d = Quest.Q.def; if(!d) return; Quest.end();
+  if(d.mode === "heli"){ Heli.setStart(d.start); Heli.start(); } else { placeCar(); }
+  Quest.begin(d.id); });
+/* ---------------- v41.7: 時刻表パネル（電車・バス）----------------
+   I キー（または「時刻表」ボタン）で開閉。停留場ごとの 着・発の定刻と、実際の到着のずれ。ダイヤ運行をオフにしている時は停留場の一覧と距離だけ。 */
+const TT = (() => {
+  const el = $("ttp"), rowsEl = $("ttp-rows"), ttl = $("ttp-title"), clk = $("ttp-clock"), sub = $("ttp-sub"), foot = $("ttp-foot"), tag = $("ttp-tag");
+  let open = false, acc = 0, lastCur = -1;
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const hm = (t) => (t == null ? "" : Dia.hms(t));
+  function model(){
+    if(S.mode === "bus" && Bus.active) return Bus.bdModel();
+    if(S.mode === "tram" && S.running && !VEH().jr){
+      const m = Dia.model(); if(m) return m;
+      return { on: false, kind: "tram", title: (S.route && S.route.name || "路面電車"), rows: S.stops.map((s, i) => ({ name: s.name.replace(/・.*$/, ""), arc: S.cum[i] - S.cum[0], cur: i === S.stopIndex })) };
+    }
+    return null;
+  }
+  const resCell = (r) => r.passed ? ["通過", "pass"] : r.dev == null ? ["", ""] : r.dev > 20 ? ["+" + r.dev + "秒", "late"] : r.dev > 5 ? ["+" + r.dev + "秒", "warn"] : r.dev < -5 ? [r.dev + "秒", "early"] : ["定刻", "ok"];
+  function render(){
+    const m = model(); if(!m){ setOpen(false); return; }
+    ttl.textContent = m.title; clk.textContent = hm(S.clock); tag.textContent = m.on === false ? "ダイヤ運行なし" : m.kind === "bus" ? "バス" : "路面電車";
+    el.classList.toggle("plain", m.on === false);
+    let h = "", cur = -1;
+    m.rows.forEach((r, i) => { if(r.cur) cur = i;
+      if(m.on === false){ h += '<li class="row' + (r.cur ? " cur" : "") + '"><span class="nm">' + esc(r.name) + '</span><span class="t arc">' + (r.arc < 1000 ? Math.round(r.arc) + " m" : (r.arc / 1000).toFixed(2) + " km") + '</span></li>'; return; }
+      const [rt, rc] = resCell(r);
+      h += '<li class="row' + (r.cur ? " cur" : "") + (r.here ? " here" : "") + (r.passed ? " passed" : "") + '"><span class="nm">' + esc(r.name) + '</span><span class="t">' + (r.arr != null ? hm(r.arr) : "—") + '</span><span class="t d">' + (r.dep != null && r.dep !== r.arr ? hm(r.dep) : "") + '</span><span class="res ' + rc + '">' + rt + '</span></li>'; });
+    rowsEl.innerHTML = h;
+    if(cur >= 0 && cur !== lastCur){ lastCur = cur; const e = rowsEl.children[cur]; if(e && e.scrollIntoView) e.scrollIntoView({ block: "nearest" }); }
+    if(m.on === false){ sub.textContent = "走った距離の目安です。ダイヤ運行（定刻・採点）はメニューの「あそびかた」で選べます。"; foot.textContent = ""; }
+    else { const score = Math.max(0, Math.round(1000 - m.pen)), g = score > 900 ? "S" : score > 750 ? "A" : score > 550 ? "B" : "C";
+      sub.textContent = "着 = 到着の定刻　発 = 発車の定刻（定刻前に出ると減点）　実績 = 実際の到着のずれ";
+      foot.innerHTML = '定時点 <b>' + score + '</b> / 1000　<b class="g">' + g + '</b><span>遅れは ' + Dia.cfg.GRACE + ' 秒までは減点なし・通過は −' + Dia.cfg.PASS_PEN + ' 点</span>'; }
+  }
+  function setOpen(v){ open = !!v; el.classList.toggle("on", open); if(open){ lastCur = -1; render(); } const b = $("tt-btn"), b2 = $("tt-btn2"); if(b) b.classList.toggle("on", open); if(b2) b2.classList.toggle("on", open); }
+  function toggle(){ if(!model()){ const ms = $("subtitle"); return; } setOpen(!open); }
+  function tick(dt){
+    const t1 = $("tt-btn"), t2 = $("tt-btn2");
+    if(t1) t1.style.display = (S.mode === "tram" && S.running && !VEH().jr) ? "" : "none";
+    if(t2) t2.style.display = (S.mode === "bus" && Bus.active) ? "" : "none";
+    if(!open) return; acc += dt; if(acc < 0.25) return; acc = 0; render();
+  }
+  // 運転終了の画面に、停留場ごとの結果を表で出す
+  function fillFinish(m){
+    const c = $("finish-tt"); if(!c) return;
+    if(!m || m.on === false || !m.rows.some(r => r.dev != null || r.passed)){ c.innerHTML = ""; c.style.display = "none"; return; }
+    let h = '<div class="ftt-h"><span>停留場</span><span>定刻</span><span>結果</span></div>';
+    for(const r of m.rows){ if(r.arr == null) continue; const [rt, rc] = resCell(r); h += '<div class="ftt-r"><span class="nm">' + esc(r.name) + '</span><span class="t">' + hm(r.arr).slice(0, 5) + hm(r.arr).slice(5) + '</span><span class="res ' + rc + '">' + (rt || "—") + '</span></div>'; }
+    c.innerHTML = h; c.style.display = "";
+  }
+  $("ttp-x").addEventListener("click", () => setOpen(false));
+  { const b1 = $("tt-btn"), b2 = $("tt-btn2"); if(b1) b1.addEventListener("click", toggle); if(b2) b2.addEventListener("click", toggle); }
+  document.addEventListener("keydown", (e) => { if(e.repeat || e.ctrlKey || e.metaKey || e.altKey) return; if((e.key === "i" || e.key === "I") && Clock.inSession()) toggle(); });
+  Clock.onShift((d) => { Dia.shift(d); Bus.bdShift(d); });
+  return { toggle, setOpen, tick, render, fillFinish, model, get open(){ return open; } };
+})();
+
 function loop(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
   Pad.poll(dt);
@@ -6599,14 +7390,15 @@ function loop(now){
   Stream.tick(); HiStream.tick(); Env.tick(dt);
   updateSun(); if(S._waterTex){ S._waterTex.offset.x=(S.t*0.012)%1; S._waterTex.offset.y=(S.t*0.007)%1; }
   if(S.mode==="car"||S.mode==="bus"){ S.t+=dt; Car.tick(dt); Stuck.tick(dt); if(S.car) S.car.visible=false; Car.updateCam(dt); Car.hud();
-    if(S.mode==="bus"){ Bus.tick(dt, S.t); const L=Loc.update(dt, Car.C.x, Car.C.z, "西大寺線"); if(L && L.v) Bus.setLimit(L.v); }
-    else Loc.update(dt, Car.C.x, Car.C.z, "");
+    if(S.mode==="bus"){ Bus.tick(dt, S.t); S.clock=Bus.bd.clk; const L=Loc.update(dt, Car.C.x, Car.C.z, "西大寺線"); if(L && L.v) Bus.setLimit(L.v); }
+    else { S.clock+=dt; Loc.update(dt, Car.C.x, Car.C.z, ""); }
     Snd.carSound(Car.C); }
   if(S.mode!=="car" && S.mode!=="bus") Snd.carSound(Car.C);   // 他のモードでは車・バスの音を止めておく
   if(S.mode!=="heli") Snd.heliSound(Heli.H);
   if(S.mode==="car"||S.mode==="bus"){}
-  else if(S.mode==="heli"){ S.t+=dt; Heli.tick(dt); if(S.car) S.car.visible=false; Heli.updateCam(dt); Heli.hud(); Loc.update(dt, Heli.H.x, Heli.H.z, ""); Snd.heliSound(Heli.H); }
+  else if(S.mode==="heli"){ S.t+=dt; S.clock+=dt; Heli.tick(dt); if(S.car) S.car.visible=false; Heli.updateCam(dt); Heli.hud(); Loc.update(dt, Heli.H.x, Heli.H.z, ""); Snd.heliSound(Heli.H); }
   else if(S.running){ tick(dt); if(S.track){ const p=pointAt(S.pos); Loc.update(dt, p.x, p.z, S.route && S.route.name ? S.route.name.replace(/（.*$/,"") : ""); } } else { S.t+=dt; if(S.track && $("menu").style.display!=="none"){ S.pos=S.cum[0]+40+((S.t*5)%Math.max(1,S.endArc-120)); } }
+  Quest.tick(dt);
   NaviMap.update(dt);
   lampT+=dt; if(lampT>0.25){ lampT=0; updateLamps(S.t); }
   if(S.mode!=="car" && S.mode!=="bus" && S.mode!=="heli") updateCamera();
@@ -6618,12 +7410,13 @@ function loop(now){
   if(S.mode==="car"||S.mode==="bus") Mirrors.render(renderer, scene);
   Cab.active = S.mode==="tram" && S.running && S.view==="cab";
   if(Cab.active){ Cab.update(dt,S); renderer.autoClear=false; Cab.render(renderer); renderer.autoClear=true; Mirrors.renderTram(renderer, scene); }
-  layoutHud();
+  layoutHud(); Clock.render(); TT.tick(dt);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+applyMenu();
 loadAll().catch(e=>{ console.error(e); $("start-label").textContent="読み込みに失敗しました: "+e.message; });
-window.__scene = scene; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
+window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap;   // v29: 試験用
 window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
 })();

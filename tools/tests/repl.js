@@ -9,7 +9,7 @@ const { chromium } = require('playwright'); const fs=require('fs');
   p.on('console', m => { if(m.type()==='error'||m.type()==='warning') fs.appendFileSync('/tmp/repl/console.txt', m.text().slice(0,300)+'\n'); });
   await p.goto(process.env.URL||'http://localhost:8806/index.html');
   await p.waitForFunction(() => !document.getElementById('start').disabled, null, {timeout:1800000});
-  await p.evaluate((m)=>{ document.querySelector('.mode-opt[data-mode="'+m+'"]').click(); document.getElementById('start').click(); }, process.env.MODE||'heli');
+  if((process.env.MODE||'heli')!=='menu') await p.evaluate((m)=>{ document.querySelector('.mode-opt[data-mode="'+m+'"]').click(); document.getElementById('start').click(); }, process.env.MODE||'heli');
   await p.waitForTimeout(2000);
   fs.writeFileSync('/tmp/repl/ready','1');
   let n=0;
