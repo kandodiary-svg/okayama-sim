@@ -1,5 +1,20 @@
 <title>OKADEN運転席</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* v41.13: 起動の失敗を画面に出す。以前は three.js を外部サイトから読み込む間ページが真っ白で、読み込みに失敗すると「読み込み中…」のまま何も出なかった。
+   three.js は自サイト（vendor/）から読み、画面（メニュー）を先に描く。画質・データは変えない */
+window.OkadenBoot=(function(){
+  var KEY="okaden.autoreload";
+  function el(i){ return document.getElementById(i); }
+  function box(msg,canReload){ var b=el("boot-err"),m=el("boot-err-msg"),r=el("boot-retry"); if(!b||!m) return; m.textContent=msg; b.hidden=false; if(r){ r.hidden=!canReload; r.onclick=function(){ location.reload(); }; } }
+  function hide(){ var b=el("boot-err"); if(b) b.hidden=true; }
+  function autoReload(){ try{ var t=Number(sessionStorage.getItem(KEY)||0); if(Date.now()-t>60000){ sessionStorage.setItem(KEY,String(Date.now())); return true; } }catch(e){} return false; }
+  function fail(msg,err,auto){ try{ console.error("boot:",msg,err||""); }catch(e){}
+    var l=el("start-label"); if(l) l.textContent="読み込めませんでした";
+    if(auto&&autoReload()){ box(msg+" もう一度、自動で読み込みます…",false); setTimeout(function(){ location.reload(); },1800); }
+    else box(msg+(err&&err.message?"（"+err.message+"）":""),true); }
+  return {box:box,hide:hide,fail:fail};
+})();
+</script>
 <style>
 :root{
   --cream:#f1ead9;
@@ -525,9 +540,14 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
   .mn-sub small{ display:none; }
 }
 
+#boot-err{ position:fixed; left:50%; top:16px; transform:translateX(-50%); z-index:9999; width:max-content; max-width:min(600px,calc(100% - 24px)); padding:12px 16px; border-radius:12px; background:#5a1f1a; color:#ffe9e4; font-size:14px; line-height:1.7; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+#boot-err[hidden]{ display:none; }
+#boot-err button{ margin-left:10px; padding:5px 14px; border:0; border-radius:999px; background:#ffe9e4; color:#5a1f1a; font:inherit; font-weight:700; cursor:pointer; }
+#boot-err button[hidden]{ display:none; }
 </style>
 
 <canvas id="world"></canvas>
+<div id="boot-err" role="alert" hidden><span id="boot-err-msg"></span><button type="button" id="boot-retry" hidden>再読み込み</button></div>
 <div class="veil"></div>
 
 <!-- MENU -->
@@ -959,4 +979,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
   </div>
 </div>
 
+<script src="vendor/three.r128.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
+<script>window.THREE||window.OkadenBoot.fail("3D の部品（three.js）を読み込めませんでした。インターネットの接続を確認してください。",null,true)</script>
 <script>

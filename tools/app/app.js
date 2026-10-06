@@ -20,7 +20,16 @@ const S = {
 
 /* ---------------- レンダラ ---------------- */
 const canvas = $("world");
-const renderer = new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:"high-performance", logarithmicDepthBuffer:false});
+/* v41.13: 起動の失敗は画面に理由を出す（head.html の OkadenBoot）。画質の設定は変えない */
+const Boot = window.OkadenBoot || { box(){}, hide(){}, fail(m, e){ console.error(m, e); } };
+const renderer = (() => {
+  try { return new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:"high-performance", logarithmicDepthBuffer:false}); }
+  catch(e){ Boot.fail("この端末・ブラウザでは 3D 表示（WebGL）を始められませんでした。ブラウザを最新にするか、「ハードウェアアクセラレーション」を有効にして、もう一度開いてください。", e, false); throw e; }
+})();
+window.__renderer = renderer;
+/* 描画が止まった（メモリ不足・GPU の切替など）時は案内を出し、戻ったら消す。three.js が戻す処理（preventDefault）はそのまま */
+canvas.addEventListener("webglcontextlost", () => { Boot.box("描画が止まりました。自動で戻るのを待っています。戻らない時は「再読み込み」を押してください。（ほかのタブやアプリを閉じるとメモリが空きます）", true); }, false);
+canvas.addEventListener("webglcontextrestored", () => { Boot.hide(); }, false);
 /* v31: 形の頂点の配列（位置・法線・UV）は GPU に送った後、JS 側の写しを捨てる（GPU の中の形は同じなので表示は変わらない。メモリだけ減る）。
    WebGL が失われて戻った時は、元のデータから同じ計算で配列を作り直して送り直す（regen）。一度も表示していない形は写しを持ったまま */
 const GeoMem = (() => {
@@ -309,15 +318,54 @@ const OrthoPages = (() => {
 /* ---------------- 読み込み ---------------- */
 let loaded=0, toLoad=1;
 function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; if($("start").disabled) $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; }
-async function fetchPacked(fn){
-  const res = await fetch("data/"+fn); if(!res.ok) throw new Error(fn+" "+res.status);
-  let u8;
-  if(fn.endsWith(".bin")){ u8 = new Uint8Array(await res.arrayBuffer()); loaded += u8.length * 1.33; }   // v26: deflate のバイナリ（base64 をやめて約 25% 小さく）
-  else { const txt = await res.text(); loaded += txt.length; const bin = atob(txt.trim()); u8 = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i); }
-  progress();
-  const ds = new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate"));
-  return await new Response(ds).arrayBuffer();
+/* v41.13: 通信の一時的な失敗（切れた・混み合っている）は少し待って自動で再試行する。404（無いファイル）は再試行しない */
+const _sleep = ms => new Promise(r => setTimeout(r, ms));
+async function withRetry(fn, label, tries){
+  tries = tries || 3; let err;
+  for(let i = 0; i < tries; i++){
+    try { return await fn(i); }
+    catch(e){ err = e; if(e && e.noRetry) break; console.warn("retry", label, (i + 1) + "/" + tries, e); if(i < tries - 1) await _sleep(500 * (i + 1) * (i + 1)); }
+  }
+  throw err;
 }
+async function fetchOK(url){
+  const res = await fetch(url);
+  if(!res.ok){ const e = new Error(url + " " + res.status); if(res.status === 404) e.noRetry = true; throw e; }
+  return res;
+}
+const getJSON = url => withRetry(() => fetchOK(url).then(r => r.json()), url);
+// base64（改行・空白は無視）を受け取りながらバイト列に戻す TransformStream。atob と同じ結果で、文字列全体を持たない
+const B64T = (() => { const t = new Uint8Array(256).fill(255), A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"; for(let i = 0; i < 64; i++) t[A.charCodeAt(i)] = i; return t; })();
+function b64Decoder(onBytes){
+  let acc = 0, nb = 0;
+  return new TransformStream({ transform(chunk, ctl){
+    onBytes(chunk.length);
+    const out = new Uint8Array(((chunk.length * 3) >> 2) + 3); let o = 0;
+    for(let i = 0; i < chunk.length; i++){
+      const v = B64T[chunk[i]]; if(v === 255) continue;   // "=" や空白
+      acc = (acc << 6) | v; nb += 6;
+      if(nb >= 8){ nb -= 8; out[o++] = (acc >> nb) & 255; acc &= (1 << nb) - 1; }
+    }
+    if(o) ctl.enqueue(o === out.length ? out : out.subarray(0, o));
+  } });
+}
+async function fetchPackedOnce(fn){
+  const res = await fetchOK("data/"+fn);
+  let got = 0;
+  try {
+    if(fn.endsWith(".bin")){ const u8 = new Uint8Array(await res.arrayBuffer()); got = u8.length * 1.33; loaded += got; progress();   // v26: deflate のバイナリ（base64 をやめて約 25% 小さく）
+      return await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer(); }
+    if(res.body && typeof TransformStream !== "undefined"){
+      // v41.13: 受け取りながら base64 を戻し、そのまま展開する（途中の巨大な文字列・配列を持たない。出来上がる ArrayBuffer は同じ）。バーも受信に合わせて滑らかに進む
+      const ds = res.body.pipeThrough(b64Decoder(n => { got += n; loaded += n; progress(); })).pipeThrough(new DecompressionStream("deflate"));
+      return await new Response(ds).arrayBuffer();
+    }
+    const txt = await res.text(); got = txt.length; loaded += got; const bin = atob(txt.trim()); const u8 = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+    progress();
+    return await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate"))).arrayBuffer();
+  } catch(e){ loaded -= got; throw e; }   // 失敗した分の進みは戻して、再試行で二重に数えない
+}
+const fetchPacked = fn => withRetry(() => fetchPackedOnce(fn), fn);
 /* v30: 高さの格子（ground・drive の enc=grad2）を戻す。2 次元の差分（左＋上−左上 との差）の下位・上位バイトの面 → int16 の高さ。
    残り（区分・ビット列など）はそのまま後ろに付け、以前と同じ並びの ArrayBuffer を返す */
 function gradDecode(buf, nx, nz){
@@ -395,7 +443,9 @@ function trafficPts(tj, e){
   return out;
 }
 function loadTex(fn){
-  return new Promise(res=>new THREE.TextureLoader().load("data/"+fn, t=>{ t.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy()); loaded+=900e3; progress(); res(t); }, undefined, ()=>res(null)));
+  // v41.13: 画像の読み込みに失敗したら少し待って 2 回まで再試行（それでも駄目なら今まで通り null）
+  return new Promise(res=>{ const go = n => new THREE.TextureLoader().load("data/"+fn, t=>{ t.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy()); loaded+=900e3; progress(); res(t); }, undefined,
+    ()=>{ if(n < 3){ console.warn("retry tex", fn, n + "/3"); setTimeout(()=>go(n + 1), 500 * n * n); } else { console.warn("tex failed", fn); res(null); } }); go(1); });
 }
 /* ---------------- 時間帯・天気（v16） ----------------
    朝（7時・東から低い日差し）/ 昼 / 夕方（17時半・西日）/ 夜（街灯・窓明かり・前照灯）。天気は 晴れ / 雨（雨筋・路面が濡れて暗く・霧が近い）。
@@ -593,18 +643,19 @@ const Clock = (() => {
 async function _memlog(name){ if(!window.__MEMLOG) return; if(typeof gc==="function"){ gc(); await new Promise(r=>setTimeout(r,50)); gc(); }
   window.__MEMLOG.push([name, performance.memory ? Math.round(performance.memory.usedJSHeapSize/1e6) : -1, window.__cdpmem ? await window.__cdpmem() : null]); }
 async function loadAll(){
-  const [sc, rt] = await Promise.all([fetch("data/scene.json").then(r=>r.json()), fetch("data/routes.json").then(r=>r.json())]);
+  const [sc, rt] = await Promise.all([getJSON("data/scene.json"), getJSON("data/routes.json")]);
   S.scene=sc; S.routes=rt; S._atlas = S._atlas || [];   // v22: タイルの読み込み（Stream）が先に始まっても落ちないよう最初に用意
   // v29: 車・信号・歩行者・JR・バス・地名のデータは、地形・建物と並行して先に取り寄せる（範囲拡大で大きくなったため）
-  const jget = n => fetch("data/"+n).then(r=>r.ok?r.json():null).catch(e=>{ console.warn(n, e); return null; });
+  const jget = n => getJSON("data/"+n).catch(e=>{ console.warn(n, e); return null; });   // v41.13: 一時的な失敗は再試行（無いファイルは今まで通り null）
   const JP = { traffic: jget("traffic.json").then(loadTrafficPts).catch(e=>{ console.warn("traffic pts", e); return null; }), signals: jget("signals.json"), peds: jget("peds.json"), jr: jget("jr.json"), bus: jget("bus.json"), places: jget("places.json") };
   // v16: "@" の付いたファイル（建物・植生のタイル）は Stream が近くの分だけ読み込む。それ以外は最初に全部読む
   const core = Object.entries(sc.files).filter(([k])=>!k.includes("@"));
   const OVM = !!sc.ortho_ov;   // v29: 縮小写真＋近くのページだけ（範囲拡大版）
   toLoad = core.reduce((a,[k,f])=>a+(f.size||f.raw*0.9),0) + (OVM ? 12*900e3 + 4e6 : sc.ortho.length*900e3) + 6e7;   // v30: size = 送る大きさ
   const bufs = {};
-  const texP = OVM ? loadTex(sc.ortho_ov.file).then(t=>{ if(t){ t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy()); OrthoPages.setOverview(t, sc.ortho_ov); } return []; })
+  const texP = OVM ? loadTex(sc.ortho_ov.file).then(t=>{ if(!t) throw new Error("航空写真（"+sc.ortho_ov.file+"）を読み込めませんでした"); t.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy()); OrthoPages.setOverview(t, sc.ortho_ov); return []; })
                    : Promise.all(sc.ortho.map(o=>loadTex(o.file)));
+  texP.catch(()=>{});   // 失敗は下の await texP で拾う（先に落ちても未処理扱いにしない）
   await Promise.all(core.map(async ([k,f])=>{ bufs[k]=await fetchPacked(f.file); }));
   for(const k of ["ground", "drive"]){ const m = sc[k]; if(m && m.enc === "grad2" && bufs[k]) bufs[k] = gradDecode(bufs[k], m.nx, m.nz); }   // v30
   if(sc.drive && sc.drive.enc === "gres" && bufs.drive && bufs.ground)
@@ -777,11 +828,11 @@ const Outer = (() => {
   let man = null, A = null, ready = false, busy = 0, lastT = 0, manP = null;
   const idxW = new Map(), idxF = new Map(), live = new Map(), loading = new Set(), R_LOAD = 3300, R_DROP = 4600;
   // v37: 目録は遠景の地形（buildFarTerrain）からも使う（山陽道沿いの細かいブロックの下に遠景を沈める）
-  function loadMan(){ if(!manP) manP = fetch("data/outer.json").then(r => r.ok ? r.json() : null).catch(() => null); return manP; }
+  function loadMan(){ if(!manP) manP = getJSON("data/outer.json").catch(() => null); return manP; }
   async function init(){
     try{
       man = await loadMan(); if(!man) return;
-      const b = await fetch("data/outer_h.bin"); if(!b.ok) return; A = new Int16Array(await b.arrayBuffer());
+      A = new Int16Array(await withRetry(() => fetchOK("data/outer_h.bin").then(r => r.arrayBuffer()), "outer_h.bin"));
       for(const t of man.tiles) (t.kind === "FF" ? idxF : idxW).set(t.i + "_" + t.j, t);
       ready = true;
     }catch(e){ console.warn("outer", e); }
@@ -846,7 +897,7 @@ const MW = (() => {
   /* ---------- データ ---------- */
   async function init(){
     try{
-      const [mj, buf] = await Promise.all([fetch("data/mw.json").then(r => r.ok ? r.json() : null), fetch("data/mw.bin").then(r => r.ok ? r.arrayBuffer() : null)]);
+      const [mj, buf] = await Promise.all([getJSON("data/mw.json").catch(() => null), withRetry(() => fetchOK("data/mw.bin").then(r => r.arrayBuffer()), "mw.bin").catch(() => null)]);
       if(!mj || !buf) return;
       man = mj; PT = new Float32Array(buf, 0, man.total * 3); GP = new Uint8Array(buf, man.total * 12, man.total);
       for(const c of man.chains) chains.push(prep(c));
@@ -6353,7 +6404,7 @@ const Nav = (() => {
     // k1 = 名前、kr = 名前の中の語（岡山駅 など）をひらがなに置き換えたもの（「おかやまえき」で始まる名前も先頭一致にするため）、k = 検索に使う全部
     IDX = POI.p.map(([n, c, x, z]) => { const k1 = nk(n); let kr = k1, ex = ""; for(const [a, b] of READ) if(n.includes(a)){ kr = kr.split(nk(a)).join(nk(b.split(" ")[0])); ex += " " + nk(b); } return { n, c, x, z, k1, kr, k: k1 + " " + kr + ex }; });
   }
-  fetch("data/poi.json").then((r) => r.json()).then((j) => { POI = j; buildIndex(); }).catch((e) => { console.warn("poi", e); });
+  getJSON("data/poi.json").then((j) => { POI = j; buildIndex(); }).catch((e) => { console.warn("poi", e); });
   const catName = (c) => (POI && POI.cats[c]) || "";
   function search(q, cat){
     if(!IDX) return []; const m = me(), out = [];
@@ -7281,7 +7332,7 @@ const Quest = (() => {
      data/missions.json は tools/pipeline/mission_sites.py が、土地利用・建物・道路網から検出した「それらしい場所」。実在の配送センター・駐車場ではない。
      開始のたびに 駐車場（出発）→ 配送センター（積み込み）→ 路地・家の前（配達）を組み合わせる。同じ組み合わせにならないよう、毎回乱数で選ぶ（もう一度は同じ内容）。 */
   let SITES = null;
-  fetch("data/missions.json").then((r) => r.json()).then((j) => {
+  getJSON("data/missions.json").then((j) => {
     SITES = { towns: j.towns,
       drop: j.drop.map((a) => ({ x: a[0], z: a[1], yaw: a[2], typ: a[3], town: a[4], rw: a[5] / 10, side: a[6], y: a[7] })),
       depot: j.depot.map((a) => ({ bx: a[0], bz: a[1], ux: a[2], uz: a[3], dx: a[4], dz: a[5], gx: a[6], gz: a[7], town: a[8], y: a[10] })),
@@ -7779,7 +7830,7 @@ function loop(now){
 }
 requestAnimationFrame(loop);
 applyMenu();
-loadAll().catch(e=>{ console.error(e); $("start-label").textContent="読み込みに失敗しました: "+e.message; });
+loadAll().catch(e=>{ console.error(e); Boot.fail("データの読み込みに失敗しました。通信の状態を確認して、もう一度お試しください。", e, true); });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
 window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;

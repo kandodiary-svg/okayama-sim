@@ -140,7 +140,8 @@ body.v-cockpit #bar,body.v-window #bar{bottom:auto;top:110px;left:8px}
   <p style="font-size:12px;opacity:.75;margin:10px 0 0">初期設定の「操縦補助」は、桿を離すと経路角とバンクを保つ機能です（Yキーで切ると素の操縦になります）。</p>
   <div class="go"><button id="hClose">閉じる</button></div></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="../vendor/three.r128.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
 <script src="js/geo.js"></script>
 <script src="js/fdm.js"></script>
 <script src="js/taxi.js"></script>
