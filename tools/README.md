@@ -16,6 +16,7 @@
   - v41.10: `q_v41_10_poi.txt`（ナビの目的地・タクシー乗り場の取得条件）と `osm_v41_10_poi.json.xz`（取得結果、2026-10-06）。`pipeline/poi.py` が `data/poi.json`（目的地 1263 件・タクシー乗り場 30 か所）を作る
 - `tests/`: ブラウザ（Playwright）での試験・画面の撮影
   - v41.10: `nav_plan_test.js`（ナビの経路計算: 1548 通りで失敗 0・計算時間）、`taxi_test.js`（タクシー営業の流れ: 乗り場・メーター・配車・迎車・取り消し・見送りの 13 項目）。どちらも `repl.js` の命令ファイル
+  - v41.11: `nav_route_stats.js`（ランダムな出発地・目的地の経路が大通りをどれだけ通るか・遠回り率）、`nav_plan_leg_test.js`（経路計算の成功数と、経路の終点と目的地のずれ）、`traffic_dist_test.js`（道の大きさ別の車の密度・平均速度・停止率）。いずれも `repl.js` の命令ファイル
 - `app/`: `index.html` の元（`head.html`・`vehicles.js`・`app.js` をつなげる。`work/mkx.sh`）
   - `vehicles.js`: 車・トラック・バスの形を作るコード（v41.9）。`vehicles_src/veh_base.js`（周りの車の形・車体の作り方・材質）と `vehicles_src/veh_hi.js`（自分の車・運転席・バスの車体）から `bash app/vehicles_src/mkveh.sh` で作る（直接は編集しない）
   - 形の確認用ページ: `tests/lab/lab.html`（街なしで車だけを表示）と `tests/vehicle_lab.js`（撮影）

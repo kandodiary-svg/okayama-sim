@@ -662,7 +662,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
           </section>
 
           <details class="mn-help" id="heli-help" style="display:none"><summary>操作方法とデータの出どころ</summary><p class="foot">小型ヘリコプターで街の上を自由に飛びます。高く上がるほど遠くの建物まで読み込み、地図の外は国土地理院の標高と空中写真による遠景（建物なし）が約 20km 四方に広がります。建物の屋上や地面には着地でき、建物の横から突っ込むと止まります。<br>操作: W/↑ 前進　S/↓ 後退　A/← D/→ 旋回　Q/E 横移動　R・Space 上昇　F・C 下降　Shift 速く　V 視点（後ろ／操縦席／真下）　O 自動で街を周回　マウスのドラッグで見回し・ホイールで距離。画面のボタンでも操作できます。</p></details>
-          <details class="mn-help" id="car-note" style="display:none"><summary>操作方法とデータの出どころ</summary><p class="foot">出発地で「山陽自動車道」を選ぶと、県内の山陽道（福山東〜兵庫県境の約 100km）を走れます（上り・下り、IC・SA/PA から出発）。線形・IC・橋・トンネルは OpenStreetMap、道路面の高さは国土地理院の標高から推定した縦断です（実際の設計値ではありません）。他の車は走行車線を守り、前の車に追いつくと減速します。<br>岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点　Space サイドブレーキ　H 警笛。画面のハンドルは指で回せます。<br>ナビ: G キー（画面の「ナビ」ボタン）で目的地を地名・施設名で探すか、地図で選ぶと、道路の青い線・画面上部の案内・音声で案内します（ミッションでは次の目的地が自動で入ります）。タクシー営業（ミッションの「タクシー営業」）: 配車依頼は Y（または画面の「受ける」）で受け、乗り場の光の柱の円の中で止まるとお客さんが乗ります。終わる時は「営業終了」。</p></details>
+          <details class="mn-help" id="car-note" style="display:none"><summary>操作方法とデータの出どころ</summary><p class="foot">出発地で「山陽自動車道」を選ぶと、県内の山陽道（福山東〜兵庫県境の約 100km）を走れます（上り・下り、IC・SA/PA から出発）。線形・IC・橋・トンネルは OpenStreetMap、道路面の高さは国土地理院の標高から推定した縦断です（実際の設計値ではありません）。他の車は走行車線を守り、前の車に追いつくと減速します。<br>岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル　R ギア切替　V 視点（運転席視点では Q／E で左右・Z で後ろを見られ、画面のドラッグでも見回せます。曲がる向きへは自動で視線が動きます）　Space サイドブレーキ　H 警笛。画面のハンドルは指で回せます。制限速度は幹線 60・準幹線と市道 50・細い道 40 または 30 km/h で、制限を 20 km/h 超えるまでは減点・注意しません。<br>ナビ: G キー（画面の「ナビ」ボタン）で目的地を地名・施設名で探すか、地図で選ぶと、ミニマップと大きな地図の青い線（これから走る所は青・通過ずみは灰色）・画面上部の案内・音声で案内します。ルートは大きな道を優先して探します（道路の上の青い帯は、ナビ画面の「道路の線」で ON にできます）（ミッションでは次の目的地が自動で入ります）。タクシー営業（ミッションの「タクシー営業」）: 配車依頼は Y（または画面の「受ける」）で受け、乗り場の光の柱の円の中で止まるとお客さんが乗ります。終わる時は「営業終了」。</p></details>
         </main>
 
         <div class="mn-set">
@@ -2256,6 +2256,27 @@ function pwDecode(buf){
   }
   return out;
 }
+/* v41.11: 制限速度の引き上げと「道路の大きさ」。
+   data/traffic.json の v は OSM の道路種別ごとの既定値（幹線 50・準幹線/県道 40・細い道 30）で、実際の道路より遅かった。
+   一般道の法定速度（60）を上限に、幹線 60・準幹線 50・県道 50・細い道(unclassified) 40・生活道路 30 に置き換える。
+   HUD の「制限」・AI 車の走る速さ・ナビの所要時間・速度超過の判定がすべて同じ値を使うので、ここで 1 回だけ直す。
+   imp: 道路の大きさ（交通量の配分とナビの道選びに使う）。幹線 4（片側 2 車線以上は 4.5）> 準幹線 2.4（2 車線 3.2）> 市道・県道 1.6（2 車線 2.6）> 細い道 0.7 > 生活道路 0.5。
+        OSM の種別だけだと、岡山の大通り（市役所筋・けやき通りなど）が「県道・市道」に入ってしまうので、片側の車線数も使う
+   sw : AI 車を出現させる重み（大通りに多く、細い道には少なく）。直進の幹線の接続（v=60）は 70 に */
+function raiseLimits(tj){
+  for(const l of tj.lanes){
+    const trunk = l.c === "t" && l.v >= 50, two = l.n >= 2;
+    let v, imp, sw;
+    if(l.c === "p" || trunk){ v = 60; imp = two ? 4.5 : 4; sw = 1; }
+    else if(l.c === "s"){ v = 50; imp = two ? 3.2 : 2.4; sw = two ? 0.9 : 0.7; }
+    else if(l.c === "t"){ v = 50; imp = two ? 2.6 : 1.6; sw = two ? 0.6 : 0.08; }
+    else if(l.c === "u"){ v = 40; imp = 0.7; sw = 0.02; }
+    else { v = 30; imp = 0.5; sw = 0.012; }
+    l.v = v; l.imp = imp; l.sw = sw;
+  }
+  for(const c of tj.conns) if(c.k === "s" && c.v >= 60) c.v = 70;
+}
+const SPEED_OVER_OK = 20;    // v41.11: 制限速度を 20 km/h 超えるまでは減点・注意しない
 /* v30: traffic.json の点列は別ファイル（int32 の cm・点列ごとの差分・バイトの面）。e.o から e.m 点 */
 async function loadTrafficPts(tj){
   if(!tj || !tj.pts) return tj;
@@ -2506,7 +2527,7 @@ async function loadAll(){
   await Stream.update(0, 0, true, 700);
   await _memlog("stream");
   let tj=null;
-  try { Trams.init(rt); tj = await JP.traffic; if(tj) Traffic.init(tj); } catch(e){ console.warn("traffic", e); }
+  try { Trams.init(rt); tj = await JP.traffic; if(tj){ raiseLimits(tj); Traffic.init(tj); } } catch(e){ console.warn("traffic", e); }
   await _memlog("traffic");
   try { const sj = await JP.signals; buildSignals(sj, rt); } catch(e){ console.warn("signals", e); }
   await _memlog("signals");
@@ -4100,7 +4121,7 @@ const Traffic = (()=>{
   }
   function init(data){
     D=data; NL=D.lanes.length; segs=[];
-    D.lanes.forEach((l,i)=>{ const P=mkPath(trafficPts(D, l)); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n, nm:l.nm}); });
+    D.lanes.forEach((l,i)=>{ const P=mkPath(trafficPts(D, l)); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n, nm:l.nm, imp:l.imp||1, sw:l.sw===undefined?1:l.sw}); });
     D.conns.forEach((c,i)=>{ const P=mkPath(trafficPts(D, c)); const s={i:NL+i, P, v:c.v, next:[c.b], node:c.node, lane:false, kind:c.k, from:c.a}; segs.push(s); segs[c.a].next.push(NL+i); });
     // v29: 出現させる車線を近くから選ぶための升目（250m）。範囲を広げると、全部の車線から無作為に選んでは近くに当たらない
     BK = new Map();
@@ -4122,8 +4143,8 @@ const Traffic = (()=>{
     let nx=seg.next; if(!nx.length) return -1;
     const good=nx.filter(j=>segs[j].reach>=250); if(good.length) nx=good;     // 行き止まりの方へは曲がらない
     if(seg.lane){ let tot=0; const w=nx.map(j=>{ const k=segs[j].kind; let x = k==="s"?4:1.2;
-      // v35: 幹線から細い道へは入りにくく（細い道の交通量を減らす）
-      if(!segs[j].lane){ const nn=segs[segs[j].next[0]]; if(nn && nn.c && (nn.c==="u"||nn.c==="r") && !(seg.c==="u"||seg.c==="r")) x*=0.25; }
+      // v41.11: 道の大きさ（imp）で行き先を偏らせる。大きな道→細い道へは入りにくく、細い道→大きな道へは出やすく（細い道に車がたまらないように）
+      { const nn=segs[j].lane ? segs[j] : segs[segs[j].next[0]]; if(nn && nn.lane){ const a=seg.imp||1, b=nn.imp||1; x *= b<a ? Math.pow(b/a, 2.2) : Math.min(2.5, Math.pow(b/a, 0.7)); } }
       tot+=x; return x; }); let r=Math.random()*tot; for(let i=0;i<nx.length;i++){ if((r-=w[i])<=0) return nx[i]; } return nx[0]; }
     return nx[0];
   }
@@ -4131,7 +4152,7 @@ const Traffic = (()=>{
     let tot=segs[c.plan[0]].P.len - c.s;
     for(let i=1;i<c.plan.length;i++) tot+=segs[c.plan[i]].P.len;
     c.endAhead=false;
-    while(tot<110 && c.plan.length<8){ const last=segs[c.plan[c.plan.length-1]]; const n=chooseNext(last); if(n<0){ c.endAhead=true; break; } c.plan.push(n); tot+=segs[n].P.len; }
+    while(tot<170 && c.plan.length<10){ const last=segs[c.plan[c.plan.length-1]]; const n=chooseNext(last); if(n<0){ c.endAhead=true; break; } c.plan.push(n); tot+=segs[n].P.len; }
   }
   /* 計画した経路上で、先頭から d 先の点 */
   function aheadPt(c, d, out){
@@ -4147,13 +4168,23 @@ const Traffic = (()=>{
     for(let a=ix-r;a<=ix+r;a++) for(let b=iz-r;b<=iz+r;b++){ const L=BK.get(a+","+b); if(L) for(const i of L) set.add(i); }
     _cand=[...set]; _candKey=key; return _cand;
   }
+  /* v41.11: 出現させる車線を「重み（sw × 車線の長さ）」で抽選する表。従来は無作為に選んで重みで断っていたので、大通りの少ない所では出現がほとんど成功せず、台数が減っていた。
+     中心が 40m 動くまで使い回す。W は範囲内の重みの合計（その場所の「道の多さ・大きさ」）で、出す台数の上限にも使う */
+  const _spTabs = new Map();
+  function spawnTable(center, rmin, rmax){
+    const key = Math.round(center.x/40)+","+Math.round(center.z/40)+","+rmin+","+rmax; let t = _spTabs.get(key); if(t) return t;
+    if(_spTabs.size>6) _spTabs.clear();
+    const idx=[], cum=[]; let W=0; const cand = BK ? nearLanes(center, rmax) : [];
+    for(const i of cand){ const g=segs[i]; if(!g.lane || g.P.len<20 || g.reach<250) continue; const m=(g.P.n>>1)*3, d=Math.hypot(g.P.P[m]-center.x, g.P.P[m+2]-center.z);
+      if(d<rmin-g.P.len*0.5 || d>rmax+g.P.len*0.5) continue; W+=g.sw*Math.min(1,g.P.len/90); idx.push(i); cum.push(W); }
+    t={idx,cum,W}; _spTabs.set(key,t); return t;
+  }
+  const CAR_PER_W=3.0;   // 出す台数の上限 = 範囲内の重みの合計 × 3.0（大通り 1km あたり 18 台前後）。MAXN が上限
   function spawnCar(c, center, rmin, rmax, avoidView){
-    const cand = BK ? nearLanes(center, rmax) : null;
-    if(cand && !cand.length) return false;
-    for(let tries=0;tries<80;tries++){
-      const seg=segs[cand ? cand[Math.floor(Math.random()*cand.length)] : Math.floor(Math.random()*NL)];
-      if(seg.P.len<20 || seg.reach<250 || Math.random()>seg.P.len/90) continue;
-      if((seg.c==="u"||seg.c==="r") && Math.random()<0.97) continue;   // v35: 細い道（unclassified / residential）の出現を 20% → 3% に
+    const tab = spawnTable(center, rmin, rmax); if(!(tab.W>0)) return false;
+    for(let tries=0;tries<40;tries++){
+      let lo=0, hi=tab.cum.length-1; const r=Math.random()*tab.W; while(lo<hi){ const m=(lo+hi)>>1; if(tab.cum[m]<r) lo=m+1; else hi=m; }
+      const seg=segs[tab.idx[lo]];
       let s=4+Math.random()*(seg.P.len-8); let nearSig=false;
       // v35: 信号の停止線の手前 35m 以内・線を越えた所に出さない（赤で停止線を越えて現れる・急停止できない車をなくす）
       if(seg.sig){ const dd=seg.sig.s-s; if(dd>-3 && dd<35){ s=Math.min(s, seg.sig.s-7.5); nearSig=true; if(s<1) continue; } }
@@ -4162,7 +4193,7 @@ const Traffic = (()=>{
       if(avoidView){ const v=new THREE.Vector3(p.x-camera.position.x, 0, p.z-camera.position.z); const f=new THREE.Vector3(); camera.getWorldDirection(f); f.y=0; if(d<320 && v.normalize().dot(f.normalize())>0.2) continue; }
       if(Obs.hit(p.x,p.z,7,null,null,p.y)) continue;
       if(cars.some(o=>o!==c && o.x!==undefined && Math.hypot(o.x-p.x,o.z-p.z)<9)) continue;
-      const T=pickType(); c.type=T; c.plan=[seg.i]; c.s=s; c.v=Math.min(seg.v/3.6*0.7, nearSig?1.5:8); c.passedG=undefined; c.passedT=0; c.stopT=0; c.v0=0.72+Math.random()*0.18; c.dead=false; c.deadT=0; c.wait=0; c.ghost=0; c.blockedBy=null; c.hold=null; c.honkT=0; c.honkDly=0; c.jamT=0;
+      const T=pickType(); c.type=T; c.plan=[seg.i]; c.s=s; c.v=Math.min(seg.v/3.6*0.9, nearSig?1.5:12); c.passedG=undefined; c.passedT=0; c.stopT=0; c.v0=(0.98+Math.random()*0.2)*(T.name==="bus"||T.name==="truck4"?0.88:T.name==="truck"?0.95:1); /* v41.11: 流れに乗る速さ（制限の 98〜118%。以前は 72〜90%） */ c.dead=false; c.deadT=0; c.wait=0; c.ghost=0; c.blockedBy=null; c.hold=null; c.honkT=0; c.honkDly=0; c.jamT=0; c.nd=0; c.spImp=seg.imp;
       c.color=new THREE.Color(T.name==="bus" ? ["#f3efe2","#e9eef2","#f2e7cf"][Math.floor(Math.random()*3)] : T.name==="taxi" ? (Math.random()<0.8?"#1d2440":"#1c1d20") : T.name==="taxi2" ? (Math.random()<0.5?"#e9d23c":"#f2f2ef") : (T.name==="van"||T.name==="keitruck") ? (Math.random()<0.85?"#f2f2f0":paint()) : (T.name==="truck"||T.name==="truck4") ? ["#f2f2f0","#f2f2f0","#2c5d9a","#3a8a4a","#d9d9d6"][Math.floor(Math.random()*5)] : paint());
       planAhead(c); pose(c); return true;
     }
@@ -4190,9 +4221,12 @@ const Traffic = (()=>{
     // 台数を保つ・遠い車は入れ替え
     respT-=dt;
     if(respT<=0){ respT=0.4;
+      let nAct=0; for(const c of cars) if(c.type) nAct++;
+      const cap = Math.min(MAXN, Math.round(spawnTable(center,0,450).W*CAR_PER_W));   // v41.11: 台数は道の多さ・大きさに比例（大通りは混みすぎず、細い道だけの郊外には少なく）
       for(const c of cars){ const far = c.type && Math.hypot(c.x-center.x, c.z-center.z)>480;
-        if(!c.type || far || (c.dead && (!inView(c.x,c.z) || c.deadT>10))){ if(!spawnCar(c, center, 200, 450, true)) c.type=null; } }
-      let add=0; while(cars.length<MAXN && add++<30){ const c={id:cars.length}; if(spawnCar(c, center, 20, 420, false)) cars.push(c); else break; }
+        if(!c.type || far || (c.dead && (!inView(c.x,c.z) || c.deadT>10))){ const had=!!c.type;
+          if((nAct-(had?1:0))>=cap || !spawnCar(c, center, 200, 450, true)){ if(had) nAct--; c.type=null; } else if(!had) nAct++; } }
+      let add=0; while(cars.length<MAXN && nAct<cap && add++<30){ const c={id:cars.length}; if(spawnCar(c, center, 20, 420, false)){ cars.push(c); nAct++; } else break; }
     }
     for(const c of cars){
       if(!c.type) continue;
@@ -4203,11 +4237,11 @@ const Traffic = (()=>{
       let gap=1e9, gsrc=0, sigHold=false, jw=null;   // sigHold: 信号待ち  jw: 譲り合いで待っている相手
       // 前方の曲がり（接続の制限速度）
       let acc=seg.P.len-c.s;
-      for(let i=1;i<c.plan.length && acc<80;i++){ const q=segs[c.plan[i]]; if(!q.lane){ const vc=q.v/3.6; vlim=Math.min(vlim, Math.sqrt(vc*vc+2*2.0*Math.max(0,acc-hl))); } acc+=q.P.len; }
+      for(let i=1;i<c.plan.length && acc<150;i++){ const q=segs[c.plan[i]]; if(!q.lane){ const vc=q.v/3.6; vlim=Math.min(vlim, Math.sqrt(vc*vc+2*2.4*Math.max(0,acc-hl))); } acc+=q.P.len; }
       if(!seg.lane){ vlim=Math.min(vlim, seg.v/3.6); }
       // 信号（現在の車線と次の車線）
       acc=0;
-      for(let i=0;i<c.plan.length && acc<120;i++){
+      for(let i=0;i<c.plan.length && acc<170;i++){
         const q=segs[c.plan[i]]; const base = i===0 ? -c.s : acc;
         if(q.lane && q.sig){ const d=base+q.sig.s-hl;
           if(d<=-0.3 && d>-6){ c.passedG=q.sig.g; c.passedT=simT; }
@@ -4221,7 +4255,7 @@ const Traffic = (()=>{
         acc += i===0 ? q.P.len-c.s : q.P.len;
       }
       // 進路上の障害物（車・電車・プレイヤー）
-      const look=Math.min(70, 8 + c.v*c.v/2/3.0 + c.v*1.4);
+      const look=Math.min(125, 8 + c.v*c.v/2/3.2 + c.v*1.4);   // v41.11: 速くなったぶん遠くまで見る（止まるのに要る距離）
       const self=c, pr=prio(c);
       // 相手も自分を待っているときは、優先度の低い方が待つ（電車に対しては車が先に抜ける＝線路上に居座らない）
       const e0r=(q)=>0.85;
@@ -4231,7 +4265,7 @@ const Traffic = (()=>{
         ((o.dx*c.dx+o.dz*c.dz) < -0.5 && Math.hypot(o.x-_q.x, o.z-_q.z) > 1.2 + o.type.l*0.5) ||
         (o.blockedBy===c && (prio(o)<pr || (prio(o)===pr && o.id>c.id)))));
       c.blockedBy=null;
-      for(let d=0.6; d<=look; d+=1.8){ aheadPt(c, hl+d, _q); const e=Obs.hit(_q.x,_q.z, e0r(_q), self,skip,_q.y); if(e){ const g_=d-0.4-e.r*0.3; if(g_<gap){ gap=g_; gsrc=e.o.ped?3:e.o.type?4:e.o.leg?5:6; } c.blockedBy=e.o; break; } }
+      for(let d=0.6; d<=look; d+= d<36 ? 1.8 : 2.4){ aheadPt(c, hl+d, _q); const e=Obs.hit(_q.x,_q.z, e0r(_q), self,skip,_q.y); if(e){ const g_=d-0.4-e.r*0.3; if(g_<gap){ gap=g_; gsrc=e.o.ped?3:e.o.type?4:e.o.leg?5:6; } c.blockedBy=e.o; break; } }
       if(!c.blockedBy && jw && jw.type) c.blockedBy=jw;   // 交差点の持ち主待ち（クラクションの伝言・待ち合い輪の検出に使う）
       if(pedSk) vlim=Math.min(vlim, 2.0);   // 歩行者が前にいるときは、人をよけさせながら徐行で進む
       // 前がつかえているなら、その前の車にもクラクションを伝える（先頭の車から順に動き出す）
@@ -4243,14 +4277,17 @@ const Traffic = (()=>{
       // 道の終わり（行き止まり）では手前で止まる
       if(c.endAhead){ let rem=segs[c.plan[0]].P.len-c.s; for(let i=1;i<c.plan.length;i++) rem+=segs[c.plan[i]].P.len; { const g_=rem-hl-1; if(g_<gap){ gap=g_; gsrc=8; } } }
       // 利用者の車・バス: 進路の前方（左右 3.2m・扇形）にいれば止まる（割り込み・横切りにも対応）
-      if(PLAYER_POS.on && Math.hypot(PLAYER_POS.x-c.x, PLAYER_POS.z-c.z)<45){
+      if(PLAYER_POS.on && Math.hypot(PLAYER_POS.x-c.x, PLAYER_POS.z-c.z)<110){
         for(const q of PLAYER_POS.pts){ const px=q[0]-c.x, pz=q[1]-c.z, fwd=px*c.dx+pz*c.dz, lat=Math.abs(px*c.dz-pz*c.dx);
           // 自分の車線の幅（左右 1.1m＋相手の半幅）に入っていれば、その手前で止まる
-          if(fwd>0 && fwd<40 && lat<1.1+PLAYER_POS.r){ const g_=fwd-hl-PLAYER_POS.r-1.5; if(g_<gap){ gap=g_; gsrc=9; } } } }
+          if(fwd>0 && fwd<Math.max(40, c.v*3.2+12) && lat<1.1+PLAYER_POS.r){ const g_=fwd-hl-PLAYER_POS.r-1.5; if(g_<gap){ gap=g_; gsrc=9; } } } }
+      c.gp = gap; c.vlimD = vlim;   // 試験用: 前方の空き・速度の上限
       c.gsrc = gap<8 ? gsrc : 0;   // 何で止まっているか（1 信号 2 交差点の持ち主 3 歩行者 4 車 5 電車 6 他 7 出口がつまっている 8 行き止まり 9 利用者）
       // 安全運転: 車間は 3m＋速度×1.5秒、加速は穏やか
-      const vt=Math.min(vlim, Math.sqrt(Math.max(0, 2*2.5*Math.max(0,gap-3.0-c.v*1.5))));
-      const a = vt>c.v ? Math.min(1.3, (vt-c.v)*0.9) : Math.max(-6, (vt-c.v)*2.6);
+      // v41.11: 前が車のときは、その車の速さ（vL）を考える。以前は前の車を「止まっている壁」として扱っていたため、車間 50m では時速 45km までしか出ず、流れに乗れなかった
+      let vL=0; if(gsrc===4 && c.blockedBy && c.blockedBy.type && (c.blockedBy.dx*c.dx+c.blockedBy.dz*c.dz)>0.5) vL=Math.max(0, c.blockedBy.v||0);
+      const vt=Math.min(vlim, Math.sqrt(vL*vL + Math.max(0, 2*2.5*Math.max(0,gap-3.0-c.v*1.3))));
+      const a = vt>c.v ? Math.min(2.4, (vt-c.v)*2.0) : Math.max(-7.5, (vt-c.v)*2.6);   // v41.11: 加速 1.3→2.4 m/s²（目標速度への追いつきも速く: 係数 0.9→2.0）
       c.brake = a < -0.6 || c.v < 0.5;
       c.v=Math.max(0, c.v + a*dt); if(gap<2.2 && c.v<0.5) c.v=Math.max(0,c.v-3*dt);
       // 行き詰まり（お互いに相手待ち）の解消
@@ -4267,6 +4304,8 @@ const Traffic = (()=>{
       if(c.stopT>35 && !inView(c.x,c.z)) { c.dead=true; c.deadT=99; }
       if(c.endAhead && c.stopT>3) { c.dead=true; c.deadT=(c.deadT||0)+dt; }
       c.ghost=Math.max(0,c.ghost-dt);
+      // v41.11: 細い道を 150m 以上走った車は、見えない所で（大通りに）入れ替える。細い道は数が多く、いったん入るとなかなか大通りへ出てこないため、車がたまってしまう
+      if(seg.lane){ if(seg.imp<2.0){ c.nd=(c.nd||0)+c.v*dt; if(c.nd>(seg.imp<1.4?150:300) && !c.dead && !inView(c.x,c.z)){ c.dead=true; c.deadT=99; c.nd=0; } } else c.nd=0; }
       // 進める
       c.s+=c.v*dt;
       while(c.plan.length>1 && c.s>segs[c.plan[0]].P.len+hl){ const q=segs[c.plan[0]]; c.s-=q.P.len; if(!q.lane){ const J=jnode.get(q.node); if(J && J.owner===c) J.owner=null; } c.plan.shift(); }
@@ -4336,7 +4375,7 @@ const Traffic = (()=>{
   }
   // 街灯の位置（車線の左 3.2m・高さ 8m・30m おき）
   function segsForLamps(){ const out=[]; for(const g of segs){ if(!g.lane) continue; for(let s=10; s<g.P.len; s+=30){ const q=pathPt(g.P,s), t=pathTan(g.P,s); out.push(q.x+t.z*3.2, q.y+8.0, q.z-t.x*3.2); } } return out; }
-  return {init, update, register, reset, startPose, nearestLane, locate, segsForLamps, honk, get cars(){ return cars; }, get names(){ return D ? D.names : []; }, get NL(){ return NL; }, get ready(){ return ready; }, get segs(){ return segs; }, get jnode(){ return jnode; }};
+  return {init, update, register, reset, startPose, spawnW(x,z){ return spawnTable({x,z},0,450).W; }, nearestLane, locate, segsForLamps, honk, get cars(){ return cars; }, get names(){ return D ? D.names : []; }, get NL(){ return NL; }, get ready(){ return ready; }, get segs(){ return segs; }, get jnode(){ return jnode; }};
 })();
 /* ================= バスモード（v11）: 両備バス 西大寺線 岡山駅 → 天満屋 → 県庁前 → 東山 =================
    経路: data/bus.json（OSM の道路・一方通行・停留所の標柱、晴れバスナビの停車順から作成）
@@ -5950,11 +5989,31 @@ const Car = (() => {
     taxiL.g.visible = true; if(!taxiL.on){ hiU.setPaint(new THREE.Color(0xf2c230)); taxiL.on = true; }
   }
   const eyeV = new THREE.Vector3(), tgtV = new THREE.Vector3();
+  /* v41.11: 運転席視点の見回し。Q=左 E=右 Z=後ろ（押している間）、画面のドラッグ、ゲームパッドの右スティック／LB・RB。離すとなめらかに正面へ戻る。
+     手で見回していないときは、ハンドルを切った向き（曲がる向き）へ自動で視線を向ける。yaw は左が正（車の局所座標で +x が左） */
+  const look = { m: 0, mp: 0, auto: 0, yaw: 0, pitch: 0, drag: false, x0: 0, y0: 0, dYaw: 0, dPitch: 0, hint: 0 };
+  function lookUpdate(dt) {
+    let tY = ((key["q"] ? 1 : 0) - (key["e"] ? 1 : 0)) * 1.25 + (key["z"] ? 3.0 : 0), tP = 0;
+    const pin = (typeof Pad !== "undefined" && Pad.PIN.active) ? Pad.PIN : null;
+    if (pin) { tY += -pin.lookX * 1.9; tP += -pin.lookY * 0.6; }
+    if (look.drag) { tY += look.dYaw; tP += look.dPitch; }
+    const manual = Math.abs(tY) > 0.01 || Math.abs(tP) > 0.01;
+    look.m += (tY - look.m) * Math.min(1, dt * (manual ? 10 : 6)); look.mp += (tP - look.mp) * Math.min(1, dt * (manual ? 10 : 6));
+    const aT = Math.max(-0.5, Math.min(0.5, C.steer * 1.1)) * Math.min(1, Math.abs(C.v) / 3);
+    look.auto += (aT - look.auto) * Math.min(1, dt * 3.5);
+    look.yaw = look.m + look.auto * (1 - Math.min(1, Math.abs(look.m) / 0.35)); look.pitch = look.mp;
+  }
+  function viewHint() { if (C.view === "driver" && look.hint < 3) { look.hint++; C.msg = "Q / E キー（または画面をドラッグ）で左右を見られます。Z で後ろ"; C.msgT = 4; } }
+  function setView(v) { C.view = v; viewHint(); }
+  canvas.addEventListener("pointerdown", e => { if (!C.active || C.view !== "driver" || (e.pointerType === "mouse" && e.button !== 0)) return; look.drag = true; look.x0 = e.clientX; look.y0 = e.clientY; look.dYaw = look.dPitch = 0; try { canvas.setPointerCapture(e.pointerId); } catch (x) {} });
+  canvas.addEventListener("pointermove", e => { if (!look.drag) return; look.dYaw = Math.max(-2.1, Math.min(2.1, -(e.clientX - look.x0) * 0.006)); look.dPitch = Math.max(-0.5, Math.min(0.6, (look.y0 - e.clientY) * 0.004)); });
+  const lookEnd = () => { look.drag = false; look.dYaw = look.dPitch = 0; };
+  canvas.addEventListener("pointerup", lookEnd); canvas.addEventListener("pointercancel", lookEnd);
 
   // ---- 入力 ----
   const key = {};
   addEventListener("keydown", e => { if (!C.active || typing()) return; key[e.key.toLowerCase()] = true;
-    if (e.key === "v" || e.key === "V") C.view = C.view === "chase" ? "driver" : "chase";
+    if (e.key === "v" || e.key === "V") setView(C.view === "chase" ? "driver" : "chase");
     if ((e.key === "r" || e.key === "R")) toggleGear();
     if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(e.key.toLowerCase())) e.preventDefault(); });
   addEventListener("keyup", e => { key[e.key.toLowerCase()] = false; });
@@ -5966,7 +6025,7 @@ const Car = (() => {
       el.addEventListener("pointerdown", on); el.addEventListener("pointerup", off); el.addEventListener("pointerleave", off); el.addEventListener("pointercancel", off); };
     hold($("car-acc"), "thr"); hold($("car-brk"), "brk");
     $("car-gd").addEventListener("click", () => setGear("D")); $("car-gr").addEventListener("click", () => setGear("R"));
-    $("car-view").addEventListener("click", () => { C.view = C.view === "chase" ? "driver" : "chase"; });
+    $("car-view").addEventListener("click", () => { setView(C.view === "chase" ? "driver" : "chase"); });
     // ハンドル: 中心からの角度差で回す（最大 ±450°）
     const sw = $("car-wheel"); let a0 = 0, w0 = 0, drag = false;
     const ang = e => { const r = sw.getBoundingClientRect(); return Math.atan2(e.clientX - (r.left + r.width / 2), -(e.clientY - (r.top + r.height / 2))); };
@@ -6085,19 +6144,23 @@ const Car = (() => {
       const rigB = !isBus ? body : (extBody && extBody.userData.hiU ? extBody : null), rigU = !isBus ? hiU : (rigB ? extBody.userData.hiU : null);
       if (rigB) {   // 乗用車・トラック: 車体に固定した目の位置（車体の傾き・ゆれがそのまま視界に入る）
         car.updateMatrixWorld(true);
-        const e = rigU.eye; eyeV.set(e.x, e.y, e.z); rigB.localToWorld(eyeV); tgtV.set(e.x, e.y - Math.tan(e.pitch * Math.PI / 180) * 20, e.z + 20); rigB.localToWorld(tgtV);
+        lookUpdate(dt);
+        const e = rigU.eye; eyeV.set(e.x, e.y, e.z); rigB.localToWorld(eyeV); tgtV.set(e.x + Math.sin(look.yaw) * 20, e.y - Math.tan(e.pitch * Math.PI / 180) * 20 + Math.tan(look.pitch) * 20, e.z + Math.cos(look.yaw) * 20); rigB.localToWorld(tgtV);
         camera.up.set(0, 1, 0).transformDirection(rigB.matrixWorld);
         camera.position.copy(eyeV); camera.lookAt(tgtV);
         if (camera.near > 0.15) { camera.near = 0.12; camera.updateProjectionMatrix(); }
         rigU.setSky(hemi.color); rigU.setInside(true);
       } else {
         const sx = Math.cos(C.yaw), sz = -Math.sin(C.yaw), d = P.drv;
+        lookUpdate(dt); const cy = Math.cos(look.yaw), sy = Math.sin(look.yaw);
         camera.position.set(C.x + sx * d.x + fx * d.f, C.h + d.y, C.z + sz * d.x + fz * d.f);
-        camera.lookAt(C.x + fx * (20 + d.f) + sx * d.x, C.h + d.y - 0.22 + Math.sin(-C.pitch) * 20, C.z + fz * (20 + d.f) + sz * d.x);
+        camera.lookAt(C.x + (fx * cy + sx * sy) * 20 + fx * d.f + sx * d.x, C.h + d.y - 0.22 + Math.sin(-C.pitch) * 20 + Math.tan(look.pitch) * 20, C.z + (fz * cy + sz * sy) * 20 + fz * d.f + sz * d.x);
       }
+      // 画角: 横が見えるように広く（横の画角が約 100°。縦長の画面でも縦 88° まで）。車の外から見る視点では元の 56° に戻す
+      { const fv = Math.max(62, Math.min(88, 2 * Math.atan(Math.tan(50 * Math.PI / 180) / camera.aspect) * 180 / Math.PI)); if (Math.abs(camera.fov - fv) > 0.05) { camera.fov = fv; camera.updateProjectionMatrix(); } }
     } else {
       if (C.onDriverView) C.onDriverView(false);
-      if (camera.near < 0.2) { camera.near = 0.3; camera.updateProjectionMatrix(); }
+      if (camera.near < 0.2 || camera.fov !== 56) { camera.near = 0.3; camera.fov = 56; camera.updateProjectionMatrix(); }
       camera.up.set(0, 1, 0); hiU.setInside(false); if (extBody && extBody.userData.hiU) extBody.userData.hiU.setInside(false);
       const back = C.v < -0.5 ? -1 : 1;   // 後退時も車の後ろ（進行方向の反対側）から
       const want = new THREE.Vector3(C.x - fx * P.cam.back, C.h + P.cam.up, C.z - fz * P.cam.back);
@@ -6125,7 +6188,7 @@ const Car = (() => {
     if (G && kindAt(C.x, C.z) !== 1) { outer: for (let r = 1; r < 40; r++) for (let a = 0; a < 16; a++) { const x = 60 + Math.cos(a / 16 * 6.283) * r, z = 6.5 + Math.sin(a / 16 * 6.283) * r; if (kindAt(x, z) === 1) { C.x = x; C.z = z; break outer; } } }
     C.h = hAt(C.x, C.z); camPos.set(0, 0, 0);
   }
-  function stop() { C.active = false; car.visible = false; camera.up.set(0, 1, 0); if (camera.near < 0.2) { camera.near = 0.3; camera.updateProjectionMatrix(); } }
+  function stop() { C.active = false; car.visible = false; camera.up.set(0, 1, 0); lookEnd(); if (camera.near < 0.2 || camera.fov !== 56) { camera.near = 0.3; camera.fov = 56; camera.updateProjectionMatrix(); } }
   // 車種の切り替え（バスモード）。外観は extBody（バスの車体など）を差し込んで使う
   let extBody = null;
   function setProfile(name, ext) {
@@ -7769,7 +7832,7 @@ const Prefs = (() => {
    ヘリ: 左スティック = 前後・旋回、右スティック = 横移動・上昇下降、RT・LT = 上昇・下降、RB = 速く、Y = 視点、X = 自動周回 */
 const Pad = (() => {
   const prev = []; let on = false, msgT = 0;
-  const PIN = { thr: 0, brk: 0, steer: 0, active: false };
+  const PIN = { thr: 0, brk: 0, steer: 0, lookX: 0, lookY: 0, active: false };
   addEventListener("gamepadconnected", (e) => { on = true; msgT = 4; console.log("gamepad", e.gamepad.id); });
   const key = (k, down) => document.dispatchEvent(new KeyboardEvent(down ? "keydown" : "keyup", { key: k, bubbles: true }));
   const tap = (k) => { key(k, true); setTimeout(() => key(k, false), 60); };
@@ -7786,7 +7849,7 @@ const Pad = (() => {
       if(edge(7)) tap("ArrowDown"); if(edge(6)) tap("ArrowUp");
       if(edge(0)) tap("d"); if(edge(1)) tap(" "); if(edge(2)) tap("h"); if(edge(3)) tap("v");
     } else if((mode === "car" || mode === "bus") && Car.C.active){
-      PIN.active = true; PIN.thr = b(7); PIN.brk = b(6); PIN.steer = ax(0);
+      PIN.active = true; PIN.thr = b(7); PIN.brk = b(6); PIN.steer = ax(0); PIN.lookX = pressed(4) ? -1 : pressed(5) ? 1 : ax(2); PIN.lookY = ax(3);   // v41.11: 右スティック・LB/RB で見回し
       if(edge(0) && mode === "bus") tap("f"); if(edge(2)) tap("h"); if(edge(3)) tap("v"); if(edge(1)) tap(" ");
       if(edge(8)) tap("r"); if(edge(9)) tap("t");
     } else if(mode === "heli" && Heli.H.active){
@@ -7805,14 +7868,18 @@ const Pad = (() => {
 })();
 /* ---------------- v41.10: ナビ（車・トラック・タクシー）----------------
    経路: AI 車が走る車線のつながり（data/traffic.json の車線・接続。一方通行・右左折・信号の位置が入っている）で A* 探索。
-         所要時間 = 区間の長さ ÷（制限速度 × 0.85）＋ 信号 6 秒・右折 4 秒・左折 1.5 秒、細い道は 1.2 倍（大きな道を優先）。
-   表示: 道路の上の青い帯（矢印が流れる）・ミニマップの青い線・画面上部の案内（次に曲がる所までの距離と矢印・残り距離・到着の見込み）・音声。
+         所要時間 = 区間の長さ ÷（制限速度 × 0.85）＋ 信号 6 秒・右折 4 秒・左折 1.5 秒。
+         v41.11: 大通りを優先する。経路のコスト = 所要時間 × 道の大きさの係数（幹線 1.0・準幹線/2 車線の市道 1.2・片側 1 車線の準幹線 1.5・片側 1 車線の市道 2.0・細い道 3.0・生活道路 3.5）
+         ＋ 曲がるたびに +4 秒 ＋ 大きな道から細い道へ入る +8 秒 ＋ 細い道どうしの右左折 +8 秒。道の大きさ（imp）は raiseLimits() が車線ごとに付ける（OSM の種別＋片側の車線数）。
+         ふつうの経路で、時間の差は 2% ほど・距離は 1 割ほど長くなる代わりに、大通りの割合が 35% → 55% ほどになる（tools/tests/nav_route_stats.js）。
+   表示: ミニマップ・大きな地図の青い線（太く・進行方向の矢じり・次の曲がり角の印・通過ずみは灰色）・画面上部の案内（次に曲がる所までの距離と矢印・残り距離・到着の見込み）・音声。
+         道路の上の青い帯（矢印が流れる）は v41.11 から既定で OFF（交差点で横にそれて見える）。「道路の線」ボタンで ON にできる。
    外れたら 2 秒で再探索。逆走は 2.5 秒で再探索。目的地は「地名・施設名」の検索（data/poi.json）か、地図で選ぶ。
    ミッション・タクシーでは目的地が変わるたびに自動で設定される（src="auto"）。山陽自動車道（MW）はこの車線網に入っていないので案内できない。
    ※ 一般の車のナビとちがい、実際の通行止め・工事・渋滞は考えない。経路は車線網の最短時間であり、現実のナビと同じとは限らない。 */
 const Nav = (() => {
   const D2R = Math.PI / 180;
-  const OPT = { voice: true, line: true };
+  const OPT = { voice: true, line: false };   // v41.11: 道路の上の青い帯は既定で OFF（交差点で横にそれて見える・地図で案内する）。「道路の線」ボタンで ON にできる
   const st = { target: null, src: "", R: null, prog: 0, mi: 0, lat: 0, offT: 0, wrongT: 0, tPlan: -99, state: "idle", fail: false, arrT: 0, nPlan: 0, planMs: 0, said: "", dirty: true, lastRem: 0 };
   let GR = null, POI = null, IDX = null;
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -7856,8 +7923,20 @@ const Nav = (() => {
       const g = segs[i], A = g.P.P, n = g.P.n; ex[i] = A[(n - 1) * 3]; ez[i] = A[(n - 1) * 3 + 2];
       const sp = Math.max(3, (g.v || 30) / 3.6); if(sp > vmax) vmax = sp;
       const t = g.P.len / (sp * 0.85); let c = t;
-      if(g.lane){ if(g.c === "u" || g.c === "r") c *= 1.2; if(g.sig) c += 6; }
-      else c += g.kind === "r" ? 4 : g.kind === "l" ? 1.5 : g.kind === "s" ? 0 : 3;
+      if(g.lane){
+        // v41.11: 大通りを優先（細い道は走りにくいので、時間が少し短くても選ばれにくくする）。幹線 ×1.0・準幹線/2車線の市道 ×1.2・片側1車線の準幹線 ×1.5・片側1車線の市道 ×2.0・細い道 ×3.0・生活道路 ×3.5
+        const im = g.imp || 1; c *= im >= 3.5 ? 1 : im >= 2.5 ? 1.2 : im >= 2.0 ? 1.5 : im >= 1.4 ? 2.0 : im >= 0.6 ? 3.0 : 3.5;
+        if(g.sig) c += 6;
+      }
+      else {
+        c += g.kind === "r" ? 4 : g.kind === "l" ? 1.5 : g.kind === "s" ? 0 : 3;
+        if(g.kind !== "s") c += 4;     // 曲がる回数を減らす（右左折ごとに +4 秒）
+        // 大きな道から細い道へ入る（+8 秒＋道の差）・細い道どうしの右左折（さらに +8 秒＝くねくね曲がる経路を避ける）
+        const a = segs[g.from], b = segs[g.next[0]];
+        if(a && b && a.lane && b.lane){ const ia = a.imp || 1, ib = b.imp || 1;
+          if(ib < ia - 0.5) c += 8 + (ia - ib) * 1.2;
+          if((g.kind === "l" || g.kind === "r") && ia < 1.4 && ib < 1.4) c += 8; }
+      }
       et[i] = t; ec[i] = c;
     }
     const masks = reachMasks(segs, N);
@@ -7957,7 +8036,7 @@ const Nav = (() => {
       // 本線から入れない車線（一方通行の入口・行き止まり側）も候補に。出発点がその車線の上なら、すぐ着ける。ほかの出発点からは行けないので、A* が自然に捨てる
       const dmin = Math.min(ok[0].d, raw.length ? raw[0].d : 1e9), seen = new Set(), all = [];
       for(const g of raw.slice(0, 3).concat(ok.filter((q) => q.d <= ok[0].d + span).slice(0, 10))){ if(seen.has(g.i)) continue; seen.add(g.i); all.push(g); }   // 入れる車線は従来どおり必ず含める（行き着けない候補だけにならないように）
-      return all.map((g) => ({ i: g.i, s: g.s, x: g.x, z: g.z, y: g.y, pen: (g.d - dmin) / 5 })); };
+      return all.map((g) => ({ i: g.i, s: g.s, x: g.x, z: g.z, y: g.y, pen: (g.d - dmin) / 3.5 })); };   // v41.11: 5→3.5（細い道のコストを上げたぶん、目的地から遠い大通りで終わりにしにくくする）
     // 出発の候補: 向きが合う近い車線（最大 2 本）を先に。見つからなければ、反対向き・行き止まりの車線（最大 3 本）も使う
     const pri = starts.filter((q) => q.dot > 0.2).slice(0, 2), rest = starts.filter((q) => q.dot <= 0.2).slice(0, 3);
     let best = null;
@@ -8109,7 +8188,7 @@ const Nav = (() => {
   function pinHide(){ if(pin) pin.g.visible = false; }
 
   /* ================= 毎フレーム ================= */
-  let acc = 0, uiAcc = 0, warm = false, lastMode = "";
+  let acc = 0, uiAcc = 0, mapAcc = 0, warm = false, lastMode = "";
   function tick(dt){
     const on = carOn();
     if(S.mode !== lastMode){ lastMode = S.mode; const nb = document.getElementById("nav-btn"); if(nb) nb.style.display = S.mode === "car" ? "" : "none"; }   // バスは専用の案内線があるので、ナビのボタンは出さない
@@ -8122,8 +8201,9 @@ const Nav = (() => {
     if(st.state === "routing" && Traffic.ready) doPlan(st.first ? "init" : "re"), st.first = false;
     if(st.R){
       const R = st.R;
-      let p = project(R, m.x, m.z, st.prog - 40, st.prog + 160);
-      if(p.lat > 22){ const g = project(R, m.x, m.z, 0, R.total); if(g.lat < p.lat) p = g; }
+      // v41.11: 乗ってからは「いまの位置の少し前後」だけを探す（折り返しや平行な道が近いと、先の区間に飛んで案内が飛ぶため）
+      let p = st.joined ? project(R, m.x, m.z, st.prog - 25, st.prog + Math.max(50, m.v * step * 2.5 + 30)) : project(R, m.x, m.z, st.prog - 40, st.prog + 160);
+      if(p.lat > 22){ const g = project(R, m.x, m.z, Math.max(0, st.prog - 60), Math.min(R.total, st.prog + 400)); if(g.lat < p.lat) p = g; }
       st.lat = p.lat;
       if(p.lat <= 22){ st.offT = 0; st.joined = true; if(p.arc > st.prog - 30) { if(Math.abs(p.arc - st.prog) > 0.2) st.dirty = true; st.prog = p.arc; } }
       else st.offT += step;
@@ -8146,11 +8226,16 @@ const Nav = (() => {
     }
     if(st.state === "arrived"){ st.arrT += step; if(st.arrT > 5){ clear(); return; } }
     updateRibbons(step);
+    mapAcc += step; if(mapAcc >= 0.5){ mapAcc = 0; ui.live(); }
     if(st.src === "user") pinShow(st.target); else pinHide();
     uiAcc += step; if(uiAcc >= 0.15 || st.dirty){ uiAcc = 0; st.dirty = false; ui.render(m, dT); }
   }
 
   /* ミニマップ用: 経路の点（x,z の列）。進行位置の少し後ろから d 先まで */
+  function nextPoint(){
+    const R = st.R; if(!R || !carOn()) return null; const mv = R.man[st.mi]; if(!mv) return null; const q = R.ptAt(mv.d);
+    return { x: q[0], z: q[1], d: Math.max(0, mv.d - st.prog), type: mv.type };
+  }
   function mapPoly(ahead){
     const R = st.R; if(!R || !carOn()) return null; const out = [], d0 = Math.max(0, st.prog - 30), d1 = Math.min(R.total, st.prog + (ahead || 3000));
     const step = Math.max(6, (d1 - d0) / 260);
@@ -8247,12 +8332,12 @@ body.nav-on .qtoast{ top:calc(212px + env(safe-area-inset-top,0px)); max-width:m
       div.innerHTML = `
 <div class="navb" id="navb" role="status" aria-live="polite"><div class="navb-main"><canvas id="navb-ic" width="124" height="124"></canvas><div class="navb-t"><b id="navb-dist">--</b><span id="navb-act">--</span><small id="navb-road"></small></div></div>
 <div class="navb-sub"><span id="navb-to">目的地</span><span id="navb-rem">--</span><span id="navb-eta">--</span><span id="navb-arr">--</span></div>
-<div class="navb-btns"><button type="button" id="navb-voice">音声 ON</button><button type="button" id="navb-line">青い線 ON</button><button type="button" id="navb-map">地図</button><button type="button" id="navb-set">目的地</button><button type="button" id="navb-stop">案内終了</button></div></div>
+<div class="navb-btns"><button type="button" id="navb-voice">音声 ON</button><button type="button" id="navb-line">道路の線 OFF</button><button type="button" id="navb-map">地図</button><button type="button" id="navb-set">目的地</button><button type="button" id="navb-stop">案内終了</button></div></div>
 <div class="navp" id="navp"><div class="navp-card"><div class="navp-h"><b>ナビ</b><small>DESTINATION</small><button class="navp-x" id="navp-x" type="button" aria-label="閉じる">×</button></div>
 <div class="navp-cur" id="navp-cur"></div>
 <div class="navp-in"><input id="navp-q" type="search" placeholder="目的地（例: 岡山城、イオンモール、津島、北長瀬駅）" autocomplete="off" enterkeyhint="search"><button type="button" id="navp-map">地図で選ぶ</button></div>
 <div class="navp-chips" id="navp-chips"></div><div class="navp-lbl" id="navp-lbl"></div><div class="navp-res" id="navp-res"></div>
-<div class="navp-opts"><button type="button" id="navp-voice">音声案内</button><button type="button" id="navp-line">道路の青い線</button></div></div></div>
+<div class="navp-opts"><button type="button" id="navp-voice">音声案内</button><button type="button" id="navp-line">道路の青い帯</button></div></div></div>
 <div class="navmap" id="navmap"><canvas id="navmap-cv"></canvas><div class="navmap-top"><button type="button" id="navmap-x">← もどる</button><div class="ttl" id="navmap-ttl">地図をタップして目的地を選ぶ</div></div>
 <div class="navmap-side"><button type="button" id="navmap-zi">＋</button><button type="button" id="navmap-zo">－</button><button type="button" id="navmap-me" title="いまの場所">⌖</button></div>
 <div class="navmap-sheet" id="navmap-sheet"><b id="navmap-sn">--</b><small id="navmap-sd">--</small><div class="bt"><button type="button" id="navmap-cancel">やめる</button><button type="button" class="go" id="navmap-go">ここへ案内</button></div></div></div>`;
@@ -8281,10 +8366,10 @@ body.nav-on .qtoast{ top:calc(212px + env(safe-area-inset-top,0px)); max-width:m
         else if(e.key === "Escape"){ if(mapEl.classList.contains("on")) closeMap(); else if(panel.classList.contains("on")) closePanel(); } });
       syncOpts();
     }
-    function savePref(){ if(Prefs.setM) Prefs.setM("nav", { voice: OPT.voice, line: OPT.line }); }
-    function loadPref(){ if(Prefs.getM){ const o = Prefs.getM("nav", null); if(o){ OPT.voice = o.voice !== false; OPT.line = o.line !== false; } } }
+    function savePref(){ if(Prefs.setM) Prefs.setM("nav", { voice: OPT.voice, line: OPT.line, ver: 2 }); }
+    function loadPref(){ if(Prefs.getM){ const o = Prefs.getM("nav", null); if(o){ OPT.voice = o.voice !== false; OPT.line = o.ver >= 2 ? o.line === true : false; } } }
     function syncOpts(){ const t = (id, on, a, b) => { const e = $(id); if(e){ e.textContent = a + (on ? " ON" : " OFF"); e.classList.toggle("on", on); e.classList.toggle("off", !on); } };
-      t("navb-voice", OPT.voice, "音声", ""); t("navb-line", OPT.line, "青い線", ""); t("navp-voice", OPT.voice, "音声案内", ""); t("navp-line", OPT.line, "道路の青い線", ""); }
+      t("navb-voice", OPT.voice, "音声", ""); t("navb-line", OPT.line, "道路の線", ""); t("navp-voice", OPT.voice, "音声案内", ""); t("navp-line", OPT.line, "道路の青い帯", ""); }
     let catSel = null, listNow = [];
     function choose(r){
       if(r.dst !== undefined){ /* 最近 */ }
@@ -8377,8 +8462,22 @@ body.nav-on .qtoast{ top:calc(212px + env(safe-area-inset-top,0px)); max-width:m
       g.drawImage(bc, ox + offX, oz + offZ);
       const sx = (x) => (x - mcx) / mpp + w / 2 + offX, sz = (z) => (z - mcz) / mpp + h / 2 + offZ;
       // 経路
-      if(st.R){ const R = st.R; g.lineCap = "round"; g.lineJoin = "round"; const stp = Math.max(1, Math.round(mpp * 1.5 / 3));
-        for(const pass of [[9, "rgba(255,255,255,.95)"], [5, "#1c6df0"]]){ g.strokeStyle = pass[1]; g.lineWidth = pass[0]; g.beginPath(); let pen = false; for(let i = 0; i < R.n; i += stp){ const x = sx(R.X[i]), y = sz(R.Z[i]); if(pen) g.lineTo(x, y); else { g.moveTo(x, y); pen = true; } } g.lineTo(sx(R.X[R.n - 1]), sz(R.Z[R.n - 1])); g.stroke(); } }
+      if(st.R){ const R = st.R; g.lineCap = "round"; g.lineJoin = "round"; const stp = Math.max(1, Math.round(mpp * 1.5 / 3)), k0 = Math.min(R.n - 1, idxAt(R, Math.max(0, st.prog)));
+        const trace = (i0, i1) => { if(i1 <= i0) return; g.beginPath(); let pen = false; for(let i = i0; i < i1; i += stp){ const x = sx(R.X[i]), y = sz(R.Z[i]); if(pen) g.lineTo(x, y); else { g.moveTo(x, y); pen = true; } } g.lineTo(sx(R.X[i1]), sz(R.Z[i1])); g.stroke(); };
+        // v41.11: 通過ずみは灰色、これから走る所は太い青（白ふち）
+        g.strokeStyle = "rgba(255,255,255,.9)"; g.lineWidth = 8; trace(0, k0); g.strokeStyle = "#8d9bb3"; g.lineWidth = 4.5; trace(0, k0);
+        g.strokeStyle = "rgba(255,255,255,.97)"; g.lineWidth = 12; trace(k0, R.n - 1); g.strokeStyle = "#1c6df0"; g.lineWidth = 7.5; trace(k0, R.n - 1);
+        // 進行方向の矢じり
+        { g.strokeStyle = "rgba(255,255,255,.95)"; g.lineWidth = 2; const gap = 44, sz2 = 4.2; let acc2 = gap * 0.5, px0 = sx(R.X[k0]), py0 = sz(R.Z[k0]);
+          for(let i = k0 + stp; i < R.n + stp; i += stp){ const ii = Math.min(i, R.n - 1), x1 = sx(R.X[ii]), y1 = sz(R.Z[ii]), L = Math.hypot(x1 - px0, y1 - py0);
+            if(L > 1e-6){ const ux = (x1 - px0) / L, uy = (y1 - py0) / L; let t = acc2; while(t < L){ const cx = px0 + ux * t, cy = py0 + uy * t; g.beginPath(); g.moveTo(cx - ux * sz2 * 1.4 - uy * sz2, cy - uy * sz2 * 1.4 + ux * sz2); g.lineTo(cx + ux * sz2 * 0.5, cy + uy * sz2 * 0.5); g.lineTo(cx - ux * sz2 * 1.4 + uy * sz2, cy - uy * sz2 * 1.4 - ux * sz2); g.stroke(); t += gap; } acc2 = t - L; }
+            px0 = x1; py0 = y1; if(ii === R.n - 1) break; } }
+        // 曲がり角（番号）と出発点
+        if(mpp <= 14){ g.font = "bold 11px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; let no = 0;
+          for(const mv of R.man){ if(mv.type === "arrive") continue; no++; if(mv.d < st.prog - 5) continue; const q = R.ptAt(mv.d), x = sx(q[0]), y = sz(q[1]); if(x < -10 || x > w + 10 || y < -10 || y > h + 10) continue;
+            g.beginPath(); g.arc(x, y, 8, 0, 7); g.fillStyle = "#fff"; g.fill(); g.lineWidth = 2.5; g.strokeStyle = "#1c6df0"; g.stroke(); g.fillStyle = "#123d8f"; g.fillText(String(no), x, y + 0.5); }
+          g.textAlign = "left"; }
+        { const x = sx(R.X[0]), y = sz(R.Z[0]); g.beginPath(); g.arc(x, y, 6, 0, 7); g.fillStyle = "#2fb457"; g.fill(); g.lineWidth = 2.5; g.strokeStyle = "#fff"; g.stroke(); } }
       // タクシー乗り場・地名
       g.textBaseline = "middle"; g.font = "bold 12px sans-serif";
       if(POI){
@@ -8429,10 +8528,12 @@ body.nav-on .qtoast{ top:calc(212px + env(safe-area-inset-top,0px)); max-width:m
     }
     function zoomMap(d){ const n = Math.max(0, Math.min(MZ.length - 1, mz + d)); if(n === mz) return; mz = n; rebuild(); }
     function init(){ dom(); loadPref(); syncOpts(); mapBind(); }
-    return { dom, init, show, render, openPanel, closePanel, openMap, closeMap, syncOpts };
+    /* v41.11: 大きな地図を開いている間は、いまの位置・通過ずみの経路・残りを 0.5 秒ごとに描き直す */
+    function live(){ if(!mapEl || !mapEl.classList.contains("on") || !base) return; if(st.target && !picking) $("navmap-ttl").textContent = "案内中: " + st.target.name + "　あと " + fmtD(remDist()) + "・" + fmtMin(remTime()); redraw(); }
+    return { dom, init, show, render, openPanel, closePanel, openMap, closeMap, syncOpts, live };
   })();
 
-  return { tick, setTarget, clear, search, nameAt, plan, mapPoly, ui, OPT, st, get active(){ return !!st.target; }, get target(){ return st.target; }, get src(){ return st.src; }, get route(){ return st.R; }, remDist, remTime, Voice, catName, get POI(){ return POI; }, get ready(){ return !!graph(); }, astar, graph, project };
+  return { tick, setTarget, clear, search, nameAt, plan, mapPoly, nextPoint, ui, OPT, st, get active(){ return !!st.target; }, get target(){ return st.target; }, get src(){ return st.src; }, get route(){ return st.R; }, remDist, remTime, Voice, catName, get POI(){ return POI; }, get ready(){ return !!graph(); }, astar, graph, project };
 })();
 
 Nav.ui.init();
@@ -8825,7 +8926,7 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
         const C = Car.C;
         if(C.hitT > 1.0 && !T.lastHit){ ding(1.0, "衝突！ お客さんがおどろいている", "hit"); } T.lastHit = C.hitT > 1.0;
         if(m.v > 0.5 && (Math.abs(C.acc || 0) > 3.4 || Math.abs(C.aLat || 0) > 3.6) && T.comfortT <= 0){ ding(0.3, "急な操作でお客さんが驚いた", "comfort"); T.comfortT = 4; } T.comfortT = Math.max(0, T.comfortT - dt);
-        const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + 10){ T.speedAcc += dt; if(T.speedAcc > 3 && T.speedT <= 0){ ding(0.3, "制限速度 " + lim + " km/h を超えています", "speed"); T.speedT = 12; } } else T.speedAcc = Math.max(0, T.speedAcc - dt);
+        const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + SPEED_OVER_OK){ T.speedAcc += dt; if(T.speedAcc > 3 && T.speedT <= 0){ ding(0.3, "制限速度 " + lim + " km/h を超えています", "speed"); T.speedT = 12; } } else T.speedAcc = Math.max(0, T.speedAcc - dt);
         T.speedT = Math.max(0, T.speedT - dt);
       }
     }
@@ -8873,7 +8974,7 @@ const NaviMap = (() => {
   const win = document.createElement("canvas"); win.width = win.height = N; const wg = win.getContext("2d"), img = wg.createImageData(N, N), px = new Uint32Array(img.data.buffer);
   const HS = 64, hsC = document.createElement("canvas"); hsC.width = hsC.height = HS + 1; const hg = hsC.getContext("2d"), himg = hg.createImageData(HS + 1, HS + 1), hpx = new Uint32Array(himg.data.buffer);
   const ZOOMS = [1.5, 3, 6, 12, 24, 48];
-  let zi = 1, northUp = false, on = false, cache = null, lastMode = "";
+  let zi = 1, northUp = false, on = false, cache = null, lastMode = "", manualT = 0, zWant = 1, zT = 0;
   const rgba = (r, gg, b, a) => ((a << 24) | (b << 16) | (gg << 8) | r) >>> 0;
   const C_ROAD = rgba(255, 255, 255, 255), C_SIDE = rgba(236, 231, 218, 255), C_BLD = rgba(176, 168, 154, 255), C_WATER = rgba(135, 187, 228, 255), C_NONE = 0;
   const hAtG = (x, z) => Heli.groundAt(x, z, -50);          // 橋の下の地面（下の段）の高さ
@@ -8941,9 +9042,13 @@ const NaviMap = (() => {
     const a = northUp ? 0 : p.yaw + Math.PI;
     g.translate(R, R); g.rotate(a); g.scale(k, k); g.imageSmoothingEnabled = true;
     g.drawImage(base, -N / 2 + (cache.x - p.x) / mpp, -N / 2 + (cache.z - p.z) / mpp);
-    { const rp = S.mode === "car" ? Nav.mapPoly(Math.max(1500, mpp * 220)) : null;   // v41.10: ナビの経路（青い線）
+    { const rp = S.mode === "car" ? Nav.mapPoly(Math.max(1500, mpp * 220)) : null;   // v41.10: ナビの経路（青い線）  v41.11: 太く・矢じり・次の曲がり角
       if(rp && rp.length > 3){ g.lineCap = "round"; g.lineJoin = "round";
-        for(const pass of [[7 / k, "rgba(255,255,255,.95)"], [4.2 / k, "#1c6df0"]]){ g.strokeStyle = pass[1]; g.lineWidth = pass[0]; g.beginPath(); g.moveTo((rp[0] - p.x) / mpp, (rp[1] - p.z) / mpp); for(let i = 2; i < rp.length; i += 2) g.lineTo((rp[i] - p.x) / mpp, (rp[i + 1] - p.z) / mpp); g.stroke(); } } }
+        for(const pass of [[10 / k, "rgba(255,255,255,.97)"], [6.4 / k, "#1c6df0"]]){ g.strokeStyle = pass[1]; g.lineWidth = pass[0]; g.beginPath(); g.moveTo((rp[0] - p.x) / mpp, (rp[1] - p.z) / mpp); for(let i = 2; i < rp.length; i += 2) g.lineTo((rp[i] - p.x) / mpp, (rp[i + 1] - p.z) / mpp); g.stroke(); }
+        g.strokeStyle = "rgba(255,255,255,.96)"; g.lineWidth = 1.9 / k; const gap = 30 / k, sz2 = 3.1 / k; let acc2 = gap * 0.6;
+        for(let i = 2; i < rp.length; i += 2){ const x0 = (rp[i - 2] - p.x) / mpp, y0 = (rp[i - 1] - p.z) / mpp, x1 = (rp[i] - p.x) / mpp, y1 = (rp[i + 1] - p.z) / mpp, L = Math.hypot(x1 - x0, y1 - y0); if(L < 1e-6) continue;
+          const ux = (x1 - x0) / L, uy = (y1 - y0) / L; let t = acc2; while(t < L){ const cx = x0 + ux * t, cy = y0 + uy * t; g.beginPath(); g.moveTo(cx - ux * sz2 * 1.4 - uy * sz2, cy - uy * sz2 * 1.4 + ux * sz2); g.lineTo(cx + ux * sz2 * 0.5, cy + uy * sz2 * 0.5); g.lineTo(cx - ux * sz2 * 1.4 + uy * sz2, cy - uy * sz2 * 1.4 - ux * sz2); g.stroke(); t += gap; } acc2 = t - L; }
+        const np = Nav.nextPoint(); if(np && np.type !== "arrive"){ g.beginPath(); g.arc((np.x - p.x) / mpp, (np.z - p.z) / mpp, 7.5 / k, 0, 7); g.fillStyle = "#fff"; g.fill(); g.lineWidth = 3 / k; g.strokeStyle = "#e8532b"; g.stroke(); } } }
     g.restore();
     // v41.7: ミッションの目的地（円の外ならふちに三角で方向を示す）
     const nt = S.mode === "car" && Nav.target && Nav.src === "user" ? [{ x: Nav.target.x, z: Nav.target.z, kind: "nav" }] : [];
@@ -8971,6 +9076,10 @@ const NaviMap = (() => {
     if(act !== on){ on = act; root.classList.toggle("on", on); if(on) cache = null; }
     if(!on) return;
     if(S.mode !== lastMode){ lastMode = S.mode; zi = S.mode === "heli" ? 3 : 1; cache = null; }
+    // v41.11: ナビ中は、次の曲がり角が近いほど拡大（140m 以内→細かく／420m 以内→ふつう／それ以外→広く）。手で拡大・縮小したら 25 秒は手動
+    if(S.mode === "car" && Nav.active && Nav.route && performance.now() > manualT){
+      const np = Nav.nextPoint(); let want = !np || np.d >= 420 ? 2 : np.d < 140 ? 0 : 1; if(Car.C.v > 22 && want === 2 && (!np || np.d > 1500)) want = 3;
+      if(want !== zi){ if(want !== zWant){ zWant = want; zT = 0; } zT += dt; if(zT > 1.2){ zi = want; cache = null; zT = 0; } } else { zWant = zi; zT = 0; } }
     const p = src(), mpp = ZOOMS[zi];
     if(!Car.G) return;
     if(!cache || cache.mpp !== mpp || Math.hypot(p.x - cache.x, p.z - cache.z) > 26 * mpp){ renderBase(p.x, p.z, mpp); }
@@ -8982,7 +9091,7 @@ const NaviMap = (() => {
     if(S.mode === "heli") t = ((L.ward || "") + " " + (L.town || "")).trim() || "上空"; else t = L.bridge || L.road || ((L.ward || "") + " " + (L.town || "")).trim() || "";
     rdEl.textContent = t + (S.mode === "car" && L.v ? "　制限 " + L.v + " km/h" : "");
   }
-  const zoom = (d) => { zi = Math.max(0, Math.min(ZOOMS.length - 1, zi + d)); cache = null; };
+  const zoom = (d) => { zi = Math.max(0, Math.min(ZOOMS.length - 1, zi + d)); cache = null; manualT = performance.now() + 25000; };
   $("navi-zi").addEventListener("click", () => zoom(-1)); $("navi-zo").addEventListener("click", () => zoom(1));
   $("navi-rot").addEventListener("click", () => { northUp = !northUp; $("navi-rot").classList.toggle("on", northUp); });
   cv.addEventListener("wheel", (e) => { e.preventDefault(); zoom(e.deltaY < 0 ? -1 : 1); }, { passive: false });
@@ -9411,7 +9520,7 @@ const Quest = (() => {
       // 乗り心地（乗せている間）・速度超過
       if(Q.loaded && Q.def.comfortK && m.v > 0.5 && (Math.abs(m.acc) > 3.4 || m.lat > 3.6) && Q.comfortT <= 0){ Q.pen.comfort += Q.def.comfortK; Q.comfortT = 4; toast((Q.def.cargo === "お客さん" ? "急な操作でお客さんが驚いた" : "荷物が揺れた") + " −" + Q.def.comfortK + " 点", "bad"); }
       Q.comfortT = Math.max(0, Q.comfortT - dt);
-      const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + 10){ Q.pen.speed += dt * 1.2; Q.speedT -= dt; if(Q.speedT <= 0){ Q.speedT = 6; toast("制限速度 " + lim + " km/h を超えています", "bad"); } }
+      const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + SPEED_OVER_OK){ Q.pen.speed += dt * 1.2; Q.speedT -= dt; if(Q.speedT <= 0){ Q.speedT = 6; toast("制限速度 " + lim + " km/h を超えています", "bad"); } }
     }
     hud();
   }
