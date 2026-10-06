@@ -1,0 +1,15 @@
+[out:json][timeout:180][maxsize:536870912];
+(
+  nwr["railway"~"station|halt"]["name"](34.620,133.870,34.712,134.002);
+  nwr["public_transport"="station"]["name"](34.620,133.870,34.712,134.002);
+  nwr["amenity"~"^(hospital|university|college|townhall|police|fire_station|post_office|library|theatre|cinema|arts_centre|courthouse|bus_station|community_centre|marketplace|ferry_terminal)$"]["name"](34.620,133.870,34.712,134.002);
+  nwr["amenity"="school"]["name"](34.620,133.870,34.712,134.002);
+  nwr["amenity"="place_of_worship"]["name"](34.620,133.870,34.712,134.002);
+  nwr["amenity"="taxi"](34.620,133.870,34.712,134.002);
+  nwr["shop"~"^(mall|department_store|supermarket|convenience|doityourself|electronics)$"]["name"](34.620,133.870,34.712,134.002);
+  nwr["tourism"~"^(attraction|museum|hotel|gallery|zoo|theme_park|viewpoint|aquarium)$"]["name"](34.620,133.870,34.712,134.002);
+  nwr["leisure"~"^(park|stadium|sports_centre|swimming_pool|garden)$"]["name"](34.620,133.870,34.712,134.002);
+  nwr["historic"~"^(castle|monument|memorial)$"]["name"](34.620,133.870,34.712,134.002);
+  nwr["aeroway"="terminal"]["name"](34.620,133.870,34.712,134.002);
+);
+out center tags;

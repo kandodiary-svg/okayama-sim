@@ -8,6 +8,8 @@
    座標: 岡山駅前駅を原点とするローカル平面 (m)。x=東, z=南, y=標高(T.P.)
    ===================================================================== */
 const $ = id => document.getElementById(id);
+/* v41.10: 文字を入力している間（ナビの検索欄など）は、走行・ホーン・視点などのキー操作を効かせない */
+const typing = () => { const a = document.activeElement; return !!(a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable)); };
 const S = {
   scene:null, routes:null, key:"higashi", route:null,
   track:null, arc:null, total:0, stops:[], cum:[], signals:[], speedLim:null,
@@ -2200,7 +2202,7 @@ const Traffic = (()=>{
   }
   function init(data){
     D=data; NL=D.lanes.length; segs=[];
-    D.lanes.forEach((l,i)=>{ const P=mkPath(trafficPts(D, l)); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n}); });
+    D.lanes.forEach((l,i)=>{ const P=mkPath(trafficPts(D, l)); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n, nm:l.nm}); });
     D.conns.forEach((c,i)=>{ const P=mkPath(trafficPts(D, c)); const s={i:NL+i, P, v:c.v, next:[c.b], node:c.node, lane:false, kind:c.k, from:c.a}; segs.push(s); segs[c.a].next.push(NL+i); });
     // v29: 出現させる車線を近くから選ぶための升目（250m）。範囲を広げると、全部の車線から無作為に選んでは近くに当たらない
     BK = new Map();
@@ -2416,9 +2418,27 @@ const Traffic = (()=>{
         if(cost<bc && !Obs.hit(px,pz,4.5,PCAR_REF.o,null,P.P[k*3+1])){ bc=cost; best={x:px, z:pz, yaw:Math.atan2(tx,tz)}; } } }
     return best;
   }
+  /* v41.10: ナビ用。(x,z) に近い車線の点（折れ線への垂線の足）。yaw があれば進行方向が合う車線を優先。k 個まで近い順（同じ車線は 1 つ）
+     戻り: [{i: 車線の番号, s: 車線の始点からの距離, x, y, z, d: 距離, dot: 向きの一致（-1〜1）}] */
+  function locate(x, z, yaw, rmax, k, mask){
+    const out=[]; if(!BK) return out;
+    const r=Math.ceil(rmax/BKS)+1, ix=Math.floor(x/BKS), iz=Math.floor(z/BKS), seen=new Set();
+    const fx=yaw==null?0:Math.sin(yaw), fz=yaw==null?0:Math.cos(yaw), rm2=rmax*rmax;
+    for(let a=ix-r;a<=ix+r;a++) for(let b=iz-r;b<=iz+r;b++){ const L=BK.get(a+","+b); if(!L) continue;
+      for(const i of L){ if(seen.has(i)) continue; seen.add(i); if(mask && !mask[i]) continue;
+        const P=segs[i].P, A=P.P; let bd=1e18, bk=-1, bt=0;
+        for(let q=0;q<P.n-1;q++){ const x0=A[q*3], z0=A[q*3+2], dx=A[q*3+3]-x0, dz=A[q*3+5]-z0, L2=dx*dx+dz*dz;
+          let t=L2>1e-9?((x-x0)*dx+(z-z0)*dz)/L2:0; t=t<0?0:t>1?1:t; const px=x0+dx*t, pz=z0+dz*t, d2=(px-x)*(px-x)+(pz-z)*(pz-z);
+          if(d2<bd){ bd=d2; bk=q; bt=t; } }
+        if(bd>rm2 || bk<0) continue;
+        const x0=A[bk*3], z0=A[bk*3+2], dx=A[bk*3+3]-x0, dz=A[bk*3+5]-z0, ll=Math.hypot(dx,dz)||1;
+        out.push({i, s:P.C[bk]+ll*bt, x:x0+dx*bt, y:A[bk*3+1]+(A[bk*3+4]-A[bk*3+1])*bt, z:z0+dz*bt, d:Math.sqrt(bd), dot:yaw==null?1:(dx*fx+dz*fz)/ll}); } }
+    if(yaw==null) out.sort((u,v)=>u.d-v.d); else out.sort((u,v)=>(u.d*u.d+(1-u.dot)*100)-(v.d*v.d+(1-v.dot)*100));
+    return k>0 ? out.slice(0,k) : out;
+  }
   // 街灯の位置（車線の左 3.2m・高さ 8m・30m おき）
   function segsForLamps(){ const out=[]; for(const g of segs){ if(!g.lane) continue; for(let s=10; s<g.P.len; s+=30){ const q=pathPt(g.P,s), t=pathTan(g.P,s); out.push(q.x+t.z*3.2, q.y+8.0, q.z-t.x*3.2); } } return out; }
-  return {init, update, register, reset, startPose, nearestLane, segsForLamps, honk, get cars(){ return cars; }, get ready(){ return ready; }, get segs(){ return segs; }, get jnode(){ return jnode; }};
+  return {init, update, register, reset, startPose, nearestLane, locate, segsForLamps, honk, get cars(){ return cars; }, get names(){ return D ? D.names : []; }, get NL(){ return NL; }, get ready(){ return ready; }, get segs(){ return segs; }, get jnode(){ return jnode; }};
 })();
 /* ================= バスモード（v11）: 両備バス 西大寺線 岡山駅 → 天満屋 → 県庁前 → 東山 =================
    経路: data/bus.json（OSM の道路・一方通行・停留所の標柱、晴れバスナビの停車順から作成）
@@ -3027,7 +3047,10 @@ const Loc = (() => {
     return last;
   }
   function hide(){ $("locchip").classList.remove("on"); }
-  return { init, update, hide, mwInfo: null, get last(){ return last; } };
+  /* v41.10: 任意の点の町名・道路名（ナビの「地図で選ぶ」で使う）。町名は「津島東4」→「津島東四丁目」 */
+  const KJ0 = "〇一二三四五六七八九";
+  function at(x, z){ if(!PL) return null; const t = find(PL.towns, x, z), rd = road(x, z); let tn = t && t.name; if(tn){ const m = /^(.*\D)(\d)$/.exec(tn); if(m) tn = m[1] + KJ0[+m[2]] + "丁目"; } return { town: tn || "", road: rd && rd.name || "", v: rd && rd.v }; }
+  return { init, update, hide, at, mwInfo: null, get last(){ return last; } };
 })();
 Loc.mwInfo = (x, z) => (S.mode === "car" && MW.ready) ? MW.info(x, z, Car.C.h) : null;
 
@@ -4015,11 +4038,24 @@ const Car = (() => {
   const HI = Veh.hi("sedan", { color: new THREE.Color(0xe9eaec) }), hiU = HI.userData;
   body.add(hiU.body); for (const w of hiU.wheels) car.add(w.steer);
   car.visible = false; scene.add(car);
+  /* v41.10: タクシー営業の車（黄色い車体＋屋根の行灯。行灯は 空車=緑・迎車=橙・賃走=赤）。mode が "" なら普通の車（白）に戻す */
+  const taxiL = { g: null, face: [], on: false, tex: {} };
+  const lampTex = (txt, col) => canvasTex(128, 64, (g, w, h) => { g.fillStyle = col; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 5; g.strokeRect(4, 4, w - 8, h - 8); g.fillStyle = "#fff"; g.font = "bold 42px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(txt, w / 2, h / 2 + 2); });
+  function setTaxi(mode, col){
+    if(!mode){ if(taxiL.g) taxiL.g.visible = false; if(taxiL.on){ hiU.setPaint(new THREE.Color(0xe9eaec)); taxiL.on = false; } return; }
+    if(!taxiL.g){ const g = new THREE.Group();
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.2, 0.28), new THREE.MeshLambertMaterial({ color: 0xe8e8e4 })));
+      for(const sg of [1, -1]){ const f = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.17), new THREE.MeshBasicMaterial({ color: 0xffffff })); f.position.z = 0.141 * sg; if(sg < 0) f.rotation.y = Math.PI; g.add(f); taxiL.face.push(f); }
+      g.position.set(0, 1.58, -0.2); body.add(g); taxiL.g = g; }
+    const k = mode + col; if(!taxiL.tex[k]) taxiL.tex[k] = lampTex(mode, col);
+    for(const f of taxiL.face){ f.material.map = taxiL.tex[k]; f.material.needsUpdate = true; }
+    taxiL.g.visible = true; if(!taxiL.on){ hiU.setPaint(new THREE.Color(0xf2c230)); taxiL.on = true; }
+  }
   const eyeV = new THREE.Vector3(), tgtV = new THREE.Vector3();
 
   // ---- 入力 ----
   const key = {};
-  addEventListener("keydown", e => { if (!C.active) return; key[e.key.toLowerCase()] = true;
+  addEventListener("keydown", e => { if (!C.active || typing()) return; key[e.key.toLowerCase()] = true;
     if (e.key === "v" || e.key === "V") C.view = C.view === "chase" ? "driver" : "chase";
     if ((e.key === "r" || e.key === "R")) toggleGear();
     if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(e.key.toLowerCase())) e.preventDefault(); });
@@ -4202,7 +4238,7 @@ const Car = (() => {
     if (!own && ext) { extBody = ext; car.add(ext); }
   }
   function setExt(e) { ext = e; }
-  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, blocked, addBlock, clearBlock, setProfile, setExt, inG, get G() { return G; }, get P() { return P; } };
+  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, blocked, addBlock, clearBlock, setProfile, setExt, setTaxi, inG, get G() { return G; }, get P() { return P; } };
 })();
 
 /* ---------------- 運転 ---------------- */
@@ -4405,9 +4441,9 @@ function powerUp(){ if(S.bv>0) setBV(S.bv-1); else setMC(S.mc+1); }
 function brakeUp(){ if(S.mc>0) setMC(S.mc-1); else setBV(Math.min(NB(),S.bv+1)); }
 function emergency(){ S.mc=0; setBV(NB()+1); }
 function toggleView(){ S.view=S.view==="cab"?"chase":"cab"; $("view-toggle").textContent=S.view==="cab"?"⟲":"⌂"; $("ui").classList.toggle("cab", S.view==="cab"); }
-document.addEventListener("keydown",e=>{ if((S.mode==="car"||S.mode==="bus") && !e.repeat && (e.key==="t"||e.key==="T")){ rescue(); return; } }, true);
+document.addEventListener("keydown",e=>{ if(typing()) return; if((S.mode==="car"||S.mode==="bus") && !e.repeat && (e.key==="t"||e.key==="T")){ rescue(); return; } }, true);
 // 時間帯（N）・天気（M）の切り替え（どのモードでも）
-document.addEventListener("keydown",e=>{ if(e.repeat) return; if(e.key==="n"||e.key==="N"){ Env.cycle(); } else if(e.key==="m"||e.key==="M"){ Env.set(null, !Env.st.rain); } });
+document.addEventListener("keydown",e=>{ if(e.repeat || typing()) return; if(e.key==="n"||e.key==="N"){ Env.cycle(); } else if(e.key==="m"||e.key==="M"){ Env.set(null, !Env.st.rain); } });
 document.querySelectorAll(".time-opt").forEach(b=>b.addEventListener("click",()=>Env.set(b.dataset.time)));
 document.querySelectorAll(".rain-opt").forEach(b=>b.addEventListener("click",()=>Env.set(null, !Env.st.rain)));
 /* v41.8: クラクション。音に加えて、前方の止まっている車・道をふさぐ人に聞こえる（車・バス・路面電車・JR 共通） */
@@ -4419,11 +4455,11 @@ function doHorn(){
   else return;
   if(Traffic.ready) Traffic.honk(x, z, fx, fz); if(Peds.ready) Peds.honk(x, z, fx, fz);
 }
-document.addEventListener("keydown",e=>{ if(S.mode==="car" && Car.C.active && !e.repeat && (e.key==="h"||e.key==="H")){ doHorn(); return; } }, true);
-document.addEventListener("keydown",e=>{ if(S.mode==="bus" && Bus.active && !e.repeat){ if(e.key==="f"||e.key==="F"){ Bus.doorKey(); return; } if(e.key==="h"||e.key==="H"){ doHorn(); return; } } }, true);
+document.addEventListener("keydown",e=>{ if(typing()) return; if(S.mode==="car" && Car.C.active && !e.repeat && (e.key==="h"||e.key==="H")){ doHorn(); return; } }, true);
+document.addEventListener("keydown",e=>{ if(typing()) return; if(S.mode==="bus" && Bus.active && !e.repeat){ if(e.key==="f"||e.key==="F"){ Bus.doorKey(); return; } if(e.key==="h"||e.key==="H"){ doHorn(); return; } } }, true);
 $("bus-doorbtn").addEventListener("click",()=>Bus.doorKey());
 $("rescue-btn").addEventListener("click",rescue);
-document.addEventListener("keydown",e=>{ if(!S.running || e.repeat) return; switch(e.key){
+document.addEventListener("keydown",e=>{ if(!S.running || e.repeat || typing()) return; switch(e.key){
   // マスコン: W 進める / S 戻す、ブレーキハンドル: ↓ 強める / ↑ 緩める（それぞれ独立）
   case "w": case "W": e.preventDefault(); setMC(S.mc+1); break; case "s": case "S": e.preventDefault(); setMC(S.mc-1); break;
   case "ArrowDown": e.preventDefault(); setBV(Math.min(S.bv>=NB()+1?NB()+1:NB(), S.bv+1)); break; case "ArrowUp": e.preventDefault(); setBV(S.bv-1); break;
@@ -4532,7 +4568,7 @@ const Heli = (() => {
   // ---- 入力 ----
   const key = {}, pad = { f:0, b:0, l:0, r:0, u:0, d:0, fast:0 };
   const K = k => key[k] ? 1 : 0;
-  addEventListener("keydown", e => { if(!H.active) return; const k = e.key.toLowerCase(); key[k] = true;
+  addEventListener("keydown", e => { if(!H.active || typing()) return; const k = e.key.toLowerCase(); key[k] = true;
     if(k === "shift") key.shift = true;
     if(!e.repeat){ if(k === "v") cycleView(); else if(k === "o") setAuto(!H.auto); }
     if(["arrowup","arrowdown","arrowleft","arrowright"," ","pageup","pagedown"].includes(k)) e.preventDefault();
@@ -4741,7 +4777,7 @@ document.querySelectorAll(".hstart-opt").forEach(b=>b.addEventListener("click",(
 Heli.bindUI();
 function beginCar(){
   MWT.reset();   leaveJR(); Clock.reset(); S.mode="car"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.add("on");
-  Quest.end(); const truck = S.cveh==="truck", mission = S.play==="mission" && Quest.def(Quest.sel.car);
+  Quest.end(); Nav.clear(); const truck = S.cveh==="truck", mission = S.play==="mission" && Quest.def(Quest.sel.car);
   if(truck){ TRUCK = makeTruck(); Car.setProfile("truck", TRUCK); Car.C.onDriverView = truckDV; } else { TRUCK = null; Car.setProfile("sedan"); Car.C.onDriverView = null; }
   $("car-mode-lbl").textContent = mission ? mission.name : truck ? "トラックで自由に走る" : "車で自由に走る"; $("busui").classList.remove("on");
   setupRoute("higashi", true); S.pos=S.cum[0]+60;
@@ -5775,8 +5811,8 @@ const Mirrors = (() => {
    保存: モード・路線・車両・建物の表示・影・時間帯・天気・ヘリの出発地・音、電車（路線ごと）とバスの最高点・評価・回数。
    ブラウザの保存領域が使えない時（プライベートウィンドウなど）は保存しないだけで、動きは変わらない */
 const Prefs = (() => {
-  const KEY = "okaden.v1"; let st = { set: {}, rec: {} }, restoring = false;
-  try { const j = JSON.parse(localStorage.getItem(KEY) || "null"); if(j && typeof j === "object") st = { set: j.set || {}, rec: j.rec || {} }; } catch(e){}
+  const KEY = "okaden.v1"; let st = { set: {}, rec: {}, misc: {} }, restoring = false;
+  try { const j = JSON.parse(localStorage.getItem(KEY) || "null"); if(j && typeof j === "object") st = { set: j.set || {}, rec: j.rec || {}, misc: j.misc || {} }; } catch(e){}
   function write(){ try { localStorage.setItem(KEY, JSON.stringify(st)); } catch(e){} }
   function save(){
     if(restoring) return;
@@ -5788,6 +5824,9 @@ const Prefs = (() => {
     write();
   }
   function setSound(on){ st.set.sound = on; write(); }
+  /* v41.10: ナビの設定・最近の目的地・タクシーの収入など、設定画面の外で覚えておく値 */
+  const getM = (k, d) => (st.misc && st.misc[k] !== undefined ? st.misc[k] : d);
+  function setM(k, v){ if(!st.misc) st.misc = {}; st.misc[k] = v; write(); }
   function restore(){
     const s = st.set; if(!s || !s.mode) { applyMenu(); render(); return; }
     restoring = true;
@@ -5824,7 +5863,7 @@ const Prefs = (() => {
   }
   document.addEventListener("click", (e) => { if(e.target.closest(".mode-opt,.route-opt,.veh-opt,.look-opt,.shadow-opt,.dia-opt,.time-opt,.rain-opt,.hstart-opt,.play-opt,.cveh-opt,.quest-opt")) setTimeout(save, 0); });
   document.addEventListener("keydown", (e) => { if(e.key === "n" || e.key === "N" || e.key === "m" || e.key === "M") setTimeout(save, 0); });
-  return { save, restore, record, render, setSound, best, get soundOn(){ return st.set.sound !== false; } };
+  return { save, restore, record, render, setSound, best, getM, setM, get soundOn(){ return st.set.sound !== false; } };
 })();
 /* ゲームパッド（標準配置: Xbox / PlayStation 系）
    電車: RB・LB（または十字キー上下）= マスコン進め・戻し、RT・LT = ブレーキ強め・弱め、A = ドア、B = 非常ブレーキ、X = 警笛、Y = 視点
@@ -5866,6 +5905,1064 @@ const Pad = (() => {
   }
   return { poll, PIN, get connected(){ return on; } };
 })();
+/* ---------------- v41.10: ナビ（車・トラック・タクシー）----------------
+   経路: AI 車が走る車線のつながり（data/traffic.json の車線・接続。一方通行・右左折・信号の位置が入っている）で A* 探索。
+         所要時間 = 区間の長さ ÷（制限速度 × 0.85）＋ 信号 6 秒・右折 4 秒・左折 1.5 秒、細い道は 1.2 倍（大きな道を優先）。
+   表示: 道路の上の青い帯（矢印が流れる）・ミニマップの青い線・画面上部の案内（次に曲がる所までの距離と矢印・残り距離・到着の見込み）・音声。
+   外れたら 2 秒で再探索。逆走は 2.5 秒で再探索。目的地は「地名・施設名」の検索（data/poi.json）か、地図で選ぶ。
+   ミッション・タクシーでは目的地が変わるたびに自動で設定される（src="auto"）。山陽自動車道（MW）はこの車線網に入っていないので案内できない。
+   ※ 一般の車のナビとちがい、実際の通行止め・工事・渋滞は考えない。経路は車線網の最短時間であり、現実のナビと同じとは限らない。 */
+const Nav = (() => {
+  const D2R = Math.PI / 180;
+  const OPT = { voice: true, line: true };
+  const st = { target: null, src: "", R: null, prog: 0, mi: 0, lat: 0, offT: 0, wrongT: 0, tPlan: -99, state: "idle", fail: false, arrT: 0, nPlan: 0, planMs: 0, said: "", dirty: true, lastRem: 0 };
+  let GR = null, POI = null, IDX = null;
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const me = () => ({ x: Car.C.x, z: Car.C.z, yaw: Car.C.yaw, v: Math.abs(Car.C.v) });
+  const carOn = () => S.mode === "car" && Car.C.active;
+  const fmtD = (m) => m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 0 : 1) + " km" : Math.max(0, Math.round(m / 10) * 10) + " m";
+  const fmtMin = (s) => { const m = Math.max(1, Math.round(s / 60)); return m >= 60 ? Math.floor(m / 60) + "時間" + (m % 60 ? m % 60 + "分" : "") : m + "分"; };
+  const hhmm = (sec) => { sec = ((Math.round(sec) % 86400) + 86400) % 86400; return String(Math.floor(sec / 3600)).padStart(2, "0") + ":" + String(Math.floor(sec / 60) % 60).padStart(2, "0"); };
+
+  /* ================= 経路探索 ================= */
+  /* 車線のつながり（有向グラフ）の「いちばん大きい強連結成分」＝街の本線網を求め、
+     そこへ入れる車線（出発に使える）・そこから行ける車線（到着に使える）に印を付ける。行き止まり・孤立した短い車線に当たっても、別の車線へ案内するため。 */
+  function reachMasks(segs, N){
+    const idx = new Int32Array(N).fill(-1), low = new Int32Array(N), onS = new Uint8Array(N), comp = new Int32Array(N).fill(-1), ptr = new Int32Array(N), st = [], cs = [];
+    let counter = 0, nc = 0;
+    for(let r = 0; r < N; r++){
+      if(idx[r] !== -1) continue; cs.push(r); idx[r] = low[r] = counter++; st.push(r); onS[r] = 1;
+      while(cs.length){
+        const v = cs[cs.length - 1], nx = segs[v].next;
+        if(ptr[v] < nx.length){ const w = nx[ptr[v]++];
+          if(idx[w] === -1){ idx[w] = low[w] = counter++; st.push(w); onS[w] = 1; cs.push(w); } else if(onS[w] && idx[w] < low[v]) low[v] = idx[w]; }
+        else { cs.pop(); if(cs.length){ const u = cs[cs.length - 1]; if(low[v] < low[u]) low[u] = low[v]; }
+          if(low[v] === idx[v]){ let w; do{ w = st.pop(); onS[w] = 0; comp[w] = nc; }while(w !== v); nc++; } }
+      }
+    }
+    const size = new Int32Array(nc); for(let i = 0; i < N; i++) size[comp[i]]++; let main = 0; for(let c = 1; c < nc; c++) if(size[c] > size[main]) main = c;
+    const fromMain = new Uint8Array(N), toMain = new Uint8Array(N); let q = [];
+    for(let i = 0; i < N; i++) if(comp[i] === main){ fromMain[i] = 1; toMain[i] = 1; q.push(i); }
+    const fq = q.slice(); while(fq.length){ const c = fq.pop(); for(const j of segs[c].next) if(!fromMain[j]){ fromMain[j] = 1; fq.push(j); } }
+    // 逆向きの辺（CSR）
+    const deg = new Int32Array(N + 1); for(let i = 0; i < N; i++) for(const j of segs[i].next) deg[j + 1]++; for(let i = 0; i < N; i++) deg[i + 1] += deg[i];
+    const fill = deg.slice(0, N), rev = new Int32Array(deg[N]); for(let i = 0; i < N; i++) for(const j of segs[i].next) rev[fill[j]++] = i;
+    while(q.length){ const c = q.pop(); for(let e = deg[c]; e < deg[c + 1]; e++){ const j = rev[e]; if(!toMain[j]){ toMain[j] = 1; q.push(j); } } }
+    return { fromMain, toMain, mainN: size[main] };
+  }
+  function graph(){
+    if(GR) return GR;
+    const segs = Traffic.segs, N = segs.length; if(!N || !Traffic.ready) return null;
+    const ex = new Float32Array(N), ez = new Float32Array(N), ec = new Float32Array(N), et = new Float32Array(N); let vmax = 10;
+    for(let i = 0; i < N; i++){
+      const g = segs[i], A = g.P.P, n = g.P.n; ex[i] = A[(n - 1) * 3]; ez[i] = A[(n - 1) * 3 + 2];
+      const sp = Math.max(3, (g.v || 30) / 3.6); if(sp > vmax) vmax = sp;
+      const t = g.P.len / (sp * 0.85); let c = t;
+      if(g.lane){ if(g.c === "u" || g.c === "r") c *= 1.2; if(g.sig) c += 6; }
+      else c += g.kind === "r" ? 4 : g.kind === "l" ? 1.5 : g.kind === "s" ? 0 : 3;
+      et[i] = t; ec[i] = c;
+    }
+    const masks = reachMasks(segs, N);
+    GR = { N, ex, ez, ec, et, okS: masks.toMain, okG: masks.fromMain, mainN: masks.mainN, vmax: vmax * 0.85, stamp: new Uint32Array(N), gs: new Float32Array(N), pv: new Int32Array(N), run: 0, hk: new Float64Array(1 << 17), hv: new Int32Array(1 << 17), hn: 0 };
+    return GR;
+  }
+  function hpush(G, k, v){
+    if(G.hn >= G.hk.length){ const a = new Float64Array(G.hk.length * 2), b = new Int32Array(G.hv.length * 2); a.set(G.hk); b.set(G.hv); G.hk = a; G.hv = b; }
+    let i = G.hn++; const K = G.hk, V = G.hv;
+    while(i > 0){ const p = (i - 1) >> 1; if(K[p] <= k) break; K[i] = K[p]; V[i] = V[p]; i = p; }
+    K[i] = k; V[i] = v;
+  }
+  function hpop(G){
+    const K = G.hk, V = G.hv, top = V[0], k = K[--G.hn], v = V[G.hn]; let i = 0, n = G.hn;
+    while(true){ let c = i * 2 + 1; if(c >= n) break; if(c + 1 < n && K[c + 1] < K[c]) c++; if(K[c] >= k) break; K[i] = K[c]; V[i] = V[c]; i = c; }
+    if(n > 0){ K[i] = k; V[i] = v; } return top;
+  }
+  /* sa: {i,s} 出発（車線の番号・始点からの距離）。goals: [{i,s}] 到着の候補。戻り {path:[区間の番号…], goal, cost} / null */
+  function astar(sa, goals, gx, gz){
+    const G = graph(), segs = Traffic.segs; if(!G) return null; const run = ++G.run;
+    const gm = new Map(); for(const g of goals) gm.set(g.i, g);
+    const h = (i) => Math.hypot(G.ex[i] - gx, G.ez[i] - gz) / G.vmax;
+    let best = Infinity, bestPrev = -1, bestGoal = null; G.hn = 0;
+    const L0 = Math.max(1, segs[sa.i].P.len), c0 = G.ec[sa.i] * (1 - sa.s / L0);
+    const g0 = gm.get(sa.i); if(g0 && g0.s >= sa.s){ best = G.ec[sa.i] * (g0.s - sa.s) / L0 + (g0.pen || 0); bestPrev = -2; bestGoal = g0; }
+    G.stamp[sa.i] = run; G.gs[sa.i] = c0; G.pv[sa.i] = -1; hpush(G, c0 + h(sa.i), sa.i);
+    let it = 0;
+    while(G.hn){
+      const f = G.hk[0], cur = hpop(G); if(f >= best) break;
+      const gc = G.gs[cur]; if(f > gc + h(cur) + 1e-3) continue;
+      const nx = segs[cur].next;
+      for(let q = 0; q < nx.length; q++){
+        const j = nx[q], g2 = gm.get(j);
+        if(g2){ const c = gc + G.ec[j] * g2.s / Math.max(1, segs[j].P.len) + (g2.pen || 0); if(c < best){ best = c; bestPrev = cur; bestGoal = g2; } }
+        const cn = gc + G.ec[j];
+        if(G.stamp[j] !== run || cn < G.gs[j] - 1e-4){ G.stamp[j] = run; G.gs[j] = cn; G.pv[j] = cur; hpush(G, cn + h(j), j); }
+      }
+      if(++it > 600000) break;
+    }
+    if(!bestGoal) return null;
+    let path;
+    if(bestPrev === -2) path = [sa.i];
+    else { path = []; let c = bestPrev; while(c !== -1){ path.push(c); c = G.pv[c]; } path.reverse(); path.push(bestGoal.i); }
+    return { path, goal: bestGoal, cost: best, iters: it };
+  }
+
+  /* ---- 経路の折れ線・曲がり角 ---- */
+  function build(sol, sa, px, pz, tx, tz){
+    const segs = Traffic.segs, G = graph(), path = sol.path, X = [], Y = [], Z = [], D = [], T = [], K = [];
+    let dist = 0, time = 0, lx = 0, lz = 0, first = true;
+    const marks = [];
+    const add = (x, y, z, kd, tpm) => {
+      if(!first){ const d = Math.hypot(x - lx, z - lz); if(d < 0.02) return; dist += d; time += d * tpm; }
+      first = false; lx = x; lz = z; X.push(x); Y.push(y); Z.push(z); D.push(dist); T.push(time); K.push(kd);
+    };
+    for(let j = 0; j < path.length; j++){
+      const id = path[j], g = segs[id], P = g.P, A = P.P, n = P.n, kd = g.lane ? 0 : 1;
+      const s0 = j === 0 ? sa.s : 0, s1 = j === path.length - 1 ? sol.goal.s : P.len, tpm = G.et[id] / Math.max(1, P.len), d0 = dist;
+      if(s1 < s0 + 0.05 && j > 0) { marks.push({ id, d0, d1: dist }); continue; }
+      const at = (s) => { const q = pathPt(P, s); return q; };
+      const a = at(s0); add(a.x, a.y, a.z, kd, tpm);
+      for(let k = 0; k < n; k++){ const c = P.C[k]; if(c > s0 + 0.05 && c < s1 - 0.05) add(A[k * 3], A[k * 3 + 1], A[k * 3 + 2], kd, tpm); }
+      const b = at(s1); add(b.x, b.y, b.z, kd, tpm);
+      marks.push({ id, d0, d1: dist });
+    }
+    // 出発点と到着点がほぼ同じ（目的地のすぐそばの車線にいる）とき: 0.6m だけの経路にして、すぐ「到着」にする
+    if(X.length === 1){ const gp = segs[path[path.length - 1]].P, sg = Math.min(gp.len, sol.goal.s), tg = pathTan(gp, sg); X.push(X[0] + tg.x * 0.6); Y.push(Y[0]); Z.push(Z[0] + tg.z * 0.6); D.push(0.6); T.push(0.1); K.push(0); dist = 0.6; time = 0.1; }
+    const n = X.length; if(n < 2) return null;
+    const R = { n, X: Float32Array.from(X), Y: Float32Array.from(Y), Z: Float32Array.from(Z), D: Float32Array.from(D), T: Float32Array.from(T), K: Uint8Array.from(K), total: dist, time, man: [], marks };
+    // 曲がり角（接続の区間ごと）
+    const ptAt = (d) => { d = Math.max(0, Math.min(R.total, d)); let lo = 0, hi = n - 1; while(hi - lo > 1){ const m = (lo + hi) >> 1; if(R.D[m] <= d) lo = m; else hi = m; } const L = R.D[hi] - R.D[lo] || 1, t = (d - R.D[lo]) / L; return [R.X[lo] + (R.X[hi] - R.X[lo]) * t, R.Z[lo] + (R.Z[hi] - R.Z[lo]) * t]; };
+    R.ptAt = ptAt;
+    const nm = (g) => { const k = g && g.lane ? g.nm : -1; const names = Traffic.names; return k >= 0 && names && names[k] ? names[k] : ""; };
+    for(let j = 1; j < marks.length - 1; j++){
+      const g = segs[marks[j].id]; if(g.lane) continue;
+      const m = marks[j], dIn = Math.max(0, m.d0 - 9), dOut = Math.min(R.total, m.d1 + 9);
+      if(m.d1 - m.d0 < 0.3 && m.d0 < 1) continue;
+      const pa = ptAt(dIn), pb = ptAt(m.d0), pc = ptAt(m.d1), pd = ptAt(dOut);
+      let ax = pb[0] - pa[0], az = pb[1] - pa[1], bx = pd[0] - pc[0], bz = pd[1] - pc[1]; const la = Math.hypot(ax, az), lb = Math.hypot(bx, bz); if(la < 1 || lb < 1) continue;
+      ax /= la; az /= la; bx /= lb; bz /= lb;
+      const sinL = bx * az - bz * ax, cosA = ax * bx + az * bz, ang = Math.atan2(sinL, cosA), aa = Math.abs(ang) / D2R;
+      if(aa < 22) continue;
+      const side = ang > 0 ? "L" : "R", type = aa < 60 ? "slight" + side : aa < 125 ? (side === "L" ? "left" : "right") : aa < 165 ? "sharp" + side : "uturn";
+      const prev = segs[marks[j - 1].id], next = segs[marks[j + 1].id];
+      R.man.push({ d: m.d0, d1: m.d1, type, ang: ang / D2R, signal: !!(prev && prev.lane && prev.sig), from: nm(prev), to: nm(next), s1: false, s2: false, s3: false });
+    }
+    R.man.push({ d: R.total, d1: R.total, type: "arrive", ang: 0, signal: false, from: "", to: "", s1: false, s2: false, s3: false });
+    return R;
+  }
+
+  /* 目的地までの経路を探す。戻り: ルート / null */
+  function plan(px, pz, yaw, tx, tz){
+    const t0 = performance.now();
+    const G0 = graph(); if(!G0) return null; const starts = Traffic.locate(px, pz, yaw, 260, 5, G0.okS); if(!starts.length) return null;
+    // 到着の候補: いちばん近い車線から 90m 以内の車線を最大 10 本。遠い車線ほど「道路を外れて歩く」ぶんの時間を足す（行き止まり・孤立した車線に当たっても、別の車線へ案内できる）
+    const goalsOf = (rmax, k, span) => { const ok = Traffic.locate(tx, tz, null, rmax, k, G0.okG), raw = Traffic.locate(tx, tz, null, rmax, k, null); if(!ok.length) return null;
+      // 本線から入れない車線（一方通行の入口・行き止まり側）も候補に。出発点がその車線の上なら、すぐ着ける。ほかの出発点からは行けないので、A* が自然に捨てる
+      const dmin = Math.min(ok[0].d, raw.length ? raw[0].d : 1e9), seen = new Set(), all = [];
+      for(const g of raw.slice(0, 3).concat(ok.filter((q) => q.d <= ok[0].d + span).slice(0, 10))){ if(seen.has(g.i)) continue; seen.add(g.i); all.push(g); }   // 入れる車線は従来どおり必ず含める（行き着けない候補だけにならないように）
+      return all.map((g) => ({ i: g.i, s: g.s, x: g.x, z: g.z, y: g.y, pen: (g.d - dmin) / 5 })); };
+    // 出発の候補: 向きが合う近い車線（最大 2 本）を先に。見つからなければ、反対向き・行き止まりの車線（最大 3 本）も使う
+    const pri = starts.filter((q) => q.dot > 0.2).slice(0, 2), rest = starts.filter((q) => q.dot <= 0.2).slice(0, 3);
+    let best = null;
+    for(const [rmax, k, span] of [[320, 14, 90], [900, 24, 250]]){
+      const gl = goalsOf(rmax, k, span); if(!gl) continue;
+      for(const group of [pri, rest]){
+        for(const sa of group){ const sol = astar(sa, gl, tx, tz); if(!sol) continue;
+          const sc = sol.cost + sa.d * 0.4 + (sa.dot < 0.2 ? 25 : 0); if(!best || sc < best.sc) best = { sol, sa, sc }; }
+        if(best) break; }
+      if(best) break; }
+    if(!best) return null;
+    const R = build(best.sol, best.sa, px, pz, tx, tz); if(!R) return null;
+    R.sa = best.sa; R.px0 = px; R.pz0 = pz; R.goalPt = best.sol.goal; R.ms = performance.now() - t0; R.iters = best.sol.iters;
+    // 道路の外の部分（出発点→道路・道路→目的地）は点線で
+    R.legS = best.sa.d > 5 ? [[px, pz], [best.sa.x, best.sa.z]] : null;
+    const ex = R.X[R.n - 1], ez = R.Z[R.n - 1], dEnd = Math.hypot(tx - ex, tz - ez);
+    R.legE = dEnd > 8 ? [[ex, ez], [tx, tz]] : null; R.legEL = R.legE ? dEnd : 0; R.legSL = R.legS ? best.sa.d : 0;
+    return R;
+  }
+
+  /* ================= 現在地の追跡・案内 ================= */
+  function idxAt(R, d){ let lo = 0, hi = R.n - 1; while(hi - lo > 1){ const m = (lo + hi) >> 1; if(R.D[m] <= d) lo = m; else hi = m; } return lo; }
+  function project(R, x, z, d0, d1){
+    let bl = 1e9, ba = 0; const lo = idxAt(R, Math.max(0, d0)), hi = Math.min(R.n - 2, idxAt(R, d1) + 1);
+    for(let k = lo; k <= hi; k++){
+      const x0 = R.X[k], z0 = R.Z[k], dx = R.X[k + 1] - x0, dz = R.Z[k + 1] - z0, L2 = dx * dx + dz * dz; let t = L2 > 1e-9 ? ((x - x0) * dx + (z - z0) * dz) / L2 : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = x0 + dx * t, pz = z0 + dz * t, d = Math.hypot(px - x, pz - z);
+      if(d < bl){ bl = d; ba = R.D[k] + Math.sqrt(L2) * t; }
+    }
+    return { lat: bl, arc: ba };
+  }
+  function tangentAt(R, d){ const a = R.ptAt(d - 3), b = R.ptAt(d + 3); const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz) || 1; return [dx / L, dz / L]; }
+  function remDist(){ const R = st.R; if(!R) return st.target ? Math.hypot(st.target.x - Car.C.x, st.target.z - Car.C.z) : 0; return Math.max(0, R.total - st.prog) + R.legEL; }
+  function remTime(){ const R = st.R; if(!R) return 0; const k = idxAt(R, st.prog); return Math.max(0, (R.T[R.n - 1] - R.T[k]) * 1.12 + R.legEL / 6 + R.legSL / 6); }
+
+  /* ---- 音声 ---- */
+  const Voice = { ok: typeof speechSynthesis !== "undefined", voice: null, last: "", t: 0, pend: null,
+    pick(){ try{ const vs = speechSynthesis.getVoices(); this.voice = vs.find((v) => /^ja/i.test(v.lang)) || null; }catch(e){} },
+    speak(text){
+      try{ if(!Voice.voice) Voice.pick(); const u = new SpeechSynthesisUtterance(text); u.lang = "ja-JP"; if(Voice.voice) u.voice = Voice.voice; u.rate = 1.05;
+        u.onend = () => { if(Voice.pend){ const t = Voice.pend; Voice.pend = null; Voice.speak(t); } }; speechSynthesis.speak(u); }catch(e){} },
+    /* urgent: 話している途中でも割り込む（「まもなく右折」など）。ふつうは、いま話している案内が終わってから次を話す（最新の 1 件だけ待つ） */
+    say(text, urgent){
+      st.said = text; Voice.last = text; Voice.t = performance.now();
+      if(!OPT.voice || !Voice.ok || (typeof Prefs !== "undefined" && Prefs.soundOn === false)) return;
+      try{ if(urgent){ Voice.pend = null; speechSynthesis.cancel(); Voice.speak(text); }
+        else if(speechSynthesis.speaking){ Voice.pend = text; } else Voice.speak(text); }catch(e){} },
+    stop(){ Voice.pend = null; try{ if(Voice.ok) speechSynthesis.cancel(); }catch(e){} } };
+  const ACT = { straight: ["直進", "直進"], slightL: ["斜め左", "斜め左方向"], slightR: ["斜め右", "斜め右方向"], left: ["左折", "左方向"], right: ["右折", "右方向"], sharpL: ["左へ急カーブ", "左へ大きく曲がる方向"], sharpR: ["右へ急カーブ", "右へ大きく曲がる方向"], uturn: ["Uターン", "Uターン"], arrive: ["目的地", "目的地"] };
+  const distSay = (m) => m >= 950 ? (m < 1300 ? "1キロ" : "約" + (Math.round(m / 500) / 2).toString().replace(/\.0$/, "") + "キロ") : "約" + Math.max(100, Math.round(m / 50) * 50) + "メートル";
+  function announce(m, d, v){
+    const R = st.R; if(!R) return; const mv = R.man[st.mi]; if(!mv) return; if(S.t - st.tPlan < 5 && st.prog < 20) return;   // 案内の開始直後は、開始のメッセージを優先
+    const far = Math.max(420, Math.min(1000, v * 20)), near = Math.max(90, v * 6);
+    if(mv.type === "arrive"){ if(!mv.s2 && d < 120 && st.src !== "auto"){ mv.s2 = true; Voice.say("まもなく目的地周辺です。"); } return; }
+    const act = ACT[mv.type][1];
+    if(!mv.s1 && d < far && d > near + 40){ mv.s1 = true; Voice.say(distSay(d) + "先、" + (mv.signal ? "信号を" : "") + act + "です。"); }
+    else if(!mv.s2 && d < near){ mv.s1 = true; mv.s2 = true; Voice.say("まもなく、" + act + "です。", true); }
+  }
+
+  /* ================= 目的地の設定・解除 ================= */
+  function setTarget(t, src, opt){
+    opt = opt || {};
+    st.target = { x: t.x, z: t.z, name: t.name || "目的地", r: t.r || 40, kind: t.kind || "" }; st.src = src || "user"; st.R = null; st.prog = 0; st.mi = 0; st.state = "routing"; st.fail = false; st.tPlan = -99; st.arrT = 0; st.dirty = true; st.quiet = !!opt.quiet; st.first = true;
+    if(src !== "auto" && Prefs && Prefs.setM) pushRecent(st.target);
+    ui.show(true);
+  }
+  function clear(src){
+    if(src && st.src !== src) return;
+    st.target = null; st.src = ""; st.R = null; st.state = "idle"; st.fail = false; Voice.stop(); st.dirty = true; ribHide(); pinHide(); ui.show(false);
+  }
+  function pushRecent(t){
+    if(!Prefs.getM) return; let L = Prefs.getM("navRecent", []); if(!Array.isArray(L)) L = [];
+    L = L.filter((q) => q.name !== t.name); L.unshift({ name: t.name, x: Math.round(t.x), z: Math.round(t.z) }); Prefs.setM("navRecent", L.slice(0, 6));
+  }
+  function doPlan(reason){
+    const m = me(), t = st.target; if(!t) return;
+    const R = plan(m.x, m.z, m.v > 1 ? m.yaw : m.yaw, t.x, t.z); st.tPlan = S.t; st.nPlan++;
+    if(!R){
+      st.R = null; st.fail = true; st.state = "fail"; st.dirty = true;
+      if(!st.quiet || reason !== "init") Voice.say("この目的地までのルートが見つかりません。直線で案内します。", true);
+      ribHide(); return;
+    }
+    st.R = R; st.prog = 0; st.mi = 0; st.joined = false; st.fail = false; st.state = "guide"; st.dirty = true; st.planMs = R.ms;
+    if(reason === "init"){ if(st.src === "auto"){ if(!st.quiet) Voice.say(st.target.name + "へ案内します。"); } else Voice.say("ルート案内を開始します。目的地まで約" + (R.total / 1000).toFixed(1) + "キロ、およそ" + fmtMin(remTime()) + "です。"); }
+    else if(reason === "off" || reason === "wrong") Voice.say("ルートを再検索しました。", true);
+    ribDirty();
+  }
+
+  /* ================= 3D の帯・目的地の柱 ================= */
+  let ribR = null, ribL = null, pin = null;
+  function makeRibbon(maxPts, draw, opacity, repeatV){
+    const geo = new THREE.BufferGeometry(), pos = new Float32Array(maxPts * 6), uv = new Float32Array(maxPts * 4), col = new Float32Array(maxPts * 8), idx = new Uint16Array((maxPts - 1) * 6);
+    for(let i = 0; i < maxPts - 1; i++){ const a = i * 2; idx.set([a, a + 1, a + 2, a + 1, a + 3, a + 2], i * 6); }
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage)); geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2).setUsage(THREE.DynamicDrawUsage)); geo.setAttribute("color", new THREE.BufferAttribute(col, 4).setUsage(THREE.DynamicDrawUsage));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.setDrawRange(0, 0);
+    const tex = canvasTex(64, 128, draw); tex.wrapS = THREE.ClampToEdgeWrapping; tex.wrapT = THREE.RepeatWrapping;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity, vertexColors: true, depthWrite: false, side: THREE.DoubleSide, fog: false, polygonOffset: true, polygonOffsetFactor: -8, polygonOffsetUnits: -8 });
+    const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.renderOrder = 6; mesh.visible = false; scene.add(mesh);
+    return { mesh, geo, mat, tex, max: maxPts };
+  }
+  const drawRoute = (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "#1c6df0"; g.fillRect(0, 0, w, h); g.fillStyle = "rgba(255,255,255,.95)"; g.fillRect(0, 0, 5, h); g.fillRect(w - 5, 0, 5, h);
+    g.fillStyle = "#ffffff"; g.beginPath(); g.moveTo(w / 2, 6); g.lineTo(w - 12, 50); g.lineTo(w - 24, 50); g.lineTo(w / 2, 22); g.lineTo(24, 50); g.lineTo(12, 50); g.closePath(); g.fill(); };
+  const drawLeg = (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "rgba(255,255,255,.9)"; for(let y = 8; y < h; y += 32){ g.beginPath(); g.arc(w / 2, y + 8, 8, 0, 7); g.fill(); } };
+  /* pts: [[x,y,z,d]…]（d は始点からの距離）。width m。fade: 先端の消え始めからの距離 */
+  function ribSet(rb, pts, width, yoff, fadeFrom, fadeLen, vscale){
+    const n = Math.min(pts.length, rb.max); if(n < 2){ rb.geo.setDrawRange(0, 0); rb.mesh.visible = false; return; }
+    const pos = rb.geo.attributes.position.array, uv = rb.geo.attributes.uv.array, col = rb.geo.attributes.color.array, hw = width / 2;
+    for(let i = 0; i < n; i++){
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; let dx = b[0] - a[0], dz = b[2] - a[2]; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+      const nx = dz, nz = -dx, p = pts[i], y = p[1] + yoff, al = fadeLen > 0 ? Math.max(0, Math.min(1, 1 - (p[3] - fadeFrom) / fadeLen)) : 1;
+      pos[i * 6] = p[0] - nx * hw; pos[i * 6 + 1] = y; pos[i * 6 + 2] = p[2] - nz * hw; pos[i * 6 + 3] = p[0] + nx * hw; pos[i * 6 + 4] = y; pos[i * 6 + 5] = p[2] + nz * hw;
+      uv[i * 4] = 0; uv[i * 4 + 1] = p[3] / vscale; uv[i * 4 + 2] = 1; uv[i * 4 + 3] = p[3] / vscale;
+      for(let q = 0; q < 2; q++){ const o = i * 8 + q * 4; col[o] = col[o + 1] = col[o + 2] = 1; col[o + 3] = al; }
+    }
+    rb.geo.attributes.position.needsUpdate = true; rb.geo.attributes.uv.needsUpdate = true; rb.geo.attributes.color.needsUpdate = true;
+    rb.geo.setDrawRange(0, (n - 1) * 6); rb.mesh.visible = true;
+  }
+  function ribHide(){ if(ribR) ribR.mesh.visible = false; if(ribL) ribL.mesh.visible = false; }
+  let ribDirtyF = true; function ribDirty(){ ribDirtyF = true; }
+  let ribProg = -99;
+  function updateRibbons(dt){
+    if(!ribR){ ribR = makeRibbon(260, drawRoute, 0.82); ribL = makeRibbon(64, drawLeg, 0.9); }
+    const R = st.R, m = me(); let any = false;
+    if(OPT.line && carOn() && st.target){
+      if(R && (ribDirtyF || Math.abs(st.prog - ribProg) > 2.5)){
+        ribDirtyF = false; ribProg = st.prog;
+        const d0 = Math.max(0, st.prog - 6), d1 = Math.min(R.total, st.prog + 420), pts = []; const step = 2.4;
+        for(let d = d0; d < d1 + 0.01; d += step){ const k = idxAt(R, d), j = Math.min(R.n - 1, k + 1), L = R.D[j] - R.D[k] || 1, t = (d - R.D[k]) / L; pts.push([R.X[k] + (R.X[j] - R.X[k]) * t, R.Y[k] + (R.Y[j] - R.Y[k]) * t, R.Z[k] + (R.Z[j] - R.Z[k]) * t, d - d0]); }
+        ribSet(ribR, pts, 1.7, 0.16, (d1 - d0) - 130, 130, 4);
+      }
+      if(R) ribR.mesh.visible = true;
+      if(ribR.tex) ribR.tex.offset.y = -((performance.now() / 1000) * 0.75) % 1;
+      // 点線: 出発点→道路、道路→目的地（残り）
+      const L = (R && R.legE && st.prog > R.total - 60) ? R.legE : (!R && st.target ? [[m.x, m.z], [st.target.x, st.target.z]] : null);
+      if(L){ const pts = []; const dx = L[1][0] - L[0][0], dz = L[1][1] - L[0][1], len = Math.hypot(dx, dz) || 1; for(let d = 0; d <= len; d += Math.max(2, len / 60)){ const x = L[0][0] + dx * d / len, z = L[0][1] + dz * d / len; pts.push([x, Car.hAt(x, z) + 0.05, z, d]); } pts.push([L[1][0], Car.hAt(L[1][0], L[1][1]) + 0.05, L[1][1], len]); ribSet(ribL, pts, 0.9, 0.12, 0, 0, 3); any = true; }
+      else ribL.mesh.visible = false;
+    } else ribHide();
+    if(ribL && ribL.tex) ribL.tex.offset.y = -((performance.now() / 1000) * 0.5) % 1;
+  }
+  function pinShow(t){
+    if(!pin){ const g = new THREE.Group(); const mb = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide });
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 120, 10, 1, true), mb(0xff3d8b, 0.42)); beam.position.y = 60; g.add(beam);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(3.4, 4.6, 40), mb(0xff3d8b, 0.85)); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.2; g.add(ring);
+      const flag = new THREE.Mesh(new THREE.PlaneGeometry(4, 2.4), new THREE.MeshBasicMaterial({ map: canvasTex(128, 64, (c, w, h) => { for(let y = 0; y < 4; y++) for(let x = 0; x < 8; x++){ c.fillStyle = (x + y) % 2 ? "#111" : "#fff"; c.fillRect(x * w / 8, y * h / 4, w / 8, h / 4); } }), side: THREE.DoubleSide, fog: false })); flag.position.set(2.1, 13.5, 0); g.add(flag);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 15, 6), new THREE.MeshBasicMaterial({ color: 0x222222, fog: false })); pole.position.y = 7.5; g.add(pole);
+      pin = { g, flag }; scene.add(g); }
+    pin.g.position.set(t.x, Car.hAt(t.x, t.z) + 0.1, t.z); pin.g.visible = true;
+  }
+  function pinHide(){ if(pin) pin.g.visible = false; }
+
+  /* ================= 毎フレーム ================= */
+  let acc = 0, uiAcc = 0, warm = false, lastMode = "";
+  function tick(dt){
+    const on = carOn();
+    if(S.mode !== lastMode){ lastMode = S.mode; const nb = document.getElementById("nav-btn"); if(nb) nb.style.display = S.mode === "car" ? "" : "none"; }   // バスは専用の案内線があるので、ナビのボタンは出さない
+    if(!on){ if(st.target && S.mode !== "car"){ clear(); } return; }
+    if(!GR && !warm && Traffic.ready){ warm = true; setTimeout(graph, 500); }   // 経路探索の下準備（初回だけ 0.2 秒ほどかかるので、走り出しの直後に済ませる）
+    acc += dt; if(acc < 0.1) { if(ribR && st.target) ribR.tex.offset.y = -((performance.now() / 1000) * 0.75) % 1; return; } const step = acc; acc = 0;
+    const m = me();
+    if(!st.target){ ui.show(false); if(ribR) ribHide(); return; }
+    // 検索（初回・外れた時）
+    if(st.state === "routing" && Traffic.ready) doPlan(st.first ? "init" : "re"), st.first = false;
+    if(st.R){
+      const R = st.R;
+      let p = project(R, m.x, m.z, st.prog - 40, st.prog + 160);
+      if(p.lat > 22){ const g = project(R, m.x, m.z, 0, R.total); if(g.lat < p.lat) p = g; }
+      st.lat = p.lat;
+      if(p.lat <= 22){ st.offT = 0; st.joined = true; if(p.arc > st.prog - 30) { if(Math.abs(p.arc - st.prog) > 0.2) st.dirty = true; st.prog = p.arc; } }
+      else st.offT += step;
+      // まだ道路に乗っていない間（駐車場・敷地から出る途中）は「外れた」と数えない（40 秒たっても乗れなければ探し直す）
+      if(!st.joined && Math.hypot(m.x - R.px0, m.z - R.pz0) < R.legSL + 90 && S.t - st.tPlan < 40) st.offT = 0;
+      // 逆走
+      const tg = tangentAt(R, st.prog), hd = [Math.sin(m.yaw), Math.cos(m.yaw)], cosH = tg[0] * hd[0] + tg[1] * hd[1];
+      if(m.v > 3 && cosH < -0.45 && p.lat < 14) st.wrongT += step; else st.wrongT = Math.max(0, st.wrongT - step * 2);
+      if((st.offT > 2.0 || (p.lat > 70 && st.offT > 0.5)) && S.t - st.tPlan > 3.5){ st.offT = 0; doPlan("off"); }
+      else if(st.wrongT > 2.5 && S.t - st.tPlan > 3.5){ st.wrongT = 0; doPlan("wrong"); }
+      // 曲がり角の更新・音声
+      while(st.mi < R.man.length - 1 && R.man[st.mi].d1 < st.prog + 4) st.mi++;
+      const mv = R.man[st.mi]; if(mv){ announce(mv, Math.max(0, mv.d - st.prog), m.v); }
+    }
+    // 到着
+    const dT = Math.hypot(st.target.x - m.x, st.target.z - m.z);
+    if(st.state !== "arrived" && dT < (st.target.r || 40) && (st.src !== "auto" || dT < 30)){
+      if(st.src === "auto"){ if(st.state !== "near"){ st.state = "near"; } }
+      else { st.state = "arrived"; st.arrT = 0; Voice.say("目的地周辺です。案内を終了します。"); st.dirty = true; Snd.blip("done"); }
+    }
+    if(st.state === "arrived"){ st.arrT += step; if(st.arrT > 5){ clear(); return; } }
+    updateRibbons(step);
+    if(st.src === "user") pinShow(st.target); else pinHide();
+    uiAcc += step; if(uiAcc >= 0.15 || st.dirty){ uiAcc = 0; st.dirty = false; ui.render(m, dT); }
+  }
+
+  /* ミニマップ用: 経路の点（x,z の列）。進行位置の少し後ろから d 先まで */
+  function mapPoly(ahead){
+    const R = st.R; if(!R || !carOn()) return null; const out = [], d0 = Math.max(0, st.prog - 30), d1 = Math.min(R.total, st.prog + (ahead || 3000));
+    const step = Math.max(6, (d1 - d0) / 260);
+    for(let d = d0; d <= d1 + 0.01; d += step){ const p = R.ptAt(d); out.push(p[0], p[1]); }
+    return out;
+  }
+
+  /* ================= 検索 ================= */
+  const kataToHira = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+  const nk = (s) => kataToHira(String(s).normalize("NFKC").toLowerCase()).replace(/[\s・･\-－ー]/g, "");
+  const READ = [["岡山駅", "おかやまえき"], ["岡山城", "おかやまじょう うじょう からすじょう"], ["後楽園", "こうらくえん"], ["岡山大学", "おかやまだいがく"], ["県庁", "けんちょう"], ["市役所", "しやくしょ"], ["市民病院", "しみんびょういん"], ["大学病院", "だいがくびょういん"], ["赤十字", "せきじゅうじ"], ["川崎医科", "かわさきいか"], ["ハレノワ", "はれのわ"], ["オリエント", "おりえんと"], ["天満屋", "てんまや"], ["高島屋", "たかしまや"], ["北長瀬", "きたながせ"], ["大元", "おおもと"], ["西川原", "にしがわら"], ["法界院", "ほうかいいん"], ["備前三門", "びぜんみかど"], ["大安寺", "だいあんじ"], ["備前西市", "びぜんにしいち"], ["高島", "たかしま"], ["東岡山", "ひがしおかやま"], ["備前原", "びぜんはら"], ["津島", "つしま"], ["表町", "おもてちょう"], ["動物園", "どうぶつえん"], ["東山", "ひがしやま"], ["清輝橋", "せいきばし"], ["柳川", "やながわ"], ["城下", "しろした"], ["西川", "にしがわ"], ["岡南", "こうなん"], ["青江", "あおえ"], ["大供", "おおとも"], ["奉還町", "ほうかんちょう"], ["中山下", "なかさんげ"], ["下石井", "しもいしい"], ["野田", "のだ"], ["平井", "ひらい"], ["南方", "みなみがた"], ["丸の内", "まるのうち"], ["駅", "えき"], ["病院", "びょういん"], ["学校", "がっこう"], ["小学校", "しょうがっこう"], ["中学", "ちゅうがく"], ["郵便局", "ゆうびんきょく"], ["公園", "こうえん"], ["神社", "じんじゃ"], ["美術館", "びじゅつかん"], ["博物館", "はくぶつかん"]];
+  function buildIndex(){
+    // k1 = 名前、kr = 名前の中の語（岡山駅 など）をひらがなに置き換えたもの（「おかやまえき」で始まる名前も先頭一致にするため）、k = 検索に使う全部
+    IDX = POI.p.map(([n, c, x, z]) => { const k1 = nk(n); let kr = k1, ex = ""; for(const [a, b] of READ) if(n.includes(a)){ kr = kr.split(nk(a)).join(nk(b.split(" ")[0])); ex += " " + nk(b); } return { n, c, x, z, k1, kr, k: k1 + " " + kr + ex }; });
+  }
+  fetch("data/poi.json").then((r) => r.json()).then((j) => { POI = j; buildIndex(); }).catch((e) => { console.warn("poi", e); });
+  const catName = (c) => (POI && POI.cats[c]) || "";
+  function search(q, cat){
+    if(!IDX) return []; const m = me(), out = [];
+    if(cat === "taxi"){ if(!POI.taxi) return out; for(const s of POI.taxi){ out.push({ n: s[2], c: -1, x: s[0], z: s[1], d: Math.hypot(s[0] - m.x, s[1] - m.z), label: "タクシー乗り場" }); } out.sort((a, b) => a.d - b.d); return out.slice(0, 30); }
+    if(cat !== undefined && cat !== null && cat >= 0){ for(const it of IDX) if(it.c === cat){ out.push({ n: it.n, c: it.c, x: it.x, z: it.z, d: Math.hypot(it.x - m.x, it.z - m.z) }); } out.sort((a, b) => a.d - b.d); return out.slice(0, 30); }
+    const k = nk(q || ""); if(!k) return out;
+    for(const it of IDX){
+      if(it.k.indexOf(k) < 0) continue; const head = it.k1.startsWith(k) || it.kr.startsWith(k); if(k.length === 1 && !head) continue;
+      let sc = head ? ((it.k1 === k || it.kr === k) ? -1 : 0) : 1;   // 完全一致 → 先頭一致 → 途中に含む
+      sc += (it.c === 0 ? -0.35 : it.c === 14 ? 0.4 : it.c === 9 ? 0.2 : 0) + it.n.length * 0.01;       // 駅を前に・町やコンビニを後ろに・短い名前を前に
+      out.push({ n: it.n, c: it.c, x: it.x, z: it.z, d: Math.hypot(it.x - m.x, it.z - m.z), sc }); }
+    out.sort((a, b) => (a.sc - b.sc) || (a.d - b.d)); return out.slice(0, 40);
+  }
+  /* 地図の点（タップした場所）の呼び名: 近い施設（60m 以内）、無ければ町名・道路名 */
+  function nameAt(x, z){
+    let best = null, bd = 70; if(IDX) for(const it of IDX){ if(it.c === 14) continue; const d = Math.hypot(it.x - x, it.z - z); if(d < bd){ bd = d; best = it; } }
+    if(best) return best.n;
+    const L = Loc.at ? Loc.at(x, z) : null; if(L) return (L.road ? L.road + "沿い（" : "") + (L.town || "") + (L.road ? "）" : "") + "付近";
+    return "選んだ場所";
+  }
+
+  /* ================= 画面（案内の帯・検索パネル・大きな地図）================= */
+  const ui = (() => {
+    const css = `
+.navb{ position:fixed; z-index:12; left:50%; top:calc(58px + env(safe-area-inset-top,0px)); transform:translateX(-50%); width:min(392px, calc(100% - 24px)); display:none; background:rgba(20,17,12,.92); border:1px solid var(--line,#5a4a2a); border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.45); backdrop-filter:blur(5px); color:var(--cream,#f1ead9); font-family:inherit; }
+.navb.on{ display:block; }
+.navb-main{ display:grid; grid-template-columns:62px 1fr; gap:10px; align-items:center; padding:8px 10px 6px; }
+.navb-main canvas{ width:62px; height:62px; border-radius:10px; background:#0d5c3a; display:block; box-shadow:inset 0 0 0 2px rgba(255,255,255,.55); }
+.navb-t b{ display:block; font-size:28px; line-height:1.05; color:#fff; font-variant-numeric:tabular-nums; letter-spacing:.01em; }
+.navb-t span{ display:block; font-size:15px; font-weight:700; color:var(--amber,#ffb02e); margin-top:1px; }
+.navb-t small{ display:block; font-size:11.5px; color:#b9ae94; min-height:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.navb-sub{ display:flex; gap:10px; align-items:baseline; padding:5px 12px 6px; border-top:1px solid rgba(201,168,106,.25); font-size:12px; color:#d6cba9; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.navb-sub #navb-to{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; color:#fff; font-weight:700; }
+.navb-sub b{ color:#fff; }
+.navb-btns{ display:flex; gap:6px; padding:0 10px 8px; }
+.navb-btns button{ flex:1; font-family:inherit; font-size:11.5px; color:#cfc5ac; background:transparent; border:1px solid var(--line,#5a4a2a); border-radius:4px; padding:4px 6px; cursor:pointer; }
+.navb-btns button:hover{ border-color:var(--amber,#ffb02e); color:var(--amber,#ffb02e); } .navb-btns button.off{ opacity:.55; }
+.navb.arrived .navb-main canvas{ background:#8a1d4a; } .navb.fail .navb-main canvas{ background:#5a4a2a; }
+.navb.auto .navb-btns #navb-stop{ display:none; }
+body.nav-on .qtoast{ top:calc(212px + env(safe-area-inset-top,0px)); max-width:min(400px, max(220px, calc(100vw - 636px))); }
+@media (max-width:900px){ body.nav-on .qhud, body.nav-on .navi{ top:calc(206px + env(safe-area-inset-top,0px)); } .navb{ width:min(392px, calc(100% - 24px)); } }
+@media (max-width:619px){ body.nav-on .navi{ transform:scale(.62); transform-origin:top right; top:calc(174px + env(safe-area-inset-top,0px)); } body.nav-on .qhud{ top:calc(174px + env(safe-area-inset-top,0px)); }
+  .qtoast{ left:12px; width:calc(100% - 24px); max-width:none; box-sizing:border-box; transform:translate(0,-8px); } .qtoast.on{ transform:translate(0,0); }
+  body.nav-on .qtoast{ top:auto; bottom:calc(206px + env(safe-area-inset-bottom,0px)); max-width:none; }
+  .navb:not(.open) .navb-btns{ display:none; } .navb.open{ z-index:14; } .navb-main{ cursor:pointer; } .navb-sub::after{ content:"⋯"; color:#b9ae94; font-weight:700; } .navb.open .navb-sub::after{ content:"▲"; font-size:10px; }
+  #carui .topright .iconbtn small{ display:none; } .navbtn{ padding:0 9px; } }
+.navbtn{ font-family:inherit; width:auto !important; padding:0 12px; white-space:nowrap; font-size:13px; } .navbtn small{ opacity:.6; margin-left:4px; }
+.navp{ position:fixed; inset:0; z-index:30; display:none; align-items:flex-start; justify-content:center; padding:calc(54px + env(safe-area-inset-top,0px)) 12px 12px; background:rgba(8,6,3,.55); }
+.navp.on{ display:flex; }
+.navp-card{ width:min(520px,100%); max-height:100%; display:flex; flex-direction:column; background:rgba(24,20,14,.97); border:1px solid var(--line,#5a4a2a); border-radius:10px; box-shadow:0 18px 50px rgba(0,0,0,.6); color:var(--cream,#f1ead9); overflow:hidden; }
+.navp-h{ display:flex; align-items:center; gap:8px; padding:11px 14px 8px; } .navp-h b{ font-size:16px; flex:1; } .navp-h small{ font-size:10px; letter-spacing:.14em; color:var(--brass,#c9a86a); }
+.navp-h button, .navp-opts button, .navp-row button, .navp-cur button{ font-family:inherit; cursor:pointer; }
+.navp-x{ font-size:18px; color:#cfc5ac; background:transparent; border:1px solid var(--line,#5a4a2a); border-radius:4px; width:30px; height:30px; }
+.navp-in{ display:flex; gap:8px; padding:0 14px 8px; } .navp-in input{ flex:1; min-width:0; font-family:inherit; font-size:16px; color:#fff; background:#0f0c08; border:1px solid var(--line,#5a4a2a); border-radius:6px; padding:9px 11px; outline:none; } .navp-in input:focus{ border-color:var(--amber,#ffb02e); }
+.navp-in button{ font-size:13px; font-weight:700; color:#1a1408; background:var(--amber,#ffb02e); border:0; border-radius:6px; padding:0 12px; }
+.navp-chips{ display:flex; flex-wrap:wrap; gap:6px; padding:0 14px 8px; } .navp-chips button{ font-size:12px; color:#e6dcc0; background:#2a2418; border:1px solid var(--line,#5a4a2a); border-radius:14px; padding:4px 10px; } .navp-chips button.on{ background:#4a3a18; border-color:var(--amber,#ffb02e); color:var(--amber,#ffb02e); }
+.navp-cur{ margin:0 14px 8px; padding:8px 10px; border:1px solid var(--line,#5a4a2a); border-radius:6px; background:rgba(255,176,46,.08); font-size:13px; display:none; } .navp-cur.on{ display:block; } .navp-cur b{ color:#fff; } .navp-cur small{ display:block; color:#b9ae94; margin-top:2px; } .navp-cur button{ margin-top:6px; font-size:12px; color:#ffd0bd; background:transparent; border:1px solid #ff8a5c; border-radius:4px; padding:3px 10px; }
+.navp-lbl{ padding:2px 14px 4px; font-size:11px; color:#a99f88; letter-spacing:.06em; }
+.navp-res{ overflow:auto; padding:0 8px 6px; flex:1; min-height:60px; max-height:46vh; }
+.navp-row{ display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; padding:7px 8px; border-radius:6px; cursor:pointer; } .navp-row:hover{ background:rgba(255,176,46,.1); }
+.navp-row .nm{ font-size:14px; color:#fff; font-weight:700; } .navp-row .sb{ font-size:11px; color:#a99f88; } .navp-row .ds{ font-size:12px; color:var(--amber,#ffb02e); font-variant-numeric:tabular-nums; text-align:right; }
+.navp-empty{ padding:10px 14px; font-size:12.5px; color:#a99f88; }
+.navp-opts{ display:flex; gap:8px; padding:8px 14px 12px; border-top:1px solid rgba(201,168,106,.2); flex-wrap:wrap; } .navp-opts button{ font-size:12px; color:#cfc5ac; background:transparent; border:1px solid var(--line,#5a4a2a); border-radius:4px; padding:5px 10px; } .navp-opts button.on{ color:var(--amber,#ffb02e); border-color:var(--amber,#ffb02e); }
+.navmap{ position:fixed; inset:0; z-index:31; display:none; background:#cfcab8; }
+.navmap.on{ display:block; } .navmap canvas{ position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:grab; image-rendering:auto; }
+.navmap-top{ position:absolute; left:10px; right:10px; top:calc(10px + env(safe-area-inset-top,0px)); display:flex; gap:8px; align-items:center; pointer-events:none; }
+.navmap-top > *{ pointer-events:auto; } .navmap-top .ttl{ background:rgba(23,20,15,.9); color:var(--cream,#f1ead9); border:1px solid var(--line,#5a4a2a); border-radius:6px; padding:7px 12px; font-size:13px; font-weight:700; flex:1; max-width:420px; }
+.navmap-top button, .navmap-side button{ font-family:inherit; font-size:15px; font-weight:700; color:var(--cream,#f1ead9); background:rgba(23,20,15,.92); border:1px solid var(--line,#5a4a2a); border-radius:6px; min-width:38px; height:38px; cursor:pointer; padding:0 10px; }
+.navmap-side{ position:absolute; right:10px; top:calc(62px + env(safe-area-inset-top,0px)); display:flex; flex-direction:column; gap:6px; }
+.navmap-sheet{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(14px + env(safe-area-inset-bottom,0px)); width:min(460px, calc(100% - 20px)); background:rgba(24,20,14,.97); border:1px solid var(--line,#5a4a2a); border-radius:10px; padding:12px 14px; color:var(--cream,#f1ead9); display:none; box-shadow:0 12px 40px rgba(0,0,0,.55); }
+.navmap-sheet.on{ display:block; } .navmap-sheet b{ font-size:16px; display:block; } .navmap-sheet small{ color:#b9ae94; font-size:12px; } .navmap-sheet .bt{ display:flex; gap:8px; margin-top:8px; } .navmap-sheet button{ flex:1; font-family:inherit; font-size:14px; font-weight:700; border-radius:6px; padding:9px; cursor:pointer; border:1px solid var(--line,#5a4a2a); color:#e6dcc0; background:#2a2418; } .navmap-sheet button.go{ background:var(--amber,#ffb02e); color:#1a1408; border:0; }
+`;
+    let built = false, banner, ic, panel, mapEl;
+    function dom(){
+      if(built) return; built = true;
+      const sty = document.createElement("style"); sty.textContent = css; document.head.appendChild(sty);
+      const div = document.createElement("div");
+      div.innerHTML = `
+<div class="navb" id="navb" role="status" aria-live="polite"><div class="navb-main"><canvas id="navb-ic" width="124" height="124"></canvas><div class="navb-t"><b id="navb-dist">--</b><span id="navb-act">--</span><small id="navb-road"></small></div></div>
+<div class="navb-sub"><span id="navb-to">目的地</span><span id="navb-rem">--</span><span id="navb-eta">--</span><span id="navb-arr">--</span></div>
+<div class="navb-btns"><button type="button" id="navb-voice">音声 ON</button><button type="button" id="navb-line">青い線 ON</button><button type="button" id="navb-map">地図</button><button type="button" id="navb-set">目的地</button><button type="button" id="navb-stop">案内終了</button></div></div>
+<div class="navp" id="navp"><div class="navp-card"><div class="navp-h"><b>ナビ</b><small>DESTINATION</small><button class="navp-x" id="navp-x" type="button" aria-label="閉じる">×</button></div>
+<div class="navp-cur" id="navp-cur"></div>
+<div class="navp-in"><input id="navp-q" type="search" placeholder="目的地（例: 岡山城、イオンモール、津島、北長瀬駅）" autocomplete="off" enterkeyhint="search"><button type="button" id="navp-map">地図で選ぶ</button></div>
+<div class="navp-chips" id="navp-chips"></div><div class="navp-lbl" id="navp-lbl"></div><div class="navp-res" id="navp-res"></div>
+<div class="navp-opts"><button type="button" id="navp-voice">音声案内</button><button type="button" id="navp-line">道路の青い線</button></div></div></div>
+<div class="navmap" id="navmap"><canvas id="navmap-cv"></canvas><div class="navmap-top"><button type="button" id="navmap-x">← もどる</button><div class="ttl" id="navmap-ttl">地図をタップして目的地を選ぶ</div></div>
+<div class="navmap-side"><button type="button" id="navmap-zi">＋</button><button type="button" id="navmap-zo">－</button><button type="button" id="navmap-me" title="いまの場所">⌖</button></div>
+<div class="navmap-sheet" id="navmap-sheet"><b id="navmap-sn">--</b><small id="navmap-sd">--</small><div class="bt"><button type="button" id="navmap-cancel">やめる</button><button type="button" class="go" id="navmap-go">ここへ案内</button></div></div></div>`;
+      while(div.firstChild) document.body.appendChild(div.firstChild);
+      banner = $("navb"); ic = $("navb-ic").getContext("2d"); panel = $("navp"); mapEl = $("navmap");
+      banner.addEventListener("click", (e) => { if(!matchMedia("(max-width:619px)").matches) return; const b = e.target.closest && e.target.closest("button"); if(b){ if(b.id !== "navb-voice" && b.id !== "navb-line") banner.classList.remove("open"); return; } banner.classList.toggle("open"); });
+      // 車の画面のボタン
+      const tr = document.querySelector("#carui .topright");
+      if(tr){ const b = document.createElement("button"); b.className = "iconbtn navbtn"; b.id = "nav-btn"; b.type = "button"; b.title = "ナビ（G）"; b.innerHTML = "ナビ <small>G</small>"; tr.insertBefore(b, tr.firstChild); b.addEventListener("click", () => openPanel()); }
+      $("navb-voice").addEventListener("click", () => { OPT.voice = !OPT.voice; if(!OPT.voice) Voice.stop(); savePref(); syncOpts(); });
+      $("navb-line").addEventListener("click", () => { OPT.line = !OPT.line; savePref(); syncOpts(); ribDirty(); });
+      $("navb-map").addEventListener("click", () => openMap(false));
+      $("navb-set").addEventListener("click", () => openPanel());
+      $("navb-stop").addEventListener("click", () => { clear(); });
+      $("navp-x").addEventListener("click", closePanel);
+      $("navp-map").addEventListener("click", () => { closePanel(); openMap(true); });
+      $("navp-voice").addEventListener("click", () => { OPT.voice = !OPT.voice; if(!OPT.voice) Voice.stop(); savePref(); syncOpts(); });
+      $("navp-line").addEventListener("click", () => { OPT.line = !OPT.line; savePref(); syncOpts(); ribDirty(); });
+      panel.addEventListener("click", (e) => { if(e.target === panel) closePanel(); });
+      const q = $("navp-q"); q.addEventListener("input", () => renderList()); q.addEventListener("keydown", (e) => { e.stopPropagation(); if(e.key === "Enter"){ const r = listNow[0]; if(r) choose(r); } if(e.key === "Escape") closePanel(); }); q.addEventListener("keyup", (e) => e.stopPropagation());
+      const ch = $("navp-chips"); ch.innerHTML = "";
+      for(const [lab, c] of [["タクシー乗り場", "taxi"], ["駅", 0], ["病院", 2], ["コンビニ", 9], ["スーパー", 8], ["商業施設", 7], ["ホテル", 10], ["観光・文化", 11], ["公園・運動", 12], ["学校", 4], ["大学・短大", 3], ["公共施設", 5], ["郵便局", 6], ["寺社", 13], ["バス・電停", 1]]){
+        const b = document.createElement("button"); b.type = "button"; b.textContent = lab; b.dataset.c = c; b.addEventListener("click", () => { catSel = catSel === c ? null : c; $("navp-q").value = ""; renderList(); }); ch.appendChild(b); }
+      addEventListener("keydown", (e) => { if(e.repeat || e.ctrlKey || e.metaKey || e.altKey) return; const a = document.activeElement; if(a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA")) return;
+        if((e.key === "g" || e.key === "G") && carOn()){ if(mapEl.classList.contains("on")) closeMap(); else if(panel.classList.contains("on")) closePanel(); else openPanel(); }
+        else if(e.key === "Escape"){ if(mapEl.classList.contains("on")) closeMap(); else if(panel.classList.contains("on")) closePanel(); } });
+      syncOpts();
+    }
+    function savePref(){ if(Prefs.setM) Prefs.setM("nav", { voice: OPT.voice, line: OPT.line }); }
+    function loadPref(){ if(Prefs.getM){ const o = Prefs.getM("nav", null); if(o){ OPT.voice = o.voice !== false; OPT.line = o.line !== false; } } }
+    function syncOpts(){ const t = (id, on, a, b) => { const e = $(id); if(e){ e.textContent = a + (on ? " ON" : " OFF"); e.classList.toggle("on", on); e.classList.toggle("off", !on); } };
+      t("navb-voice", OPT.voice, "音声", ""); t("navb-line", OPT.line, "青い線", ""); t("navp-voice", OPT.voice, "音声案内", ""); t("navp-line", OPT.line, "道路の青い線", ""); }
+    let catSel = null, listNow = [];
+    function choose(r){
+      if(r.dst !== undefined){ /* 最近 */ }
+      setTarget({ x: r.x, z: r.z, name: r.n || r.name }, "user"); closePanel(); closeMap();
+    }
+    function renderList(){
+      const q = $("navp-q").value.trim(), res = $("navp-res"), lbl = $("navp-lbl");
+      document.querySelectorAll("#navp-chips button").forEach((b) => b.classList.toggle("on", String(b.dataset.c) === String(catSel) && catSel !== null));
+      let L = [], title = "";
+      if(!POI){ res.innerHTML = '<div class="navp-empty">地点データを読み込み中です…</div>'; lbl.textContent = ""; return; }
+      if(q){ L = search(q); title = "検索結果 " + L.length + " 件（名前が近いものを先に）"; }
+      else if(catSel !== null){ L = search("", catSel === "taxi" ? "taxi" : +catSel); title = (catSel === "taxi" ? "タクシー乗り場" : catName(+catSel)) + "（いまの場所から近い順）"; }
+      else { const R = Prefs.getM ? Prefs.getM("navRecent", []) : []; L = (R || []).map((r) => ({ n: r.name, x: r.x, z: r.z, c: -2, d: Math.hypot(r.x - Car.C.x, r.z - Car.C.z) })); title = L.length ? "最近の目的地" : ""; }
+      listNow = L; lbl.textContent = title;
+      if(!L.length){ res.innerHTML = '<div class="navp-empty">' + (q ? "見つかりませんでした。別の言い方（駅名・町名・施設名）か、「地図で選ぶ」を使ってください。" : "名前を入れるか、下の分類（駅・病院・コンビニなど）を押してください。") + "</div>"; return; }
+      res.innerHTML = L.map((r, i) => '<div class="navp-row" data-i="' + i + '"><div><div class="nm">' + esc(r.n) + '</div><div class="sb">' + esc(r.label || (r.c >= 0 ? catName(r.c) : "最近")) + '</div></div><div class="ds">' + fmtD(r.d) + '</div></div>').join("");
+      res.querySelectorAll(".navp-row").forEach((e) => e.addEventListener("click", () => choose(listNow[+e.dataset.i])));
+    }
+    function openPanel(){
+      dom(); if(!carOn()) return; closeMap(); panel.classList.add("on");
+      const cur = $("navp-cur");
+      if(st.target){ cur.classList.add("on"); cur.innerHTML = (st.src === "auto" ? "ミッションの目的地へ案内中: " : "案内中: ") + "<b>" + esc(st.target.name) + "</b><small>あと " + fmtD(remDist()) + "・約 " + fmtMin(remTime()) + "</small>" + (st.src === "auto" ? "" : '<br><button type="button" id="navp-stop">案内を終了</button>'); const b = $("navp-stop"); if(b) b.addEventListener("click", () => { clear(); closePanel(); }); }
+      else cur.classList.remove("on");
+      catSel = null; $("navp-q").value = ""; renderList(); syncOpts();
+      if(!matchMedia("(pointer:coarse)").matches) setTimeout(() => $("navp-q").focus(), 30);
+    }
+    function closePanel(){ if(panel) panel.classList.remove("on"); const a = document.activeElement; if(a && a.blur && a.tagName === "INPUT") a.blur(); }
+    // ----- 案内の帯 -----
+    function icon(type){
+      const g = ic, W = 124, c = W / 2; g.clearRect(0, 0, W, W); g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = "#fff"; g.fillStyle = "#fff"; g.lineWidth = 15;
+      if(type === "arrive"){ g.lineWidth = 8; g.beginPath(); g.moveTo(38, 100); g.lineTo(38, 24); g.stroke(); g.beginPath(); g.moveTo(40, 26); g.lineTo(96, 26); g.lineTo(80, 46); g.lineTo(96, 66); g.lineTo(40, 66); g.closePath(); g.fill(); return; }
+      if(type === "uturn"){ g.beginPath(); g.moveTo(82, 104); g.lineTo(82, 52); g.quadraticCurveTo(82, 22, 52, 22); g.quadraticCurveTo(24, 22, 24, 52); g.lineTo(24, 70); g.stroke(); g.beginPath(); g.moveTo(8, 66); g.lineTo(24, 92); g.lineTo(40, 66); g.closePath(); g.fill(); return; }
+      let a = 0; const t = { straight: 0, slightL: 40, slightR: -40, left: 90, right: -90, sharpL: 140, sharpR: -140 }[type] || 0; a = t * D2R;
+      const bx = c, by = 108, mx = c, my = 62, L = 46, tx = mx - Math.sin(a) * L, ty = my - Math.cos(a) * L;
+      g.beginPath(); g.moveTo(bx, by); g.lineTo(mx, my); g.lineTo(tx, ty); g.stroke();
+      const hx = tx - Math.sin(a) * 4, hy = ty - Math.cos(a) * 4, ux = -Math.sin(a), uy = -Math.cos(a), px = -uy, py = ux;
+      g.beginPath(); g.moveTo(hx + ux * 14, hy + uy * 14); g.lineTo(hx + px * 17, hy + py * 17); g.lineTo(hx - px * 17, hy - py * 17); g.closePath(); g.fill();
+    }
+    let lastIc = "";
+    function render(m, dT){
+      dom(); const R = st.R; banner.classList.add("on"); document.body.classList.add("nav-on");
+      banner.classList.toggle("auto", st.src === "auto"); banner.classList.toggle("arrived", st.state === "arrived"); banner.classList.toggle("fail", st.fail);
+      $("navb-to").textContent = st.target ? st.target.name : "";
+      let type = "straight", dist = 0, act = "道なり", road = "";
+      if(st.fail){ type = "straight"; dist = dT; act = "直線で案内"; road = "道路のルートが見つかりません"; }
+      else if(st.state === "arrived"){ type = "arrive"; dist = 0; act = "到着しました"; }
+      else if(R){ const mv = R.man[st.mi]; if(mv){ type = mv.type; dist = Math.max(0, mv.d - st.prog); act = mv.type === "arrive" ? "目的地周辺" : ACT[mv.type][0]; road = mv.type === "arrive" ? "" : (mv.to ? "→ " + mv.to : ""); if(mv.type === "arrive" && R.legE) road = "この先は道路を外れます（点線）"; }
+        if(R.man[st.mi] && R.man[st.mi].type !== "arrive" && dist > 600 && !road) road = "しばらく道なり"; }
+      else { type = "straight"; act = "ルートを探しています"; dist = dT; }
+      if(type !== lastIc){ lastIc = type; icon(type); }
+      $("navb-dist").textContent = type === "arrive" && st.state === "arrived" ? "" : fmtD(dist);
+      $("navb-act").textContent = act; $("navb-road").textContent = road || (Loc.last && Loc.last.road ? "いま: " + Loc.last.road : "");
+      const rd = remDist(), rt = remTime(); $("navb-rem").innerHTML = "あと <b>" + fmtD(rd) + "</b>"; $("navb-eta").innerHTML = "<b>" + fmtMin(rt) + "</b>"; $("navb-arr").innerHTML = "到着 <b>" + hhmm((S.clock || 0) + rt) + "</b>";
+    }
+    function show(on){ dom(); if(!on){ banner.classList.remove("on"); document.body.classList.remove("nav-on"); } else { banner.classList.add("on"); document.body.classList.add("nav-on"); } lastIc = ""; st.dirty = true; }
+
+    // ----- 大きな地図 -----
+    const MZ = [2, 4, 8, 16, 32, 64]; let mz = 2, mcx = 0, mcz = 0, base = null, pick = null, pdown = null, offX = 0, offZ = 0, picking = false;
+    const bc = document.createElement("canvas"), bg = bc.getContext("2d");
+    function paintBase(cv){
+      const G = Car.G; const w = cv.width, h = cv.height, mpp = MZ[mz]; bc.width = w; bc.height = h; if(!G){ bg.fillStyle = "#d8d3c2"; bg.fillRect(0, 0, w, h); return; }
+      const sub = mpp <= 3 ? 1 : mpp <= 6 ? 2 : 3, n2 = sub * sub, Wl = S._WL, img = bg.createImageData(w, h), px = new Uint32Array(img.data.buffer);
+      const rgba = (r, g, b, a) => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0, C_ROAD = rgba(255, 255, 255, 255), C_SIDE = rgba(236, 231, 218, 255), C_BLD = rgba(176, 168, 154, 255), C_WATER = rgba(135, 187, 228, 255), C_BG = rgba(216, 211, 194, 255);
+      const x0 = mcx - w / 2 * mpp, z0 = mcz - h / 2 * mpp;
+      for(let j = 0; j < h; j++) for(let i = 0; i < w; i++){
+        let road = 0, bld = 0, wat = 0, side = 0;
+        for(let sj = 0; sj < sub; sj++) for(let si = 0; si < sub; si++){
+          const x = x0 + (i + (si + 0.5) / sub) * mpp, z = z0 + (j + (sj + 0.5) / sub) * mpp, ci = Math.floor((x - G.x0) / G.step), cj = Math.floor((z - G.z0) / G.step);
+          if(ci >= 0 && cj >= 0 && ci < G.nx && cj < G.nz){ const k = cj * G.nx + ci, kd = G.K[k];
+            if(kd === 1) road++; else if(kd === 9) bld++; else if(kd > 0) side++;
+            if(Wl && kd === 0){ const wi = Math.round((x - Wl.x0) / Wl.step), wj = Math.round((z - Wl.z0) / Wl.step); if(wi >= 0 && wj >= 0 && wi < Wl.nx && wj < Wl.nz){ const v = Wl.A[wj * Wl.nx + wi]; if(v !== -32768 && v > G.H[k] + 30) wat++; } } }
+        }
+        px[j * w + i] = road ? C_ROAD : bld * 2 >= n2 ? C_BLD : wat * 2 >= n2 ? C_WATER : side ? C_SIDE : C_BG;
+      }
+      bg.putImageData(img, 0, 0);
+      const W2S = (x, z) => [(x - x0) / mpp, (z - z0) / mpp];
+      const stroke = (arr, col, lw, dash) => { bg.strokeStyle = col; bg.lineWidth = lw; bg.setLineDash(dash || []); bg.beginPath(); let pen = false; for(const [x, z] of arr){ const q = W2S(x, z); if(q[0] < -50 || q[0] > w + 50 || q[1] < -50 || q[1] > h + 50){ pen = false; continue; } if(pen) bg.lineTo(q[0], q[1]); else { bg.moveTo(q[0], q[1]); pen = true; } } bg.stroke(); bg.setLineDash([]); };
+      try{
+        if(MW.ready) for(const c of MW.chains){ const pts = []; const stp = Math.max(1, Math.round(mpp / 5)); for(let i = 0; i < c.n; i += stp) pts.push([c.X[i], c.Z[i]]); stroke(pts, c.kind === "main" ? "#e29a2e" : "#e8b866", Math.max(1.5, (c.kind === "main" ? 14 : 7) / mpp)); }
+        if(JR.ready) for(const L of JR.lines){ const pts = []; const stp = Math.max(1, Math.round(mpp / 2)); for(let i = 0; i < L.n; i += stp) pts.push([L.p[3 * i], L.p[3 * i + 2]]); stroke(pts, L.hs ? "#2a62b5" : "#5a5750", Math.max(1.4, (L.hs ? 7 : 4) / mpp)); }
+        for(const k in S.routes){ const r = S.routes[k]; if(!r || !r.track) continue; const pts = []; const stp = Math.max(1, Math.round(mpp / 3)); for(let i = 0; i < r.track.length; i += stp) pts.push([r.track[i][0], r.track[i][2]]); stroke(pts, "#b3407a", Math.max(1.4, 5 / mpp)); }
+      }catch(e){}
+      base = { cx: mcx, cz: mcz, mz, w, h };
+    }
+    const LABELS = { 0: 12, 1: 5, 2: 3, 3: 2, 7: 3, 11: 3, 13: 1, 12: 1.5, 10: 1.5, 5: 1.5, 8: 1, 9: 0.6, 4: 1, 6: 0.8, 14: 0.5 };
+    function redraw(){
+      const cv = $("navmap-cv"), g = cv.getContext("2d"), w = cv.width, h = cv.height, mpp = MZ[mz]; if(!base) return;
+      g.fillStyle = "#cfcab8"; g.fillRect(0, 0, w, h);
+      const ox = (base.cx - mcx) / MZ[base.mz] * (MZ[base.mz] / mpp), oz = (base.cz - mcz) / mpp; // 平行移動（拡大率が違う時は無効にして描き直す）
+      g.drawImage(bc, ox + offX, oz + offZ);
+      const sx = (x) => (x - mcx) / mpp + w / 2 + offX, sz = (z) => (z - mcz) / mpp + h / 2 + offZ;
+      // 経路
+      if(st.R){ const R = st.R; g.lineCap = "round"; g.lineJoin = "round"; const stp = Math.max(1, Math.round(mpp * 1.5 / 3));
+        for(const pass of [[9, "rgba(255,255,255,.95)"], [5, "#1c6df0"]]){ g.strokeStyle = pass[1]; g.lineWidth = pass[0]; g.beginPath(); let pen = false; for(let i = 0; i < R.n; i += stp){ const x = sx(R.X[i]), y = sz(R.Z[i]); if(pen) g.lineTo(x, y); else { g.moveTo(x, y); pen = true; } } g.lineTo(sx(R.X[R.n - 1]), sz(R.Z[R.n - 1])); g.stroke(); } }
+      // タクシー乗り場・地名
+      g.textBaseline = "middle"; g.font = "bold 12px sans-serif";
+      if(POI){
+        const lim = mpp <= 2 ? 0.5 : mpp <= 4 ? 1.5 : mpp <= 8 ? 3 : mpp <= 16 ? 6 : mpp <= 32 ? 12 : 99; const drawn = [];
+        const items = IDX.filter((it) => (LABELS[it.c] || 0) * 1 >= 0 && (LABELS[it.c] || 0) >= (mpp <= 2 ? 0 : mpp <= 4 ? 0.8 : mpp <= 8 ? 1.5 : mpp <= 16 ? 3 : 5) - (mpp <= 2 ? 99 : 0));
+        for(const it of items){ const x = sx(it.x), y = sz(it.z); if(x < -20 || x > w + 20 || y < -10 || y > h + 10) continue;
+          const box = [x - 4, y - 8, x + 4 + it.n.length * 12, y + 8]; if(drawn.some((b) => !(box[2] < b[0] || box[0] > b[2] || box[3] < b[1] || box[1] > b[3]))) continue; drawn.push(box);
+          g.fillStyle = "#c0392b"; g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fill(); g.lineWidth = 3; g.strokeStyle = "rgba(255,255,255,.92)"; g.strokeText(it.n, x + 7, y); g.fillStyle = "#3a2d12"; g.fillText(it.n, x + 7, y); }
+        if(mpp <= 32) for(const [ti, s] of POI.taxi.entries()){ const x = sx(s[0]), y = sz(s[1]); if(x < -20 || x > w + 20 || y < -20 || y > h + 20) continue; g.fillStyle = "#f2c230"; g.strokeStyle = "#1a1408"; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 8, 0, 7); g.fill(); g.stroke(); g.fillStyle = "#1a1408"; g.font = "bold 10px sans-serif"; g.textAlign = "center"; g.fillText("T", x, y + 0.5);
+          const cn = Taxi.standCount(ti); if(cn > 0){ g.fillStyle = "#e0342a"; g.strokeStyle = "#fff"; g.lineWidth = 2; g.beginPath(); g.arc(x + 9, y - 9, 7, 0, 7); g.fill(); g.stroke(); g.fillStyle = "#fff"; g.fillText(String(cn), x + 9, y - 8.5); }
+          g.textAlign = "left"; g.font = "bold 12px sans-serif"; }
+      }
+      // 目的地・ピン・いまの場所
+      const T = st.target; if(T){ drawPin(g, sx(T.x), sz(T.z), "#ff3d8b"); }
+      if(pick) drawPin(g, sx(pick.x), sz(pick.z), "#1c6df0");
+      const cx = sx(Car.C.x), cy = sz(Car.C.z); g.save(); g.translate(cx, cy); g.rotate(-(Car.C.yaw) + Math.PI); g.beginPath(); g.moveTo(0, -12); g.lineTo(8, 9); g.lineTo(0, 5); g.lineTo(-8, 9); g.closePath(); g.fillStyle = "#f0a020"; g.fill(); g.lineWidth = 2; g.strokeStyle = "#241a08"; g.stroke(); g.restore();
+    }
+    function drawPin(g, x, y, c){ g.save(); g.translate(x, y); g.beginPath(); g.moveTo(0, 0); g.bezierCurveTo(-14, -16, -12, -34, 0, -34); g.bezierCurveTo(12, -34, 14, -16, 0, 0); g.fillStyle = c; g.fill(); g.lineWidth = 2.5; g.strokeStyle = "#fff"; g.stroke(); g.beginPath(); g.arc(0, -22, 4.5, 0, 7); g.fillStyle = "#fff"; g.fill(); g.restore(); }
+    function sizeCv(){ const cv = $("navmap-cv"), w = Math.max(200, Math.ceil(innerWidth / 2)), h = Math.max(200, Math.ceil(innerHeight / 2)); if(cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; return true; } return false; }
+    function rebuild(){ sizeCv(); const cv = $("navmap-cv"); offX = 0; offZ = 0; paintBase(cv); redraw(); }
+    function openMap(pickMode){
+      dom(); if(!carOn()) return; closePanel(); mapEl.classList.add("on"); picking = !!pickMode; pick = null; $("navmap-sheet").classList.remove("on");
+      $("navmap-ttl").textContent = picking ? "地図をタップして目的地を選ぶ" : (st.target ? "案内中: " + st.target.name : "地図"); mz = 2; mcx = Car.C.x; mcz = Car.C.z;
+      if(st.R){ // 経路が入る縮尺
+        let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for(let i = 0; i < st.R.n; i += 4){ x0 = Math.min(x0, st.R.X[i]); x1 = Math.max(x1, st.R.X[i]); z0 = Math.min(z0, st.R.Z[i]); z1 = Math.max(z1, st.R.Z[i]); }
+        x0 = Math.min(x0, Car.C.x); x1 = Math.max(x1, Car.C.x); z0 = Math.min(z0, Car.C.z); z1 = Math.max(z1, Car.C.z); mcx = (x0 + x1) / 2; mcz = (z0 + z1) / 2;
+        const need = Math.max((x1 - x0) / (innerWidth / 2 * 0.8), (z1 - z0) / (innerHeight / 2 * 0.8)); mz = 0; while(mz < MZ.length - 1 && MZ[mz] < need) mz++; }
+      setTimeout(rebuild, 20);
+    }
+    function closeMap(){ if(mapEl) mapEl.classList.remove("on"); }
+    function mapBind(){
+      const cv = $("navmap-cv"); let drag = null;
+      const pos = (e) => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * cv.width, (e.clientY - r.top) / r.height * cv.height]; };
+      cv.addEventListener("pointerdown", (e) => { drag = { p: pos(e), moved: false }; try{ cv.setPointerCapture(e.pointerId); }catch(x){} cv.style.cursor = "grabbing"; });
+      cv.addEventListener("pointermove", (e) => { if(!drag) return; const p = pos(e), dx = p[0] - drag.p[0], dz = p[1] - drag.p[1]; if(Math.abs(dx) + Math.abs(dz) > 4) drag.moved = true; if(drag.moved){ offX = dx; offZ = dz; redraw(); } });
+      cv.addEventListener("pointerup", (e) => { cv.style.cursor = "grab"; if(!drag) return; const p = pos(e), mpp = MZ[mz];
+        if(drag.moved){ mcx -= offX * mpp; mcz -= offZ * mpp; offX = offZ = 0; paintBase(cv); redraw(); }
+        else { const x = mcx + (p[0] - cv.width / 2) * mpp, z = mcz + (p[1] - cv.height / 2) * mpp; // 近くの地名（タップの 22px 以内）を優先
+          let hit = null, hd = 26 * mpp / 2; if(IDX) for(const it of IDX){ if(it.c === 14) continue; const d = Math.hypot(it.x - x, it.z - z); if(d < hd){ hd = d; hit = it; } }
+          pick = hit ? { x: hit.x, z: hit.z, name: hit.n } : { x, z, name: nameAt(x, z) }; $("navmap-sn").textContent = pick.name; $("navmap-sd").textContent = "いまの場所から " + fmtD(Math.hypot(pick.x - Car.C.x, pick.z - Car.C.z)) + "（直線）"; $("navmap-sheet").classList.add("on"); redraw(); }
+        drag = null; });
+      cv.addEventListener("wheel", (e) => { e.preventDefault(); zoomMap(e.deltaY < 0 ? -1 : 1); }, { passive: false });
+      $("navmap-x").addEventListener("click", closeMap); $("navmap-zi").addEventListener("click", () => zoomMap(-1)); $("navmap-zo").addEventListener("click", () => zoomMap(1));
+      $("navmap-me").addEventListener("click", () => { mcx = Car.C.x; mcz = Car.C.z; rebuild(); });
+      $("navmap-cancel").addEventListener("click", () => { pick = null; $("navmap-sheet").classList.remove("on"); redraw(); });
+      $("navmap-go").addEventListener("click", () => { if(pick) setTarget({ x: pick.x, z: pick.z, name: pick.name }, "user"); closeMap(); });
+      addEventListener("resize", () => { if(mapEl.classList.contains("on")) rebuild(); });
+    }
+    function zoomMap(d){ const n = Math.max(0, Math.min(MZ.length - 1, mz + d)); if(n === mz) return; mz = n; rebuild(); }
+    function init(){ dom(); loadPref(); syncOpts(); mapBind(); }
+    return { dom, init, show, render, openPanel, closePanel, openMap, closeMap, syncOpts };
+  })();
+
+  return { tick, setTarget, clear, search, nameAt, plan, mapPoly, ui, OPT, st, get active(){ return !!st.target; }, get target(){ return st.target; }, get src(){ return st.src; }, get route(){ return st.R; }, remDist, remTime, Voice, catName, get POI(){ return POI; }, get ready(){ return !!graph(); }, astar, graph, project };
+})();
+
+Nav.ui.init();
+
+/* ---------------- v41.10: 信号無視・逆走の検出（車のミッション・タクシー共通）----------------
+   AI 車が走る車線網（Traffic.locate）の上で判定する。自分の車の前端が、信号のある車線の停止線（lane.sig.s）を「赤が 1 秒以上続いている間」に
+   2.2 m/s 以上で越えたら信号無視。進行方向と逆向きの車線を 3 秒以上走ったら逆走（その向きの車線が近くに無い時だけ）。
+   ※ OSM の車線網にある信号・向きだけが対象。駐車場の中・車線の無い道は判定しない。 */
+const Rules = (() => {
+  const subs = []; let prev = new Map(), wrongT = 0, cdRed = 0, cdWrong = 0, acc = 0;
+  const on = (fn) => subs.push(fn);
+  const emit = (kind, info) => { for(const f of subs){ try{ f(kind, info); }catch(e){ console.warn("rules", e); } } };
+  function reset(){ prev = new Map(); wrongT = 0; cdRed = 0; cdWrong = 0; acc = 0; }
+  function tick(dt){
+    if(!(S.mode === "car" && Car.C.active) || !Traffic.ready){ if(prev.size) prev = new Map(); return; }
+    acc += dt; if(acc < 0.08) return; const step = acc; acc = 0; cdRed -= step; cdWrong -= step;
+    const C = Car.C, v = Math.abs(C.v), fwd = C.gear !== "R" && C.v > 0.3;
+    if(!fwd){ prev = new Map(); wrongT = Math.max(0, wrongT - step * 2); return; }
+    const fx = Math.sin(C.yaw), fz = Math.cos(C.yaw), segs = Traffic.segs;
+    const hits = Traffic.locate(C.x + fx * 2.2, C.z + fz * 2.2, C.yaw, 9, 4), cur = new Map();
+    for(const h of hits){
+      if(h.d > 3.4 || h.dot < 0.75) continue; const g = segs[h.i]; if(!g.lane || !g.sig) continue;
+      const p = prev.get(h.i); cur.set(h.i, h.s);
+      if(p !== undefined && p < g.sig.s && h.s >= g.sig.s && h.s - p < 14){
+        const t = S.t;
+        if(phaseState(g.sig.g, g.sig.ph, t) === 2 && phaseState(g.sig.g, g.sig.ph, t - 1.0) === 2 && v > 2.2 && cdRed <= 0){ cdRed = 6; emit("red", { x: C.x, z: C.z }); }
+      }
+    }
+    prev = cur;
+    // 逆走: 車の真下の車線（2.2m 以内）が反対向きだけ（同じ向きの車線が無い）で、3 秒以上走ったら
+    let compat = false, opp = false; for(const h of Traffic.locate(C.x, C.z, C.yaw, 4, 0)){ if(h.d > 2.2 || !segs[h.i].lane) continue; if(h.dot > -0.3) compat = true; else if(h.dot < -0.6) opp = true; }
+    if(opp && !compat && v > 3) wrongT += step; else wrongT = Math.max(0, wrongT - step * 2);
+    if(wrongT > 3 && cdWrong <= 0){ cdWrong = 25; wrongT = 0; emit("wrong", { x: C.x, z: C.z }); }
+  }
+  return { on, tick, reset };
+})();
+
+/* ---------------- v41.10: タクシー営業 ----------------
+   岡山駅東口の乗り場から出発して、街を流しながらお金を稼ぐ。終わりたい時は「営業終了」。
+   ・乗り場: data/poi.json の実在のタクシー乗り場 30 か所（OSM の amenity=taxi＋駅・病院・商業施設）。待ち客は乗り場ごとの「重み」と時間帯でランダムに現れる（重みは推定）。
+   ・配車依頼: 空車のあいだ 30〜80 秒ごとにランダムな住宅・施設から無線で依頼。Y か「受ける」で迎車（ナビに自動セット）。
+   ・料金: 岡山県の普通車運賃（2025-11 改定: 初乗り 1.1 km で 700 円・以降 250 m ごとに 100 円）を基準に、時速 10 km 以下は 90 秒ごとに 100 円相当の時間加算。
+     深夜早朝（22〜5 時）2 割増・迎車料金 300 円は一般的な値からの推定。実際の会社の運賃・メーターとは違う。
+   ・お客さんの満足度（5.0 から減点）: 急発進・急ブレーキ・急ハンドル、衝突、速度超過、信号無視、逆走、遠回り、待たせすぎ。高いと「おつりはいらない」。
+   ・お客さん・行き先は架空。地点は実在の場所（OSM／PLATEAU）。 */
+const Taxi = (() => {
+  const FARE = { base: 700, baseM: 1100, step: 100, stepM: 250, slowV: 10 / 3.6, slowEq: 250 / 90, night: 1.2, dispatch: 300, goal: 10000 };
+  const T = { on: false, st: "idle", t: 0, money: 0, tips: 0, rides: 0, cancels: 0, passed: 0, full: 0, empty: 0, rateSum: 0, rateN: 0, goalHit: false,
+    stands: [], call: null, offer: null, ride: null, nextCall: 0, hold: 0, payT: 0, lastHit: false, comfortT: 0, speedT: 0, speedAcc: 0, near: null, nearT: 0, hudT: 0, toastT: 0, summary: false, pending: false, walkers: [] };
+  const rnd = Math.random, pick = (a) => a[Math.floor(rnd() * a.length)];
+  const me = () => ({ x: Car.C.x, z: Car.C.z, yaw: Car.C.yaw, v: Math.abs(Car.C.v) });
+  const yen = (n) => "¥" + Math.round(n).toLocaleString("ja-JP");
+  const hr = () => ((S.clock / 3600) % 24 + 24) % 24;
+  const tf = (h) => h >= 7 && h < 9.5 ? 1.5 : h >= 9.5 && h < 16 ? 1.0 : h >= 16 && h < 19.5 ? 1.5 : h >= 19.5 && h < 23 ? 1.2 : 0.5;
+  const fmtKm = (m) => m >= 1000 ? (m / 1000).toFixed(1) + " km" : Math.round(m / 10) * 10 + " m";
+  const fmtT = (s) => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+  const night = () => { const h = hr(); return h >= 22 || h < 5; };
+  function saved(){ const o = Prefs.getM("taxi", null); return o && typeof o === "object" ? o : { total: 0, shifts: 0, rides: 0, best: 0, bestHourly: 0 }; }
+  const bestText = () => { const o = saved(); return o.shifts ? "最高 " + yen(o.best) + "・" + o.shifts + " 回営業" : ""; };
+
+  /* ---- 運賃 ---- */
+  function meterFare(R){
+    const eq = R.dist + R.slowT * FARE.slowEq, n = Math.max(0, Math.ceil((eq - FARE.baseM) / FARE.stepM)), f = FARE.base + n * FARE.step;
+    return R.night ? Math.round(f * FARE.night / 10) * 10 : f;
+  }
+
+  /* ---- 3D: 乗り場の標識・光の柱・お客さん ---- */
+  const grp = new THREE.Group(); grp.visible = false; scene.add(grp);
+  const PG = { leg: new THREE.BoxGeometry(0.3, 0.82, 0.2), body: new THREE.BoxGeometry(0.44, 0.62, 0.26), head: new THREE.SphereGeometry(0.13, 8, 6) };
+  const PM = {}; const mat = (c) => PM[c] || (PM[c] = new THREE.MeshLambertMaterial({ color: c }));
+  const CLOTH = [0x2f4b7c, 0x7c2f3f, 0x3f6b4a, 0x6b5b3a, 0x444a55, 0xb08a3c, 0x7a4b7a, 0x2a7a8a, 0xc9c2b2];
+  function person(seed){
+    const g = new THREE.Group(), col = CLOTH[Math.abs(seed | 0) % CLOTH.length];
+    const leg = new THREE.Mesh(PG.leg, mat(0x2a2d36)); leg.position.y = 0.41; g.add(leg);
+    const bd = new THREE.Mesh(PG.body, mat(col)); bd.position.y = 1.13; g.add(bd);
+    const hd = new THREE.Mesh(PG.head, mat(0xe3b995)); hd.position.y = 1.58; g.add(hd);
+    const hair = new THREE.Mesh(PG.head, mat(0x1d1a17)); hair.scale.set(1.06, 0.72, 1.06); hair.position.y = 1.645; g.add(hair);
+    return g;
+  }
+  const beamMat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide });
+  let signTexC = null;
+  function signTex(){ return signTexC || (signTexC = canvasTex(128, 128, (g, w, h) => { g.fillStyle = "#f2c230"; g.fillRect(0, 0, w, h); g.strokeStyle = "#1a1408"; g.lineWidth = 6; g.strokeRect(5, 5, w - 10, h - 10);
+    g.fillStyle = "#1a1408"; g.font = "bold 78px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("T", w / 2, h * 0.38); g.font = "bold 21px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.fillText("タクシー", w / 2, h * 0.76); })); }
+  function buildStand(s){
+    const y = Car.hAt(s.x, s.z), g = new THREE.Group(); g.position.set(s.x, y, s.z);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.5, 6), mat(0x6d7076)); pole.position.y = 1.25; g.add(pole);
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.8), new THREE.MeshBasicMaterial({ map: signTex(), side: THREE.DoubleSide })); pl.position.y = 2.55; g.add(pl);
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 70, 10, 1, true), beamMat(0xffd54a, 0.32)); beam.position.y = 35; beam.visible = false; g.add(beam);
+    grp.add(g); s.g = g; s.beam = beam; s.figs = []; s.figN = 0;
+  }
+  function figsSync(s, near){
+    const want = near ? Math.min(3, s.q.reduce((a, c) => a + c.n, 0)) : 0;
+    if(want === s.figN) return; for(const f of s.figs){ s.g.remove(f); } s.figs.length = 0; s.figN = want;
+    for(let k = 0; k < want; k++){ const p = person(s.i * 7 + k * 3 + (s.q[0] ? s.q[0].seed : 0)); p.position.set(0.9 + k * 0.62, 0, 0.5 - k * 0.2); p.rotation.y = -1.2 + k * 0.3; s.g.add(p); s.figs.push(p); }
+  }
+  let mk = null;
+  function markerSet(x, z, y, r, col){
+    if(!mk){ const g = new THREE.Group(); const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 150, 12, 1, true), beamMat(col, 0.42)); beam.position.y = 75; g.add(beam);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 1.2, r, 48), beamMat(col, 0.9)); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.15; g.add(ring);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 40), beamMat(col, 0.14)); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.12; g.add(disc); mk = { g, beam, ring, disc }; grp.add(g); }
+    mk.g.position.set(x, y, z); mk.g.visible = true; mk.beam.material.color.setHex(col); mk.ring.material.color.setHex(col); mk.disc.material.color.setHex(col);
+    mk.ring.geometry.dispose(); mk.ring.geometry = new THREE.RingGeometry(Math.max(1, r - 1.2), r, 48); mk.disc.geometry.dispose(); mk.disc.geometry = new THREE.CircleGeometry(r, 40);
+  }
+  const markerOff = () => { if(mk) mk.g.visible = false; };
+  function clean3d(){
+    for(const s of T.stands){ if(s.g){ grp.remove(s.g); s.g.traverse((o) => { if(o.geometry && o.geometry !== PG.leg && o.geometry !== PG.body && o.geometry !== PG.head) o.geometry.dispose(); if(o.material && o.material.map === undefined) o.material.dispose(); }); } }
+    for(const w of T.walkers) grp.remove(w.m); T.walkers.length = 0;
+    if(T.call && T.call.figs) for(const f of T.call.figs) grp.remove(f);
+    markerOff(); grp.visible = false;
+  }
+
+  /* ---- 画面 ---- */
+  const css = `
+.txcol{ position:fixed; z-index:12; left:12px; top:calc(58px + env(safe-area-inset-top,0px)); width:min(300px, calc(100% - 24px)); display:none; flex-direction:column; gap:8px; pointer-events:none; }
+.txcol.on{ display:flex; } .txcol button{ pointer-events:auto; font-family:inherit; cursor:pointer; }
+.txhud{ background:rgba(20,17,12,.88); border:1px solid var(--line,#5a4a2a); border-radius:6px; padding:9px 12px 10px; backdrop-filter:blur(5px); box-shadow:0 10px 30px rgba(0,0,0,.4); color:var(--cream,#f1ead9); }
+.tx-top{ display:flex; align-items:center; gap:8px; } .tx-top b{ font-size:14px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tx-top button{ font-size:11px; color:#cfc5ac; background:transparent; border:1px solid var(--line,#5a4a2a); border-radius:3px; padding:2px 8px; } .tx-top button:hover{ border-color:var(--amber,#ffb02e); color:var(--amber,#ffb02e); }
+.tx-badge{ font-size:12px; font-weight:800; letter-spacing:.08em; padding:2px 9px; border-radius:11px; color:#10200f; background:#5fe08a; } .tx-badge.pick{ background:#ffb02e; color:#241804; } .tx-badge.ride{ background:#ff5b4a; color:#fff; } .tx-badge.pay{ background:#9aa3ad; color:#111; }
+.tx-money{ display:flex; align-items:baseline; justify-content:space-between; margin-top:7px; } .tx-money b{ font-size:25px; color:var(--amber,#ffb02e); font-variant-numeric:tabular-nums; } .tx-money small{ font-size:11px; color:#a99f88; }
+.tx-bar{ height:5px; margin-top:5px; border-radius:3px; background:rgba(255,255,255,.12); overflow:hidden; } .tx-bar i{ display:block; height:100%; width:0; background:linear-gradient(90deg,#ffb02e,#ffe27a); }
+.tx-info{ margin-top:7px; font-size:12.5px; line-height:1.45; color:#e6dcc0; min-height:18px; } .tx-info b{ color:#fff; }
+.tx-meter{ display:none; margin-top:7px; padding:6px 10px; border-radius:4px; background:#150a08; border:1px solid #5a2a22; font-variant-numeric:tabular-nums; } .tx-meter.on{ display:flex; align-items:baseline; justify-content:space-between; }
+.tx-meter b{ font-family:'Courier New',monospace; font-size:28px; letter-spacing:.06em; color:#ff4b3a; text-shadow:0 0 8px rgba(255,75,58,.55); } .tx-meter small{ font-size:11px; color:#c9a79f; text-align:right; line-height:1.35; }
+.tx-stats{ margin-top:7px; padding-top:6px; border-top:1px solid var(--line,#5a4a2a); display:flex; justify-content:space-between; gap:6px; font-size:11.5px; color:#cfc5ac; font-variant-numeric:tabular-nums; } .tx-stats b{ color:var(--cream,#f1ead9); }
+.tx-btns{ display:flex; gap:6px; margin-top:7px; } .tx-btns button{ flex:1; font-size:11.5px; color:#e6dcc0; background:#2a2418; border:1px solid var(--line,#5a4a2a); border-radius:4px; padding:5px 6px; } .tx-btns button:hover{ border-color:var(--amber,#ffb02e); color:var(--amber,#ffb02e); }
+.txcall{ display:none; background:rgba(40,28,8,.95); border:2px solid var(--amber,#ffb02e); border-radius:8px; padding:10px 12px 11px; box-shadow:0 0 0 0 rgba(255,176,46,.5), 0 14px 34px rgba(0,0,0,.5); color:var(--cream,#f1ead9); animation:txPulse 1.4s ease-out infinite; }
+.txcall.on{ display:block; } @keyframes txPulse{ 0%{ box-shadow:0 0 0 0 rgba(255,176,46,.55), 0 14px 34px rgba(0,0,0,.5);} 100%{ box-shadow:0 0 0 14px rgba(255,176,46,0), 0 14px 34px rgba(0,0,0,.5);} } @media (prefers-reduced-motion: reduce){ .txcall{ animation:none; } }
+.txcall small.k{ display:block; font-size:10px; letter-spacing:.16em; color:var(--amber,#ffb02e); } .txcall b.nm{ display:block; font-size:16px; margin-top:2px; line-height:1.3; } .txcall .sub{ font-size:12px; color:#d6cba9; margin-top:3px; }
+.txcall .tbar{ height:4px; margin-top:7px; background:rgba(255,255,255,.14); border-radius:2px; overflow:hidden; } .txcall .tbar i{ display:block; height:100%; width:100%; background:var(--amber,#ffb02e); }
+.txcall .bt{ display:flex; gap:8px; margin-top:9px; } .txcall .bt button{ flex:1; font-size:14px; font-weight:800; padding:9px; border-radius:6px; border:1px solid var(--line,#5a4a2a); color:#e6dcc0; background:#2a2418; } .txcall .bt button.go{ background:var(--amber,#ffb02e); color:#1a1408; border:0; }
+.txrc{ position:fixed; z-index:14; left:50%; top:calc(120px + env(safe-area-inset-top,0px)); transform:translate(-50%,-8px); width:min(340px, calc(100% - 24px)); display:none; background:rgba(250,246,234,.97); color:#2a2418; border-radius:6px; padding:12px 16px 12px; box-shadow:0 18px 44px rgba(0,0,0,.55); font-family:inherit; }
+.txrc.on{ display:block; transform:translate(-50%,0); } .txrc h4{ margin:0 0 6px; font-size:12px; letter-spacing:.18em; color:#7a5d1c; border-bottom:1px dashed #b9a468; padding-bottom:5px; display:flex; justify-content:space-between; }
+.txrc .r{ display:flex; justify-content:space-between; font-size:13px; margin:2px 0; font-variant-numeric:tabular-nums; } .txrc .tot{ font-size:19px; font-weight:800; border-top:1px solid #2a2418; margin-top:5px; padding-top:5px; } .txrc .cm{ margin-top:7px; font-size:12.5px; color:#5a4a2a; } .txrc .st{ color:#c07a10; letter-spacing:.06em; }
+body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
+@media (max-width:900px){ body.nav-on .txcol{ top:calc(172px + env(safe-area-inset-top,0px)); } body.nav-on .txrc{ top:calc(250px + env(safe-area-inset-top,0px)); } }
+@media (max-width:619px){ .txcol{ width:calc(100% - 24px); } }
+`;
+  let built = false, E = {};
+  const $e = (id) => E[id] || (E[id] = document.getElementById(id));
+  function dom(){
+    if(built) return; built = true;
+    const sty = document.createElement("style"); sty.textContent = css; document.head.appendChild(sty);
+    const div = document.createElement("div");
+    div.innerHTML = `
+<div class="txcol" id="txcol"><section class="txhud" id="txhud">
+<div class="tx-top"><span class="tx-badge" id="tx-badge">空車</span><b id="tx-ttl">タクシー営業</b><button type="button" id="tx-end">営業終了</button></div>
+<div class="tx-money"><b id="tx-money">¥0</b><small id="tx-goal">目標 ¥10,000</small></div><div class="tx-bar"><i id="tx-gbar"></i></div>
+<div class="tx-info" id="tx-info"></div>
+<div class="tx-meter" id="tx-meter"><b id="tx-fare">¥700</b><small id="tx-msub"></small></div>
+<div class="tx-btns" id="tx-btns"><button type="button" id="tx-go" style="display:none">客のいる乗り場へ案内</button><button type="button" id="tx-cancel" style="display:none">依頼を取り消す</button></div>
+<div class="tx-stats"><span>乗車 <b id="tx-rides">0</b> 回</span><span>実車率 <b id="tx-rate">--</b></span><span>評価 <b id="tx-star">--</b></span></div>
+</section>
+<section class="txcall" id="txcall"><small class="k">配車依頼</small><b class="nm" id="txc-nm">--</b><div class="sub" id="txc-sub">--</div><div class="tbar"><i id="txc-bar"></i></div>
+<div class="bt"><button type="button" id="txc-no">見送る</button><button type="button" class="go" id="txc-ok">受ける（Y）</button></div></section></div>
+<div class="txrc" id="txrc"></div>`;
+    while(div.firstChild) document.body.appendChild(div.firstChild);
+    $e("tx-end").addEventListener("click", () => endShift());
+    $e("txc-ok").addEventListener("click", () => accept()); $e("txc-no").addEventListener("click", () => decline());
+    $e("tx-cancel").addEventListener("click", () => cancelCall(false));
+    $e("tx-go").addEventListener("click", () => { const s = T.near; if(s) Nav.setTarget({ x: s.x, z: s.z, name: s.name, r: 30, kind: "load" }, "user", {}); });
+    addEventListener("keydown", (e) => { if(e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing()) return; if((e.key === "y" || e.key === "Y") && T.on && T.offer) accept(); });
+  }
+  function toast(msg, kind, ms){
+    const t = document.getElementById("qtoast"); if(!t) return; t.textContent = msg; t.className = "qtoast on " + (kind || ""); T.toastT = ms || 3.6;
+    if(kind === "good") Snd.blip("done"); else if(kind === "bad") Snd.blip("bad"); else if(kind === "load") Snd.blip("load"); else Snd.blip("ok");
+  }
+  const say = (txt, urgent) => { try{ Nav.Voice.say(txt, urgent); }catch(e){} };
+
+  /* ---- 車の見た目（黄色い車体・屋根の行灯） ---- */
+  const LAMP = { "空車": "#18a05a", "迎車": "#e08a12", "賃走": "#d8352a" };
+  const lamp = (m) => { try{ Car.setTaxi(m, LAMP[m]); }catch(e){} };
+
+  /* ---- 乗り場 ---- */
+  function setupStands(){
+    const P = Nav.POI; T.stands = [];
+    for(const [i, a] of ((P && P.taxi) || []).entries()){ const s = { i, x: a[0], z: a[1], name: a[2], w: a[3], q: [], tNext: 0, g: null, beam: null, figs: [], figN: 0, curb: null, dc: 1e9 }; buildStand(s); T.stands.push(s);
+      { const ln = laneAt(s.x, s.z, 45); if(ln && ln.d > 14) s.curb = { x: ln.x, z: ln.z }; }   // 乗り場の標識が道から離れているとき、いちばん近い車線の上に停まっても乗せられるように
+      if(s.w >= 3){ for(let k = 0, n = 1 + Math.floor(rnd() * 2); k < n; k++) s.q.push(newGroup()); } else if(rnd() < 0.3) s.q.push(newGroup());
+      s.tNext = T.t + 240 / (s.w * tf(hr())) * (0.4 + rnd()); }
+    grp.visible = true;
+  }
+  const newGroup = () => ({ n: rnd() < 0.7 ? 1 : rnd() < 0.75 ? 2 : 3, t: T.t, seed: Math.floor(rnd() * 99) });
+  function standTick(dt){
+    const m = me(), f = tf(hr());
+    for(const s of T.stands){
+      if(T.t >= s.tNext){ if(s.q.length < 3) s.q.push(newGroup()); s.tNext = T.t + 240 / (s.w * f) * (0.5 + rnd()); }
+      if(s.q.length && T.t - s.q[0].t > 600){ s.q.shift(); }
+      const d = Math.hypot(s.x - m.x, s.z - m.z); s.dist = d; s.dc = s.curb ? Math.hypot(s.curb.x - m.x, s.curb.z - m.z) : 1e9;
+      s.beam.visible = s.q.length > 0 && d < 1800; figsSync(s, d < 520);
+    }
+    T.nearT -= dt;
+    if(T.nearT <= 0){ T.nearT = 0.6; let b = null; for(const s of T.stands) if(s.q.length && (!b || s.dist < b.dist)) b = s; T.near = b; }
+  }
+  const standCount = (i) => (T.stands[i] ? T.stands[i].q.reduce((a, c) => a + c.n, 0) : 0);
+
+  /* ---- 配車依頼 ---- */
+  function laneAt(x, z, rmax){ const L = Traffic.locate(x, z, null, rmax, 1)[0]; if(!L) return null; const t = pathTan(Traffic.segs[L.i].P, L.s); return { x: L.x, z: L.z, y: L.y, d: L.d, tx: t.x, tz: t.z, i: L.i, s: L.s }; }
+  function makeCall(){
+    const m = me(), sites = Quest.sites, P = Nav.POI; if(!P) return null;
+    for(let tries = 0; tries < 40; tries++){
+      const home = rnd() < 0.55 && sites && sites.drop.length;
+      let c = null;
+      if(home){
+        const s = pick(sites.drop), d = Math.hypot(s.x - m.x, s.z - m.z); if(s.rw < 3.6 || d < 400 || d > 2300) continue;
+        const yaw = s.yaw * Math.PI / 180, nx = Math.cos(yaw), nz = -Math.sin(yaw), off = (s.rw / 2 + 0.9) * (s.side || 1);
+        c = { kind: "home", name: Quest.town(s.town) + "のお客さん宅前", x: s.x, z: s.z, y: s.y, r: 8, px: s.x + nx * off, pz: s.z + nz * off, dist: d };
+      } else {
+        const cats = [2, 2, 10, 7, 7, 8, 0, 3, 5, 11, 4], cat = pick(cats), L = P.p.filter((q) => q[1] === cat), it = L.length ? pick(L) : null; if(!it) continue;
+        const d = Math.hypot(it[2] - m.x, it[3] - m.z); if(d < 400 || d > 2300) continue;
+        const ln = laneAt(it[2], it[3], 90); if(!ln || ln.d > 60) continue;
+        c = { kind: "poi", name: it[0] + "前", x: ln.x, z: ln.z, y: ln.y, r: 11, px: ln.x + ln.tz * 2.4, pz: ln.z - ln.tx * 2.4, dist: d };
+      }
+      const R = Nav.plan(m.x, m.z, m.yaw, c.x, c.z); if(!R) continue;   // 行き着けない場所は選ばない
+      if(R.total > 3600 || R.total > Math.max(1500, c.dist * 2.2)) continue;   // 一方通行などで大回りになる依頼は出さない（待ってもらえる時間に間に合わない）
+      c.route = R.total; c.eta = R.time * 1.12 + 15;
+      c.n = rnd() < 0.7 ? 1 : rnd() < 0.75 ? 2 : 3; c.fee = FARE.dispatch; c.seed = Math.floor(rnd() * 99);
+      return c;
+    }
+    return null;
+  }
+  function offerCall(){
+    const c = makeCall(); if(!c){ T.nextCall = T.t + 20; return; }
+    T.offer = { c, left: 20 };
+    $e("txc-nm").textContent = c.name; $e("txc-sub").textContent = "約 " + fmtKm(c.route) + "・およそ " + Math.max(1, Math.round(c.eta / 60)) + " 分 ／ 迎車料金 " + yen(c.fee) + (c.n > 1 ? " ／ " + c.n + " 名様" : "");
+    $e("txcall").classList.add("on"); Snd.blip("load"); say("配車依頼です。" + c.name + "。");
+  }
+  function closeOffer(){ T.offer = null; $e("txcall").classList.remove("on"); }
+  function decline(){ if(!T.offer) return; closeOffer(); T.passed++; T.nextCall = T.t + 25 + rnd() * 45; toast("依頼を見送りました", ""); }
+  function accept(){
+    const o = T.offer; if(!o || T.st !== "cruise") return; const c = o.c; closeOffer();
+    { const m = me(), R = Nav.plan(m.x, m.z, m.yaw, c.x, c.z); if(R){ c.route = R.total; c.eta = R.time * 1.12 + 15; } }   // 受けた時点の位置から、もう一度道のりを計算
+    T.call = c; c.t0 = T.t; c.limit = Math.max(150, c.eta * 1.7 + 60); c.promised = c.eta * 1.4 + 40; T.st = "pick"; T.hold = 0; lamp("迎車");
+    c.figs = []; for(let k = 0; k < c.n; k++){ const p = person(c.seed + k * 5); p.position.set(c.px + k * 0.6, Car.hAt(c.px, c.pz), c.pz + k * 0.15); p.rotation.y = rnd() * 6; grp.add(p); c.figs.push(p); }
+    markerSet(c.x, c.z, c.y + 0.1, c.r, 0x35d0ff);
+    Nav.setTarget({ x: c.x, z: c.z, name: c.name, r: c.r, kind: "load" }, "auto");
+    toast("配車を受けました — " + c.name + " へ（待ってくれるのは約 " + Math.round(c.limit / 60 * 10) / 10 + " 分）", "load");
+  }
+  function cancelCall(byCustomer){
+    const c = T.call; if(!c) return; if(c.figs) for(const f of c.figs) grp.remove(f); c.figs = null; T.call = null; T.st = "cruise"; T.hold = 0; markerOff(); Nav.clear("auto"); lamp("空車");
+    T.cancels++; T.nextCall = T.t + 25 + rnd() * 45;
+    toast(byCustomer ? "お客さんが待ちきれず、キャンセルしました" : "依頼を取り消しました", "bad");
+  }
+
+  /* ---- 乗せる・行き先・降ろす ---- */
+  function pickDest(fx, fz, startPlan){
+    const P = Nav.POI, sites = Quest.sites, m = me(); if(!P) return null;
+    const want = Math.min(6500, 800 + -Math.log(1 - rnd()) * 1700), W = { 0: 3, 2: 2.2, 3: 1.4, 4: 0.5, 5: 1, 7: 2.2, 8: 1.2, 9: 0.3, 10: 1.6, 11: 1.4, 12: 0.8, 13: 0.5, 14: 1.2, 1: 0.6, 6: 0.4 };
+    for(let tries = 0; tries < 8; tries++){
+      const cand = [];
+      for(let k = 0; k < 70; k++){
+        let c;
+        if(rnd() < 0.3 && sites && sites.drop.length){ const s = pick(sites.drop); if(s.rw < 3.6) continue; c = { name: Quest.town(s.town) + "の自宅", x: s.x, z: s.z, y: s.y, r: 8, home: true }; }
+        else { const it = pick(P.p); if(rnd() > (W[it[1]] || 0.5) / 3) continue; c = { name: it[0], x: it[2], z: it[3], r: 12 }; }
+        const d = Math.hypot(c.x - fx, c.z - fz); if(d < 600) continue; cand.push({ c, e: Math.abs(d - want) });
+      }
+      cand.sort((a, b) => a.e - b.e);
+      for(const { c } of cand.slice(0, 3)){
+        if(!c.home){ const ln = laneAt(c.x, c.z, 140); if(!ln || ln.d > 120) continue; c.x = ln.x; c.z = ln.z; c.y = ln.y; }
+        const R = Nav.plan(startPlan.x, startPlan.z, startPlan.yaw, c.x, c.z); if(!R) continue;
+        if(R.total > 9000 || R.total > Math.max(2600, Math.hypot(c.x - fx, c.z - fz) * 3.0)) continue;   // 直線の 3 倍を超える大回りは選ばない
+        c.routeM = R.total; c.eta = R.time * 1.12; return c;
+      }
+    }
+    return null;
+  }
+  function startRide(from, n, dispatchFee, label){
+    const m = me(), dest = pickDest(m.x, m.z, m); if(!dest){ toast("お客さんの行き先が決まりませんでした。もう一度", "bad"); return false; }
+    T.ride = { n, from: label, dest, dist: 0, slowT: 0, sat: 5, events: [], t0: T.t, fee: dispatchFee, night: night(), routeM: dest.routeM, eta: dest.eta, detourDone: false };
+    closeOffer(); T.st = "ride"; T.hold = 0; lamp("賃走"); markerSet(dest.x, dest.z, dest.y + 0.1, Math.max(10, dest.r + 2), 0xffb02e);
+    Nav.setTarget({ x: dest.x, z: dest.z, name: dest.name, r: dest.r, kind: "drop" }, "auto");
+    T.comfortT = 0; T.speedT = 0; T.speedAcc = 0; T.lastHit = false;
+    toast("「" + dest.name + " までお願いします」 — 目安 " + fmtKm(dest.routeM) + "・約 " + Math.max(1, Math.round(dest.eta / 60)) + " 分", "load", 4.2); say(dest.name + "までお願いします。");
+    return true;
+  }
+  function boardCall(){
+    const c = T.call; if(!c) return; let sat0 = 5; const ev = [];
+    if(T.t - c.t0 > c.promised){ sat0 -= 0.5; ev.push("late"); toast("お待たせしました…（お客さんはだいぶ待っていた）", "bad"); }
+    if(c.figs) for(const f of c.figs) grp.remove(f); c.figs = null; markerOff(); T.call = null;
+    if(startRide(c, c.n, c.fee, c.name)){ T.ride.sat = sat0; T.ride.events.push(...ev); } else { T.st = "cruise"; lamp("空車"); }
+  }
+  function boardStand(s){
+    const g = s.q.shift(); s.figN = -1; Snd.blip("load");
+    if(!startRide(s, g.n, 0, s.name)){ s.q.unshift(g); }
+  }
+  function ding(pts, msg, tag){ const R = T.ride; if(!R) return; R.sat = Math.max(1, R.sat - pts); R.events.push(tag); toast(msg + "（評価 −" + pts.toFixed(1) + "）", "bad"); }
+  const COMMENTS = { hit: "ぶつかって、びっくりしました…", red: "信号が赤でしたよ！", wrong: "逆走していませんでしたか？", comfort: "急ブレーキ・急ハンドルが怖かったです。", speed: "もう少しゆっくりでお願いしたかったです。", detour: "遠回りされた気がします。", late: "ずいぶん待ちました。" };
+  function finishRide(){
+    const R = T.ride, fare = meterFare(R), fee = R.fee || 0, base = fare + fee, stars = Math.max(1, Math.min(5, Math.round(R.sat * 10) / 10));
+    if(!R.detourDone && R.dist > R.routeM * 1.45 + 500){ R.sat = Math.max(1, R.sat - 0.4); R.events.push("detour"); }
+    const st2 = Math.max(1, Math.min(5, Math.round(R.sat * 10) / 10));
+    let tip = 0; if(st2 >= 4.5 && rnd() < 0.55){ tip = Math.ceil((base * 1.04) / 100) * 100 - base; if(tip < 20) tip += 100; } else if(st2 >= 4.0 && rnd() < 0.2){ tip = Math.ceil(base / 100) * 100 - base; }
+    T.money += base; T.tips += tip; T.rides++; T.rateSum += st2; T.rateN++;
+    const worst = ["hit", "red", "wrong", "comfort", "speed", "detour", "late"].find((k) => R.events.includes(k));
+    const cm = st2 >= 4.8 ? "とても快適でした。ありがとう！" : st2 >= 4.2 ? "ありがとうございました。" : worst ? COMMENTS[worst] : "ありがとうございました。";
+    const stars5 = "★".repeat(Math.round(st2)) + "☆".repeat(5 - Math.round(st2));
+    const rc = $e("txrc");
+    rc.innerHTML = '<h4><span>領収書</span><span class="st">' + stars5 + " " + st2.toFixed(1) + "</span></h4>" +
+      '<div class="r"><span>' + R.dest.name + " まで</span><span>" + fmtKm(R.dist) + "</span></div>" +
+      '<div class="r"><span>運賃' + (R.night ? "（深夜早朝 2 割増）" : "") + "</span><span>" + yen(fare) + "</span></div>" +
+      (fee ? '<div class="r"><span>迎車料金</span><span>' + yen(fee) + "</span></div>" : "") + (tip ? '<div class="r"><span>おつりはいらない</span><span>+' + yen(tip) + "</span></div>" : "") +
+      '<div class="r tot"><span>合計</span><span>' + yen(base + tip) + '</span></div><div class="cm">「' + cm + "」</div>";
+    rc.classList.add("on"); T.payT = 3.4; T.st = "pay"; T.hold = 0; markerOff(); Nav.clear("auto"); lamp("空車"); Snd.blip("done");
+    // お客さんが降りて歩いていく
+    const C = Car.C, lx = Math.cos(C.yaw), lz = -Math.sin(C.yaw);
+    for(let k = 0; k < R.n; k++){ const p = person(R.dest.name.length * 3 + k * 5); const x0 = C.x + lx * 1.9 + Math.sin(C.yaw) * (-0.8 + k * 0.6), z0 = C.z + lz * 1.9 + Math.cos(C.yaw) * (-0.8 + k * 0.6); p.position.set(x0, Car.hAt(x0, z0), z0); p.rotation.y = Math.atan2(lx, lz); grp.add(p); T.walkers.push({ m: p, vx: lx * 1.3, vz: lz * 1.3, t: 5 }); }
+    T.nextCall = Math.min(T.nextCall || 1e9, T.t + 20 + rnd() * 35); if(T.nextCall < T.t + 12) T.nextCall = T.t + 12;
+    T.ride = null;
+    if(!T.goalHit && T.money + T.tips >= FARE.goal){ T.goalHit = true; setTimeout(() => toast("営業目標 " + yen(FARE.goal) + " を達成！ このまま続けても、終了してもOKです", "good", 4.4), 3200); }
+  }
+
+  /* ---- 営業の開始・終了 ---- */
+  function begin(d0){
+    dom(); Rules.reset();
+    if(!Nav.POI || !Traffic.ready){ const q = document.getElementById("qtoast"); if(q){ q.textContent = "地点データを読み込み中です。少し待ってからもう一度お試しください"; q.className = "qtoast on bad"; } return false; }
+    clean3d(); Object.assign(T, { on: true, st: "cruise", t: 0, money: 0, tips: 0, rides: 0, cancels: 0, passed: 0, full: 0, empty: 0, rateSum: 0, rateN: 0, goalHit: false, call: null, offer: null, ride: null, hold: 0, payT: 0, near: null, nearT: 0, hudT: 0, summary: false, pending: false, walkers: [], stands: [] });
+    T.def = d0; Nav.clear();
+    setupStands();
+    // 出発: 岡山駅 東口の乗り場の脇の車線（なければ初期位置）
+    const s0 = T.stands.find((s) => /岡山駅 東口/.test(s.name)) || T.stands[0];
+    if(s0){ const ln = laneAt(s0.x, s0.z, 120); if(ln){ const C = Car.C, P = Traffic.segs[ln.i].P, s1 = Math.max(2, ln.s - 55), q = pathPt(P, s1), tg = pathTan(P, s1);   // 乗り場の手前 55m（なるべく前方に乗り場が見える所）から出発
+      C.x = q.x; C.z = q.z; C.yaw = Math.atan2(tg.x, tg.z); C.h = Car.hAt(q.x, q.z); C.v = 0; C.gear = "D"; C.wheel = 0; C.hitT = 0; Stuck.reset(); Traffic.reset(); } }
+    T.nextCall = 70 + rnd() * 40; lamp("空車");
+    $e("txcol").classList.add("on"); $e("txcall").classList.remove("on"); $e("txrc").classList.remove("on");
+    $e("tx-goal").textContent = "目標 " + yen(FARE.goal);
+    const q = document.getElementById("qfin"); if(q) q.classList.remove("on");
+    toast("タクシー営業スタート — 岡山駅 東口の乗り場でお客さんが待っています。光の柱へ", "load", 4.8);
+    if(s0) Nav.setTarget({ x: s0.x, z: s0.z, name: s0.name, r: 30, kind: "load" }, "auto", { quiet: true });
+    return true;
+  }
+  function stop(){   // 中断（メニューへ戻る・別のモード）: まとめは出さない
+    if(!T.on && !T.summary) return;
+    T.on = false; T.st = "idle"; clean3d(); lamp("");
+    const c = document.getElementById("txcol"); if(c) c.classList.remove("on"); const r = document.getElementById("txrc"); if(r) r.classList.remove("on");
+    const kk = document.querySelector("#qfin .kicker"); if(kk) kk.textContent = "MISSION COMPLETE";
+    T.summary = false; T.pending = false; Nav.clear("auto");
+  }
+  function endShift(){
+    if(!T.on) return;
+    if(T.st === "ride" || T.st === "pay"){ toast("お客さんを降ろしてから営業を終了してください", "bad"); return; }
+    if(T.st === "pick") cancelCall(false);
+    const total = T.money + T.tips, hours = Math.max(1 / 60, T.t / 3600), hourly = total / hours, rate = (T.full + T.empty) > 50 ? T.full / (T.full + T.empty) : 0;
+    const avg = T.rateN ? T.rateSum / T.rateN : 0;
+    const g = !T.rides ? "C" : hourly >= 15000 ? "S" : hourly >= 11000 ? "A" : hourly >= 7000 ? "B" : "C";
+    const sv = saved(); sv.total = (sv.total || 0) + total; sv.shifts = (sv.shifts || 0) + 1; sv.rides = (sv.rides || 0) + T.rides; const newBest = total > (sv.best || 0) && T.rides > 0; if(newBest) sv.best = total; if(hourly > (sv.bestHourly || 0) && T.rides > 0) sv.bestHourly = Math.round(hourly); Prefs.setM("taxi", sv);
+    T.on = false; T.summary = true; T.pending = true; closeOffer(); clean3d(); lamp(""); Nav.clear("auto");
+    $e("txcol").classList.remove("on"); $e("txrc").classList.remove("on");
+    const f = (id) => document.getElementById(id);
+    f("qf-name").textContent = "タクシー営業 お疲れさまでした"; f("qf-score").textContent = yen(total); f("qf-grade").textContent = g; f("qf-grade").className = "qgrade g" + g;
+    const kk = document.querySelector("#qfin .kicker"); if(kk) kk.textContent = "SHIFT END";
+    const rows = [["営業時間", fmtT(T.t), ""], ["乗車", T.rides + " 回", T.rides ? "" : "—"], ["運賃・迎車料金", yen(T.money), ""], ["おつりはいらない（チップ）", yen(T.tips), ""],
+      ["走行距離", "実車 " + (T.full / 1000).toFixed(1) + " km／空車 " + (T.empty / 1000).toFixed(1) + " km", ""], ["実車率", rate ? Math.round(rate * 100) + " %" : "—", ""],
+      ["お客さんの評価（平均）", avg ? "★ " + avg.toFixed(2) : "—", ""], ["時給の目安", T.rides ? yen(hourly) + " /時" : "—", ""], ["見送り・取り消し", T.passed + " 件・" + T.cancels + " 件", ""]];
+    f("qf-rows").innerHTML = rows.map((r) => '<div class="qr"><span>' + r[0] + "</span><span>" + r[1] + "</span><b>" + r[2] + "</b></div>").join("");
+    f("qf-best").textContent = newBest ? "自己ベスト更新！（これまでの最高 " + yen(sv.best) + "）" : "これまでの最高 " + yen(sv.best || 0) + "・通算 " + sv.shifts + " 回営業・累計 " + yen(sv.total);
+    const rt = f("qf-retry"), nw = f("qf-new"); if(rt) rt.firstElementChild.textContent = "もう一度営業する"; if(nw) nw.style.display = "none";
+    f("qfin").classList.add("on"); Snd.blip("done");
+  }
+  function again(){ const d = T.def; document.getElementById("qfin").classList.remove("on"); const kk = document.querySelector("#qfin .kicker"); if(kk) kk.textContent = "MISSION COMPLETE"; T.summary = false; T.pending = false; if(d) begin(d); }
+
+  /* ---- 毎フレーム ---- */
+  function tick(dt){
+    if(!T.on) return;
+    if(S.mode !== "car"){ stop(); return; }
+    if(T.toastT > 0){ T.toastT -= dt; if(T.toastT <= 0){ const t = document.getElementById("qtoast"); if(t) t.className = "qtoast"; } }
+    T.t += dt; const m = me(); standTick(dt);
+    for(let i = T.walkers.length - 1; i >= 0; i--){ const w = T.walkers[i]; w.t -= dt; w.m.position.x += w.vx * dt; w.m.position.z += w.vz * dt; w.m.position.y = Car.hAt(w.m.position.x, w.m.position.z); if(w.t <= 0){ grp.remove(w.m); T.walkers.splice(i, 1); } }
+    if(mk && mk.g.visible){ const k = performance.now() / 1000, p = 0.6 + 0.4 * Math.sin(k * 3.2); mk.beam.material.opacity = 0.28 + 0.2 * p; mk.ring.material.opacity = 0.6 + 0.35 * p; }
+    if(T.st === "ride" && T.ride){ const R = T.ride; R.dist += m.v * dt; T.full += m.v * dt; if(m.v < FARE.slowV) R.slowT += dt; } else T.empty += m.v * dt;
+    if(T.st === "pay"){ T.payT -= dt; if(T.payT <= 0){ T.st = "cruise"; $e("txrc").classList.remove("on"); } }
+    // 依頼の受付
+    if(T.offer){ T.offer.left -= dt; $e("txc-bar").style.width = Math.max(0, T.offer.left / 20 * 100) + "%"; if(T.offer.left <= 0){ closeOffer(); T.passed++; T.nextCall = T.t + 20 + rnd() * 40; toast("依頼は他の車へ回りました", ""); } }
+    else if(T.st === "cruise" && T.t >= T.nextCall && !T.offer){ if(T.t < 5) T.nextCall = T.t + 5; else { offerCall(); if(!T.offer) T.nextCall = T.t + 15; else T.nextCall = T.t + 30 + rnd() * 50 / Math.max(0.6, tf(hr())); } }
+    // 迎車中: 待ち時間の上限
+    if(T.st === "pick" && T.call){
+      const c = T.call; if(T.t - c.t0 > c.limit){ cancelCall(true); }
+      else { const d = Math.hypot(c.x - m.x, c.z - m.z); if(d < c.r && m.v < 1.3){ T.hold += dt; if(T.hold >= 1.4) boardCall(); } else T.hold = Math.max(0, T.hold - dt * 1.5); }
+    }
+    // 空車: 乗り場で乗せる
+    else if(T.st === "cruise"){
+      let hit = null; for(const s of T.stands){ if(s.q.length && (s.dist < (s.w >= 3 ? 24 : 18) || s.dc < 9)){ if(!hit || s.dist < hit.dist) hit = s; } }
+      if(hit && m.v < 1.3){ T.hold += dt; if(T.hold >= 1.4){ T.hold = 0; boardStand(hit); } } else T.hold = Math.max(0, T.hold - dt * 1.5);
+    }
+    // 賃走: 到着・満足度
+    if(T.st === "ride" && T.ride){
+      const R = T.ride, d = Math.hypot(R.dest.x - m.x, R.dest.z - m.z);
+      if(!R.routeM && Nav.route){ R.routeM = Nav.route.total; }
+      if(d < R.dest.r && m.v < 1.3){ T.hold += dt; if(T.hold >= 1.4) finishRide(); } else T.hold = Math.max(0, T.hold - dt * 1.5);
+      if(T.st === "ride"){
+        const C = Car.C;
+        if(C.hitT > 1.0 && !T.lastHit){ ding(1.0, "衝突！ お客さんがおどろいている", "hit"); } T.lastHit = C.hitT > 1.0;
+        if(m.v > 0.5 && (Math.abs(C.acc || 0) > 3.4 || Math.abs(C.aLat || 0) > 3.6) && T.comfortT <= 0){ ding(0.3, "急な操作でお客さんが驚いた", "comfort"); T.comfortT = 4; } T.comfortT = Math.max(0, T.comfortT - dt);
+        const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + 10){ T.speedAcc += dt; if(T.speedAcc > 3 && T.speedT <= 0){ ding(0.3, "制限速度 " + lim + " km/h を超えています", "speed"); T.speedT = 12; } } else T.speedAcc = Math.max(0, T.speedAcc - dt);
+        T.speedT = Math.max(0, T.speedT - dt);
+      }
+    }
+    T.hudT -= dt; if(T.hudT <= 0){ T.hudT = 0.15; hud(m); }
+  }
+  Rules.on((kind) => { if(!T.on || T.st !== "ride" || !T.ride) return; if(kind === "red") ding(1.0, "信号無視！ お客さんが怒っています", "red"); else if(kind === "wrong") ding(0.5, "逆走です！", "wrong"); });
+
+  function hud(m){
+    dom(); const st = T.st, R = T.ride, c = T.call;
+    const b = $e("tx-badge"); b.textContent = st === "ride" ? "賃走" : st === "pick" ? "迎車" : st === "pay" ? "精算" : "空車"; b.className = "tx-badge " + (st === "ride" ? "ride" : st === "pick" ? "pick" : st === "pay" ? "pay" : "");
+    const total = T.money + T.tips; $e("tx-money").textContent = yen(total); $e("tx-gbar").style.width = Math.min(100, total / FARE.goal * 100) + "%";
+    let info = "";
+    if(st === "ride" && R){ const rd = Nav.target ? Nav.remDist() : Math.hypot(R.dest.x - m.x, R.dest.z - m.z); info = "<b>" + R.dest.name + "</b> まで　あと " + fmtKm(rd) + "<br>満足度 " + "★".repeat(Math.round(R.sat)) + "☆".repeat(5 - Math.round(R.sat)); }
+    else if(st === "pick" && c){ const left = c.limit - (T.t - c.t0), d = Nav.target ? Nav.remDist() : Math.hypot(c.x - m.x, c.z - m.z); info = "迎車: <b>" + c.name + "</b><br>あと " + fmtKm(d) + "　お客さんが待ってくれるのはあと " + fmtT(left); }
+    else if(st === "pay") info = "お会計中…";
+    else { const n = T.near; info = n ? "空車 — 近くの乗り場にお客さん: <b>" + n.name.replace(" タクシー乗り場", "") + "</b>（" + standCount(n.i) + " 人・" + fmtKm(n.dist) + "）" : "空車 — 街を流して、乗り場や配車依頼を待つ"; }
+    $e("tx-info").innerHTML = info;
+    const mt = $e("tx-meter"); mt.classList.toggle("on", st === "ride" || st === "pay");
+    if(R){ $e("tx-fare").textContent = yen(meterFare(R) + (R.fee || 0)); $e("tx-msub").innerHTML = fmtKm(R.dist) + "<br>" + (R.slowT >= 1 ? "時間 " + fmtT(R.slowT) : "") + (R.night ? " 深夜割増" : "") + (R.fee ? " 迎車込み" : ""); }
+    $e("tx-go").style.display = st === "cruise" && T.near && (!Nav.target || Nav.src !== "user") ? "" : "none";
+    $e("tx-cancel").style.display = st === "pick" ? "" : "none";
+    $e("tx-rides").textContent = T.rides; $e("tx-rate").textContent = (T.full + T.empty) > 50 ? Math.round(T.full / (T.full + T.empty) * 100) + "%" : "--"; $e("tx-star").textContent = T.rateN ? "★" + (T.rateSum / T.rateN).toFixed(1) : "--";
+  }
+  /* ナビ・ミニマップ用の点 */
+  function mapPts(){
+    if(!T.on) return []; const out = [], m = me();
+    for(const s of T.stands) if(s.q.length && s.dist < 3000) out.push({ x: s.x, z: s.z, kind: "stand", d: s.dist });
+    out.sort((a, b) => a.d - b.d); const r = out.slice(0, 5);
+    if(T.call) r.push({ x: T.call.x, z: T.call.z, kind: "load" }); if(T.ride) r.push({ x: T.ride.dest.x, z: T.ride.dest.z, kind: "drop" });
+    return r;
+  }
+  return { begin, stop, tick, again, endShift, mapPts, standCount, bestText, FARE, meterFare, T, get on(){ return T.on; }, get pending(){ return T.pending; }, accept, decline };
+})();
+
+
 /* ---------------- v38: ナビ地図（車・ヘリ）----------------
    走行位置のまわりを、データから描く: 道路（PLATEAU の車道の升目・山陽道）、建物（PLATEAU の建物の升目）、水面（水位の格子）、
    線路（JR・新幹線・路面電車）、陰影（標高）。進行方向を上にして回転（「⌖」で北を上にも切替）。拡大・縮小は「＋」「－」か ] [ キー。
@@ -5946,12 +7043,16 @@ const NaviMap = (() => {
     const a = northUp ? 0 : p.yaw + Math.PI;
     g.translate(R, R); g.rotate(a); g.scale(k, k); g.imageSmoothingEnabled = true;
     g.drawImage(base, -N / 2 + (cache.x - p.x) / mpp, -N / 2 + (cache.z - p.z) / mpp);
+    { const rp = S.mode === "car" ? Nav.mapPoly(Math.max(1500, mpp * 220)) : null;   // v41.10: ナビの経路（青い線）
+      if(rp && rp.length > 3){ g.lineCap = "round"; g.lineJoin = "round";
+        for(const pass of [[7 / k, "rgba(255,255,255,.95)"], [4.2 / k, "#1c6df0"]]){ g.strokeStyle = pass[1]; g.lineWidth = pass[0]; g.beginPath(); g.moveTo((rp[0] - p.x) / mpp, (rp[1] - p.z) / mpp); for(let i = 2; i < rp.length; i += 2) g.lineTo((rp[i] - p.x) / mpp, (rp[i + 1] - p.z) / mpp); g.stroke(); } } }
     g.restore();
     // v41.7: ミッションの目的地（円の外ならふちに三角で方向を示す）
-    for(const q of Quest.mapPts()){
+    const nt = S.mode === "car" && Nav.target && Nav.src === "user" ? [{ x: Nav.target.x, z: Nav.target.z, kind: "nav" }] : [];
+    for(const q of Quest.mapPts().concat(nt, Taxi.mapPts())){
       const sx = (q.x - p.x) / mpp * k, sz = (q.z - p.z) / mpp * k, ca = Math.cos(a), sa = Math.sin(a);
       let X = sx * ca - sz * sa, Y = sx * sa + sz * ca; const dist = Math.hypot(X, Y), lim = R - 20; let edge = false; if(dist > lim){ X *= lim / dist; Y *= lim / dist; edge = true; }
-      const col = q.kind === "load" ? "#35d0ff" : q.kind === "drop" ? "#ffb02e" : "#7dff9a";
+      const col = q.kind === "load" ? "#35d0ff" : q.kind === "drop" ? "#ffb02e" : q.kind === "nav" ? "#ff3d8b" : q.kind === "stand" ? "#f2c230" : "#7dff9a";
       g.save(); g.translate(R + X, R + Y);
       if(edge){ g.rotate(Math.atan2(Y, X) + Math.PI / 2); g.beginPath(); g.moveTo(0, -11); g.lineTo(9, 7); g.lineTo(-9, 7); g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = 2; g.strokeStyle = "#1a1408"; g.stroke(); }
       else { g.beginPath(); g.arc(0, 0, 10, 0, Math.PI * 2); g.fillStyle = col; g.fill(); g.lineWidth = 3; g.strokeStyle = "#fff"; g.stroke(); g.beginPath(); g.arc(0, 0, 3.5, 0, Math.PI * 2); g.fillStyle = "#1a1408"; g.fill(); }
@@ -5987,7 +7088,7 @@ const NaviMap = (() => {
   $("navi-zi").addEventListener("click", () => zoom(-1)); $("navi-zo").addEventListener("click", () => zoom(1));
   $("navi-rot").addEventListener("click", () => { northUp = !northUp; $("navi-rot").classList.toggle("on", northUp); });
   cv.addEventListener("wheel", (e) => { e.preventDefault(); zoom(e.deltaY < 0 ? -1 : 1); }, { passive: false });
-  addEventListener("keydown", (e) => { if(!on) return; if(e.key === "]") zoom(-1); else if(e.key === "[") zoom(1); });
+  addEventListener("keydown", (e) => { if(!on || typing()) return; if(e.key === "]") zoom(-1); else if(e.key === "[") zoom(1); });
   return { update, zoom, get on(){ return on; }, get zoomIndex(){ return zi; }, stats(){ const G = Car.G; const h = new Array(16).fill(0); if(G) for(let i = 0; i < G.K.length; i += 97) h[G.K[i] & 15]++; return h; } };
 })();
 
@@ -6034,6 +7135,8 @@ const Quest = (() => {
     { id: "car_taxi", mode: "car", veh: "sedan", name: "タクシー送迎", star: 1, cargo: "お客さん", comfortK: 5, gen: "taxi",
       blurb: "駐車場を出て、お客さんの家の前で乗せて送り届ける。毎回ちがう場所。急発進・急ブレーキ・急ハンドルは減点。",
       stops: [ st_("ekimae", "load", "お客さんを乗せる", { r: 13 }), st_("kencho", "drop", "お客さんを降ろす", { r: 13 }), st_("chugin", "load", "次のお客さんを乗せる", { r: 13 }), st_("higashiyama", "drop", "お客さんを降ろす", { r: 13 }) ] },
+    { id: "car_taxishift", mode: "car", veh: "sedan", name: "タクシー営業", star: 2, cargo: "お客さん", shift: true, stops: [],
+      blurb: "岡山駅 東口の乗り場から出発。街を流して、乗り場で待つお客さんを乗せたり、無線の配車依頼を受けたりして、メーター運賃で売上を稼ぐ。終わる時は「営業終了」。" },
     { id: "car_check", mode: "car", veh: "sedan", name: "街角チェックポイント", star: 1, cargo: "", gen: "check",
       blurb: "駐車場を出て、幹線道路に置かれたチェックポイントを順に通過するタイムアタック。毎回ちがうコース。",
       stops: [ st_("nishikawa", "pass", "通過", { r: 14 }), st_("yanagawa", "pass", "通過", { r: 14 }), st_("jouge", "pass", "通過", { r: 14 }), st_("kenchodori", "pass", "通過", { r: 14 }),
@@ -6312,6 +7415,7 @@ const Quest = (() => {
   }
   function begin(id, seed){
     const d0 = def(id); if(!d0) return false;
+    if(d0.shift){ clearFac(); Q.on = false; Q.done = false; Q.gen = null; Q.def = null; showHud(false); return Taxi.begin(d0); }   // v41.10: タクシー営業は Taxi が受け持つ
     clearFac(); Q.gen = null; Q.seed = undefined; Q.startName = "";
     let d = d0, gen = null;
     if(d0.gen && SITES && (d0.gen !== "check" || Traffic.ready)){
@@ -6331,7 +7435,7 @@ const Quest = (() => {
       for(const s of d.stops) if(s.prop) buildDropProp(s.prop);
     }
     Q.def = d; Q.on = true; Q.done = false; Q.i = 0; Q.t = 0; Q.hold = 0; Q.loaded = false; Q.hits = 0; Q.lastHit = false; Q.comfortT = 0; Q.speedT = 0; Q.tdSeen = Heli.H.tdT || 0; Q.log = [];
-    Q.pen = { time: 0, hit: 0, hard: 0, comfort: 0, speed: 0 }; Q.bonus = { soft: 0, pin: 0 };
+    Q.pen = { time: 0, hit: 0, hard: 0, comfort: 0, speed: 0, red: 0 }; Q.bonus = { soft: 0, pin: 0 };
     const heli = d.mode === "heli", m = me();
     // 地点を解決（車: 道路へ吸着・高さ。ヘリ: 地面の高さ・輪の向き）
     Q.stops = d.stops.map((s) => Object.assign({}, s));
@@ -6347,7 +7451,7 @@ const Quest = (() => {
     let t = 0; prev = { x: m.x, z: m.z };
     Q.stops.forEach((s) => { const dist = Math.hypot(s.x - prev.x, s.z - prev.z); t += dist * F / V + (s.kind === "pass" ? 3 : DW); s.parCum = t; prev = s; });
     Q.parT = t;
-    buildMarker(Q.stops[0]); grp.visible = true;
+    buildMarker(Q.stops[0]); grp.visible = true; navTo(Q.stops[0]);
     el("q-name").textContent = d.name; el("q-kick").textContent = (heli ? "HELI MISSION" : (d.veh === "truck" ? "TRUCK MISSION" : "DRIVE MISSION"));
     dots(); showHud(true); el("qfin").classList.remove("on"); hud(true);
     toast(d.name + " スタート" + (Q.startName ? "（" + Q.startName + "から）" : "") + " — 最初は「" + Q.stops[0].name + "」", "");
@@ -6355,7 +7459,7 @@ const Quest = (() => {
   }
   function end(){
     clearFac(); Q.gen = null;
-    Q.on = false; Q.done = false; grp.visible = false; buildMarker(null); showHud(false);
+    Q.on = false; Q.done = false; grp.visible = false; buildMarker(null); showHud(false); Nav.clear("auto"); Taxi.stop();
     const f = el("qfin"); if(f) f.classList.remove("on"); const t = el("qtoast"); if(t) t.className = "qtoast";
     setPod(false);
   }
@@ -6371,8 +7475,10 @@ const Quest = (() => {
     else toast(s.name + " 通過（" + (i + 1) + "/" + Q.stops.length + "）", "good");
     Q.i++; Q.hold = 0;
     if(Q.i >= Q.stops.length){ finish(); return; }
-    buildMarker(Q.stops[Q.i]); dots();
+    buildMarker(Q.stops[Q.i]); dots(); navTo(Q.stops[Q.i]);
   }
+  /* v41.10: 車のミッションでは、次の地点をナビに自動でセットする（src="auto"。ヘリには付けない） */
+  function navTo(s){ if(heliMode() || !s) return; Nav.setTarget({ x: s.x, z: s.z, name: s.name, r: s.r, kind: s.kind }, "auto"); }
   function tick(dt){
     if(!Q.on) return;
     const t = el("qtoast"); if(Q.toastT > 0){ Q.toastT -= dt; if(Q.toastT <= 0 && t) t.className = "qtoast"; }
@@ -6411,7 +7517,7 @@ const Quest = (() => {
     }
     hud();
   }
-  const score = () => Math.max(0, Math.min(1000, Math.round(1000 - Q.pen.time - Q.pen.hit - Q.pen.hard - Q.pen.comfort - Q.pen.speed + Q.bonus.soft + Q.bonus.pin)));
+  const score = () => Math.max(0, Math.min(1000, Math.round(1000 - Q.pen.time - Q.pen.hit - Q.pen.hard - Q.pen.comfort - Q.pen.speed - (Q.pen.red || 0) + Q.bonus.soft + Q.bonus.pin)));
   let lastH = "";
   function hud(force){
     const s = Q.stops[Q.i]; if(!s) return; const m = me();
@@ -6432,13 +7538,13 @@ const Quest = (() => {
     el("q-cargo").textContent = Q.loaded ? "積載中: " + (Q.def.cargo || "") : (Q.def.cargo ? "積載なし" : "");
   }
   function finish(){
-    Q.done = true; grp.visible = false; buildMarker(null); showHud(false);
+    Q.done = true; grp.visible = false; buildMarker(null); showHud(false); Nav.clear("auto");
     const sc = score(), g = sc >= 900 ? "S" : sc >= 750 ? "A" : sc >= 550 ? "B" : "C", R = Prefs.record("quest:" + Q.def.id, sc);
     el("qf-name").textContent = Q.def.name; el("qf-score").textContent = sc; el("qf-grade").textContent = g; el("qf-grade").className = "qgrade g" + g;
     const rows = [["所要時間", fmt(Q.t) + "（目安 " + fmt(Q.parT) + "）", Q.pen.time ? "−" + Math.round(Q.pen.time) : "±0"],
                   ["衝突", Q.hits + " 回", Q.pen.hit ? "−" + Q.pen.hit : "±0"]];
     if(heliMode()) rows.push(["ランディング", Q.pen.hard ? "荒い着陸あり" : (Q.bonus.soft ? "ソフトランディング" : "—"), (Q.pen.hard ? "−" + Q.pen.hard : "") + (Q.bonus.soft ? " +" + Q.bonus.soft : "") || "±0"]);
-    else { rows.push(["乗り心地・荷物", Q.pen.comfort ? "急な操作あり" : "なめらか", Q.pen.comfort ? "−" + Q.pen.comfort : "±0"]); rows.push(["速度超過", Q.pen.speed > 0.5 ? "あり" : "なし", Q.pen.speed > 0.5 ? "−" + Math.round(Q.pen.speed) : "±0"]); }
+    else { rows.push(["乗り心地・荷物", Q.pen.comfort ? "急な操作あり" : "なめらか", Q.pen.comfort ? "−" + Q.pen.comfort : "±0"]); rows.push(["速度超過", Q.pen.speed > 0.5 ? "あり" : "なし", Q.pen.speed > 0.5 ? "−" + Math.round(Q.pen.speed) : "±0"]); rows.push(["信号無視・逆走", Q.pen.red ? "あり" : "なし", Q.pen.red ? "−" + Math.round(Q.pen.red) : "±0"]); }
     if(Q.bonus.pin) rows.push(["ぴたり停止", "", "+" + Q.bonus.pin]);
     el("qf-rows").innerHTML = rows.map((r) => '<div class="qr"><span>' + r[0] + '</span><span>' + r[1] + '</span><b>' + r[2] + '</b></div>').join("");
     el("qf-best").textContent = R.newBest && R.n > 1 ? "自己ベスト更新！（これまでの最高 " + R.best + " 点）" : "最高 " + R.best + " 点・" + R.n + " 回目";
@@ -6456,21 +7562,23 @@ const Quest = (() => {
     host.innerHTML = "";
     for(const c of L){
       const b = document.createElement("button"); b.type = "button"; b.className = "quest-opt" + (c.id === sel[mode] ? " on" : ""); b.dataset.qid = c.id;
-      const bs = best(c.id);
-      b.innerHTML = '<span class="qs">' + "★".repeat(c.star) + '<i>' + "★".repeat(3 - c.star) + '</i></span><b>' + c.name + '</b><small>' + c.blurb + '</small>' + (bs ? '<em>最高 ' + bs + '</em>' : "");
+      const bs = c.shift ? 0 : best(c.id), bt = c.shift ? Taxi.bestText() : "";
+      b.innerHTML = '<span class="qs">' + "★".repeat(c.star) + '<i>' + "★".repeat(3 - c.star) + '</i></span><b>' + c.name + '</b><small>' + c.blurb + '</small>' + (bs ? '<em>最高 ' + bs + '</em>' : bt ? '<em>' + bt + '</em>' : "");
       b.addEventListener("click", () => { host.querySelectorAll(".quest-opt").forEach((x) => x.classList.toggle("on", x === b)); sel[mode] = c.id; if(onPick) onPick(c); });
       host.appendChild(b);
     }
   }
   const inYard = (x, z) => fac.yards.some((y) => Math.hypot(x - y.x, z - y.z) < y.r);
-  return { begin, end, tick, list, def, sel, renderPicker, mapPts, Q, snapRoad, COURSES, PL, inYard, get sites(){ return SITES; }, get on(){ return Q.on; }, get done(){ return Q.done; }, score };
+  Rules.on((kind) => { if(!Q.on || Q.done || heliMode() || S.mode !== "car") return;   // v41.10: 信号無視・逆走の減点
+    if(kind === "red"){ Q.pen.red += 60; toast("信号無視 −60 点", "bad"); } else if(kind === "wrong"){ Q.pen.red += 30; toast("逆走 −30 点", "bad"); } });
+  return { begin, end, tick, list, def, sel, renderPicker, mapPts, Q, snapRoad, COURSES, PL, inYard, town, get sites(){ return SITES; }, get on(){ return Q.on; }, get done(){ return Q.done; }, score };
 })();
 
 // v41.7: ミッションの画面の操作
 $("q-quit").addEventListener("click", () => Quest.end());
 $("qf-free").addEventListener("click", () => Quest.end());
 $("qf-menu").addEventListener("click", () => { Quest.end(); $(S.mode === "heli" ? "heli-menu" : "car-menu").click(); });
-function questAgain(same){ const d = Quest.Q.def; if(!d) return; const sd = same ? Quest.Q.seed : undefined; Quest.end();
+function questAgain(same){ if(Taxi.pending){ Taxi.again(); return; } const d = Quest.Q.def; if(!d) return; const sd = same ? Quest.Q.seed : undefined; Quest.end();
   if(d.mode === "heli"){ Heli.setStart(d.start); Heli.start(); } else { placeCar(); }
   Quest.begin(d.id, sd); }
 $("qf-retry").addEventListener("click", () => questAgain(true));
@@ -6525,7 +7633,7 @@ const TT = (() => {
   }
   $("ttp-x").addEventListener("click", () => setOpen(false));
   { const b1 = $("tt-btn"), b2 = $("tt-btn2"); if(b1) b1.addEventListener("click", toggle); if(b2) b2.addEventListener("click", toggle); }
-  document.addEventListener("keydown", (e) => { if(e.repeat || e.ctrlKey || e.metaKey || e.altKey) return; if((e.key === "i" || e.key === "I") && Clock.inSession()) toggle(); });
+  document.addEventListener("keydown", (e) => { if(e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing()) return; if((e.key === "i" || e.key === "I") && Clock.inSession()) toggle(); });
   Clock.onShift((d) => { Dia.shift(d); Bus.bdShift(d); });
   return { toggle, setOpen, tick, render, fillFinish, model, get open(){ return open; } };
 })();
@@ -6545,7 +7653,7 @@ function loop(now){
   if(S.mode==="car"||S.mode==="bus"){}
   else if(S.mode==="heli"){ S.t+=dt; S.clock+=dt; Heli.tick(dt); if(S.car) S.car.visible=false; Heli.updateCam(dt); Heli.hud(); Loc.update(dt, Heli.H.x, Heli.H.z, ""); Snd.heliSound(Heli.H); }
   else if(S.running){ tick(dt); if(S.track){ const p=pointAt(S.pos); Loc.update(dt, p.x, p.z, S.route && S.route.name ? S.route.name.replace(/（.*$/,"") : ""); } } else { S.t+=dt; if(S.track && $("menu").style.display!=="none"){ S.pos=S.cum[0]+40+((S.t*5)%Math.max(1,S.endArc-120)); } }
-  Quest.tick(dt);
+  Quest.tick(dt); Rules.tick(dt); Taxi.tick(dt); Nav.tick(dt);
   NaviMap.update(dt);
   lampT+=dt; if(lampT>0.25){ lampT=0; updateLamps(S.t); }
   if(S.mode!=="car" && S.mode!=="bus" && S.mode!=="heli") updateCamera();
@@ -6564,6 +7672,6 @@ requestAnimationFrame(loop);
 applyMenu();
 loadAll().catch(e=>{ console.error(e); $("start-label").textContent="読み込みに失敗しました: "+e.message; });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
-window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap;   // v29: 試験用
+window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
 window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
 })();
