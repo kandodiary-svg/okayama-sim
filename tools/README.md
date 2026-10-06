@@ -17,6 +17,7 @@
 - `tests/`: ブラウザ（Playwright）での試験・画面の撮影
   - v41.10: `nav_plan_test.js`（ナビの経路計算: 1548 通りで失敗 0・計算時間）、`taxi_test.js`（タクシー営業の流れ: 乗り場・メーター・配車・迎車・取り消し・見送りの 13 項目）。どちらも `repl.js` の命令ファイル
   - v41.11: `nav_route_stats.js`（ランダムな出発地・目的地の経路が大通りをどれだけ通るか・遠回り率）、`nav_plan_leg_test.js`（経路計算の成功数と、経路の終点と目的地のずれ）、`traffic_dist_test.js`（道の大きさ別の車の密度・平均速度・停止率）。いずれも `repl.js` の命令ファイル
+  - v41.12: `lane_common.py`（車線データの読み込み）、`lane_vs_lines.py`（大通りの車線と白線の位置関係: 最寄りの平行な白線までの距離・左右の白線の真ん中からのずれ）、`lane_spacing.py`・`lane_group_spacing.py`（隣の車線との間隔: 同じ向き・反対向き）、`traffic_jitter_fixed.js`（決めた 4 地点で車の横ぶれ・向きの急変を測る。`repl.js` の命令ファイル）。`OUT_DIR` で測るデータの場所を変える（白線の点は `traffic_align2.py` が `/tmp/markq.npy`・`/tmp/markdirs.npz` に作る）
 - `app/`: `index.html` の元（`head.html`・`vehicles.js`・`app.js` をつなげる。`work/mkx.sh`）
   - `vehicles.js`: 車・トラック・バスの形を作るコード（v41.9）。`vehicles_src/veh_base.js`（周りの車の形・車体の作り方・材質）と `vehicles_src/veh_hi.js`（自分の車・運転席・バスの車体）から `bash app/vehicles_src/mkveh.sh` で作る（直接は編集しない）
   - 形の確認用ページ: `tests/lab/lab.html`（街なしで車だけを表示）と `tests/vehicle_lab.js`（撮影）
@@ -34,6 +35,7 @@ build_v5.py の大きな格子の計算は行の帯ごとに行います（結�
 - `geo_ground`（enc=grad2）: 地面の高さは 2 次元の差分。`geo_drive`（enc=gres）: 走行格子の高さは地面の格子からの予測との差。`geo_pwires`（pwires_enc=sd）: 電線は cm の整数の差分。
   Python では `pipeline/geo_io.py` の `read_legacy` で以前の並びに戻せます。
 - `traffic.json` の車線の点列は `traffic_pts.txt`（`compact_traffic.py`）。元の形は作業フォルダの `traffic_full.json`。
+- 車線の位置合わせ（`pipeline/`）: `traffic_align.py`（v41.8。白線を避ける ±1.2m）→ `traffic_align2.py`（v41.12。大通りの車線を白線の間・隣と 3m 以上に並べ直す。元は `wx/traffic_pre_align.json` に退避して、何度流しても同じ結果。`traffic_align.py` の代わりに流す）
 
 ## ライセンス
 スクリプトはリポジトリの `LICENSE` に従います。`work/core/`・`osm/` のデータは PLATEAU（CC BY 4.0）・OpenStreetMap（ODbL）・国土地理院の規約に従います。
