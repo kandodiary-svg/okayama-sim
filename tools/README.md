@@ -14,7 +14,9 @@
   - `osm_core.tar.xz`: 中心部（2026-09-26）。`osm_v29_fetch.tar.xz`: v29 の範囲（2026-09-28）。`osm_v30_fetch.tar.xz`: v30 の範囲（2026-09-29）
   - `merge_osm.py osm_cur.json extra_cur.json v30` で 3 段に重ねる（内側の範囲の中は古い取得のまま）
 - `tests/`: ブラウザ（Playwright）での試験・画面の撮影
-- `app/`: `index.html` の元（`head.html` と `app.js` をつなげる。`work/mkx.sh`）
+- `app/`: `index.html` の元（`head.html`・`vehicles.js`・`app.js` をつなげる。`work/mkx.sh`）
+  - `vehicles.js`: 車・トラック・バスの形を作るコード（v41.9）。`vehicles_src/veh_base.js`（周りの車の形・車体の作り方・材質）と `vehicles_src/veh_hi.js`（自分の車・運転席・バスの車体）から `bash app/vehicles_src/mkveh.sh` で作る（直接は編集しない）
+  - 形の確認用ページ: `tests/lab/lab.html`（街なしで車だけを表示）と `tests/vehicle_lab.js`（撮影）
 
 ## 作業フォルダ
 スクリプトは `/home/claude/wx`（途中のファイル）、`/home/claude/pipeline-x`（スクリプト）、`/home/claude/okaden-x/data`（出力）を前提にしています。

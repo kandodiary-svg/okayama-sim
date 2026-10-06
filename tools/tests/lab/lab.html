@@ -1,0 +1,34 @@
+<!doctype html><meta charset="utf-8"><title>vehicle lab</title>
+<style>html,body{margin:0;background:#9fb4c4}canvas{display:block}</style><body></body>
+<script src="three.min.js"></script>
+<script src="../../app/vehicles.js"></script>
+<script>
+const Q = new URLSearchParams(location.search);
+const W = +(Q.get("w")||900), H = +(Q.get("h")||560);
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true}); renderer.setSize(W,H); document.body.appendChild(renderer.domElement);
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene(); const night = +(Q.get("n")||0);
+scene.background = new THREE.Color(night? 0x0c1220 : 0xaec3d3);
+const hemi = new THREE.HemisphereLight(0xeef2f5, 0x5d574b, night?0.18:0.80); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff0d8, night?0.05:0.72); sun.position.set(-4.5, 8.2, 3.8); sun.castShadow=true; sun.shadow.mapSize.set(1024,1024);
+{const c=sun.shadow.camera; c.left=-8;c.right=8;c.top=8;c.bottom=-8;c.near=1;c.far=40;} scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60,60), new THREE.MeshLambertMaterial({color:0x4a4b4d})); ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; scene.add(ground);
+const cam = new THREE.PerspectiveCamera(+(Q.get("fov")||34), W/H, 0.05, 200);
+const name = Q.get("t")||"sedan", mode = Q.get("m")||"ai", lod = +(Q.get("lod")||1);
+const mat = Veh.makeMat();
+let obj;
+const cs = (Q.get("c")||"0.75,0.1,0.1").split(",").map(Number);
+if(mode==="busbody"){ const tx=(t,bg)=>{ const c=document.createElement("canvas"); c.width=512; c.height=256; const g=c.getContext("2d"); g.fillStyle=bg; g.fillRect(0,0,512,256); g.strokeStyle="#000"; g.lineWidth=3; for(let i=0;i<=8;i++){ g.beginPath(); g.moveTo(i*64,0); g.lineTo(i*64,256); g.stroke(); } for(let i=0;i<=4;i++){ g.beginPath(); g.moveTo(0,i*64); g.lineTo(512,i*64); g.stroke(); } g.fillStyle="#d00"; g.font="bold 60px sans-serif"; g.fillText(t,20,150); const T=new THREE.CanvasTexture(c); return T; };
+  const ml=new THREE.MeshPhongMaterial({map:tx("L:FRONT-->","#cfe"),shininess:50}), mr=new THREE.MeshPhongMaterial({map:tx("R:FRONT-->","#fec"),shininess:50}); mr.map.wrapS=THREE.RepeatWrapping; mr.map.repeat.x=-1; mr.map.offset.x=1;
+  const mats=[ml,mr,new THREE.MeshPhongMaterial({color:0xf2f3f1}),new THREE.MeshLambertMaterial({color:0x202326}),new THREE.MeshPhongMaterial({map:tx("FRONT","#cce")}),new THREE.MeshPhongMaterial({map:tx("REAR","#ecc")})];
+  obj=new THREE.Mesh(Q.get('box')? new THREE.BoxGeometry(2.49,2.8,10.5):Veh.busBody(),mats); if(Q.get('box')) obj.position.y=1.7; obj.castShadow=true; scene.add(obj); window.__tris=Veh.busBody().attributes.position.count/3;
+  const hw=Veh.hi("busP"); for(const w of hw.userData.wheels) scene.add(w.steer); }
+else if(mode==="ai"){ const g = Veh.ai(name, lod); obj = new THREE.InstancedMesh(g, mat, 1); obj.setColorAt(0, new THREE.Color(cs[0],cs[1],cs[2])); obj.setMatrixAt(0, new THREE.Matrix4()); obj.castShadow=true; scene.add(obj); window.__tris = g.attributes.position.count/3; }
+else { obj = Veh.hi(name, {color: new THREE.Color(cs[0],cs[1],cs[2])}); scene.add(obj); if(Q.get("br")) obj.userData.update({v:+(Q.get("v")||0)/3.6,rpm:+(Q.get("rpm")||800),gear:"D",wheel:+(Q.get("wh")||0),brk:+Q.get("br"),odo:12340}); else obj.userData.update({v:+(Q.get("v")||0)/3.6,rpm:+(Q.get("rpm")||800),gear:"D",wheel:+(Q.get("wh")||0),brk:0,odo:12340}); if(obj.userData.setSky) obj.userData.setSky(new THREE.Color(0.68,0.76,0.82)); window.__tris = 0; obj.traverse(o=>{ if(o.isMesh){ o.castShadow=true; window.__tris += o.geometry.attributes.position.count/3; }}); }
+if(mode==="hi" && Q.get("solo")==="cab"){ obj.userData.body.children.forEach(c=>{ if(c!==obj.userData.cab) c.visible=false; }); obj.children.forEach(c=>{ if(c!==obj.userData.body) c.visible=false; }); }
+const az=+(Q.get("az")||35)*Math.PI/180, el=+(Q.get("el")||14)*Math.PI/180, d=+(Q.get("d")||9), ty=+(Q.get("ty")||0.75), tz=+(Q.get("tz")||0), tx=+(Q.get("tx")||0);
+if(Q.get("cab") && mode==="hi"){ const e=obj.userData.eye; cam.near=0.08; cam.updateProjectionMatrix(); const pd=+(Q.get("pd")||e.pitch||4)*Math.PI/180, yw=+(Q.get("yw")||0)*Math.PI/180; cam.position.set(e.x,e.y,e.z); cam.lookAt(e.x+Math.sin(yw)*20, e.y-Math.tan(pd)*20, e.z+Math.cos(yw)*20); }
+else { cam.position.set(tx+Math.sin(az)*Math.cos(el)*d, ty+Math.sin(el)*d, tz+Math.cos(az)*Math.cos(el)*d); cam.lookAt(tx,ty,tz); }
+try{ const b=Veh.build(name, lod).B; window.__grp=Object.entries(b.g).map(([k,g])=>k+":"+(g.p.length/9|0)).join(" "); }catch(e){}
+renderer.render(scene,cam); window.__done=1;
+</script>
