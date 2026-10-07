@@ -2952,7 +2952,7 @@ const Bus = (() => {
         busSay(D.stops[i].name+"。"+(a?a+"人が降ります。":"")+(b?b+"人が乗ります。":"")+"乗り降りが終わるまでお待ちください。");
         { const m=bdOpen(i); if(m){ $("bus-msg").textContent+="　"+m; $("subtitle").textContent+="　"+m; } }
         if(i===D.stops.length-1) setTimeout(finish, 2500);
-      } else { st.atStop=-1; st.score=Math.max(0, st.score-5); busSay(z ? "停留所の標柱に扉を合わせてください（"+(z.along>0?"あと "+z.along.toFixed(1)+" m 前":Math.abs(z.along).toFixed(1)+" m 行き過ぎ")+"・歩道まで "+z.gap.toFixed(1)+" m）。" : "停留所以外で扉を開けました（-30点）。"); }
+      } else { st.atStop=-1; st.score=Math.max(0, st.score-5); busSay(z ? "停留所の標柱に扉を合わせてください（"+(z.along>0?"あと "+z.along.toFixed(1)+" m 前":Math.abs(z.along).toFixed(1)+" m 行き過ぎ")+"・歩道まで "+z.gap.toFixed(1)+" m）。" : "停留所以外で扉を開けました（-5点）。"); }
     } else {
       if(st.atStop>=0 && st.dwell<st.dwellNeed){ st.score=Math.max(0, st.score-10); busSay("まだ乗り降りしています（-10点）。"); }
       st.doors=false; Snd.door && Snd.door(false);
@@ -3037,11 +3037,11 @@ const Bus = (() => {
       }
     }
     // 乗り心地（乗客がいるとき）
-    const acc=Math.abs(C.acc||0), lat=C.aLat||0;
-    if(st.pax>0 && Math.abs(C.v)>0.5 && (acc>3.4 || lat>3.6)){ if(!st._harsh && performance.now()-(st._harshT||0)>6000){ st._harsh=true; st._harshT=performance.now(); st.comfortHits++; st.score=Math.max(0,st.score-5); busSay("急な操作で車内が揺れました（-5点）。"); } } else if(acc<2.0 && lat<2.2) st._harsh=false;
-    // 速度制限
+    const cmf=(Car.P&&Car.P.cmf)||{acc:3.6,lat:3.6}, acc=Math.abs(C.accF||0), lat=C.latF||0;   // v41.16: 体に感じる加速度（なめらかにならした値）で判定
+    if(st.pax>0 && Math.abs(C.v)>0.5 && (acc>cmf.acc || lat>cmf.lat)){ if(!st._harsh && performance.now()-(st._harshT||0)>6000){ st._harsh=true; st._harshT=performance.now(); st.comfortHits++; st.score=Math.max(0,st.score-5); busSay((acc>cmf.acc ? "急ブレーキ・急発進" : "急ハンドル")+"で車内が揺れました（-5点）。"); } } else if(acc<cmf.acc*0.6 && lat<cmf.lat*0.6) st._harsh=false;
+    // 速度制限（車・タクシーと同じ: +20 km/h までは減点なし）
     const lim = st.lim || 50;
-    if(Math.abs(C.v)*3.6 > lim+10){ st.score=Math.max(0, st.score-dt*4); if(performance.now()-st.lastWarn>3000){ st.lastWarn=performance.now(); busSay("制限速度 "+lim+" km/h を超えています。"); } }
+    if(Math.abs(C.v)*3.6 > lim+SPEED_OVER_OK){ st.score=Math.max(0, st.score-dt*4); if(performance.now()-st.lastWarn>3000){ st.lastWarn=performance.now(); busSay("制限速度 "+lim+" km/h を超えています。"); } }
     $("bus-score").textContent=Math.round(st.score); $("bus-pax").textContent=st.pax+"人"; $("bus-door").textContent=st.doors?"開":"閉"; $("bus-door").classList.toggle("open", st.doors);
     $("bus-lim").textContent=lim;
     // 案内帯（前方 180m）
@@ -4093,15 +4093,15 @@ const Car = (() => {
   let G = null;           // {nx,nz,x0,z0,step,H(Int16),K(Uint8)}
   // 車種ごとの諸元（v11: バスを追加）
   const PROFILES = {
-    sedan: { L: 2.7, rearOff: 1.35, vmax: 180 / 3.6, drive: 3.4, brake: 8.0, grip: 0.9, ratio: 14.5, maxW: 7.85, speedSens: 75,
+    sedan: { L: 2.7, rearOff: 1.35, vmax: 180 / 3.6, drive: 3.4, brake: 8.0, grip: 0.9, ratio: 14.5, maxW: 7.85, speedSens: 75, cmf: { acc: 4.6, lat: 4.6 },
              corners: [[2.2, 0.85], [2.2, -0.85], [-2.2, 0.85], [-2.2, -0.85], [2.3, 0]], len: 4.5, wid: 1.8,
              drv: { x: -0.37, y: 1.22, f: 0.15 }, cam: { back: 8.5, up: 3.2, look: 3 } },
     // v41.7: 2t トラック（キャブオーバー・箱型）: 軸距 3.35m・全長 6.0m・全幅 1.88m・最小回転半径 約 5.2m。最高 90km/h（速度抑制装置相当）
-    truck: { L: 3.35, rearOff: 1.9, vmax: 90 / 3.6, drive: 2.2, brake: 6.2, grip: 0.7, ratio: 15, maxW: 7.85, speedSens: 105, pitchK: 0.0055, rollK: 0.011,
+    truck: { L: 3.35, rearOff: 1.9, vmax: 90 / 3.6, drive: 2.2, brake: 6.2, grip: 0.7, ratio: 15, maxW: 7.85, speedSens: 105, cmf: { acc: 4.0, lat: 4.0 }, pitchK: 0.0055, rollK: 0.011,
              corners: [[2.8, 0.92], [2.8, -0.92], [-3.0, 0.92], [-3.0, -0.92], [2.8, 0], [1.2, 0.95], [1.2, -0.95], [-0.8, 0.95], [-0.8, -0.95], [-2.0, 0.95], [-2.0, -0.95]], len: 6.0, wid: 1.88,
              drv: { x: -0.5, y: 2.05, f: 1.75 }, cam: { back: 11.5, up: 4.3, look: 4, lookH: 1.8 } },
     // 三菱ふそう エアロスター（ノンステップ 10.5m 級）相当: 軸距 5.3m・全幅 2.49m・最小回転半径 約 8.3m
-    bus:   { L: 5.3, rearOff: 2.75, vmax: 80 / 3.6, drive: 1.35, brake: 5.5, grip: 0.62, ratio: 13.5, maxW: 7.85, speedSens: 140,
+    bus:   { L: 5.3, rearOff: 2.75, vmax: 80 / 3.6, drive: 1.35, brake: 5.5, grip: 0.62, ratio: 13.5, maxW: 7.85, speedSens: 140, cmf: { acc: 3.6, lat: 3.6 },
              corners: [[5.2, 1.2], [5.2, -1.2], [-5.2, 1.2], [-5.2, -1.2], [5.3, 0], [2.6, 1.25], [2.6, -1.25], [0, 1.25], [0, -1.25], [-2.6, 1.25], [-2.6, -1.25]], len: 10.5, wid: 2.49,
              drv: { x: -0.7, y: 2.2, f: 4.6 }, cam: { back: 17, up: 5.6, look: 6 } },
   };
@@ -4279,6 +4279,10 @@ const Car = (() => {
     let yawRate = C.v * Math.tan(C.steer) / P.L;
     const aLat = Math.abs(yawRate * C.v), aMax = P.grip * 9.8 * (wet ? 0.78 : 1);
     C.aLat = aLat;
+    // v41.16: 乗り心地の判定用「体に感じる加速度」。坂の成分は除き、0.45 秒ぶんなめらかにならす（1 フレームの揺れや、キーを一瞬押しただけでは減点しない）。衝突の直後は数えない（衝突は別に減点）
+    { const fAcc = C.acc + 9.8 * grade, fLat = Math.min(aLat, aMax), k = 1 - Math.exp(-dt / 0.45);
+      if (C.hitT > 0.7) { C.accF = (C.accF || 0) * 0.9; C.latF = (C.latF || 0) * 0.9; }
+      else { C.accF = (C.accF || 0) + (fAcc - (C.accF || 0)) * k; C.latF = (C.latF || 0) + (fLat - (C.latF || 0)) * k; } }
     C.slip = aLat > aMax ? Math.min(1, (aLat - aMax) / 4) : 0;
     if (aLat > aMax) yawRate *= aMax / aLat;
     // 後輪軸を基準に動かす（長い車体は前が外へ振り出す）
@@ -7294,7 +7298,8 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
       if(T.st === "ride"){
         const C = Car.C;
         if(C.hitT > 1.0 && !T.lastHit){ ding(1.0, "衝突！ お客さんがおどろいている", "hit"); } T.lastHit = C.hitT > 1.0;
-        if(m.v > 0.5 && (Math.abs(C.acc || 0) > 3.4 || Math.abs(C.aLat || 0) > 3.6) && T.comfortT <= 0){ ding(0.3, "急な操作でお客さんが驚いた", "comfort"); T.comfortT = 4; } T.comfortT = Math.max(0, T.comfortT - dt);
+        const cmf = Car.P.cmf || { acc: 4.6, lat: 4.6 };
+        if(m.v > 0.5 && (Math.abs(C.accF || 0) > cmf.acc || (C.latF || 0) > cmf.lat) && T.comfortT <= 0){ ding(0.3, (Math.abs(C.accF || 0) > cmf.acc ? "急ブレーキ・急発進" : "急ハンドル") + "でお客さんが驚いた", "comfort"); T.comfortT = 4; } T.comfortT = Math.max(0, T.comfortT - dt);
         const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + SPEED_OVER_OK){ T.speedAcc += dt; if(T.speedAcc > 3 && T.speedT <= 0){ ding(0.3, "制限速度 " + lim + " km/h を超えています", "speed"); T.speedT = 12; } } else T.speedAcc = Math.max(0, T.speedAcc - dt);
         T.speedT = Math.max(0, T.speedT - dt);
         talkTick(dt, m);   // v41.15: お客さんの会話
@@ -7510,7 +7515,7 @@ const Quest = (() => {
       stops: [ st_("eki", "pass", "輪をくぐる", { r: 55, agl: 90 }), st_("orient", "pass", "輪をくぐる", { r: 55, agl: 110 }), st_("korakuen", "pass", "輪をくぐる", { r: 55, agl: 110 }),
                st_("castle", "pass", "輪をくぐる", { r: 55, agl: 120 }), st_("kencho", "pass", "輪をくぐる", { r: 55, agl: 110 }), st_("higashiyama", "pass", "輪をくぐる", { r: 55, agl: 110 }) ] },
     { id: "car_taxi", mode: "car", veh: "sedan", name: "タクシー送迎", star: 1, cargo: "お客さん", comfortK: 5, gen: "taxi",
-      blurb: "駐車場を出て、お客さんの家の前で乗せて送り届ける。毎回ちがう場所。急発進・急ブレーキ・急ハンドルは減点。",
+      blurb: "駐車場を出て、お客さんの家の前で乗せて送り届ける。毎回ちがう場所。急発進・急ブレーキ・急ハンドルは減点（曲がる前に減速すれば大丈夫）。",
       stops: [ st_("ekimae", "load", "お客さんを乗せる", { r: 13 }), st_("kencho", "drop", "お客さんを降ろす", { r: 13 }), st_("chugin", "load", "次のお客さんを乗せる", { r: 13 }), st_("higashiyama", "drop", "お客さんを降ろす", { r: 13 }) ] },
     { id: "car_taxishift", mode: "car", veh: "sedan", name: "タクシー営業", star: 2, cargo: "お客さん", shift: true, stops: [],
       blurb: "岡山駅 東口の乗り場から出発。街を流して、乗り場で待つお客さんを乗せたり、無線の配車依頼を受けたりして、メーター運賃で売上を稼ぐ。終わる時は「営業終了」。" },
@@ -7519,7 +7524,7 @@ const Quest = (() => {
       stops: [ st_("nishikawa", "pass", "通過", { r: 14 }), st_("yanagawa", "pass", "通過", { r: 14 }), st_("jouge", "pass", "通過", { r: 14 }), st_("kenchodori", "pass", "通過", { r: 14 }),
                st_("tenmaya", "pass", "通過", { r: 14 }), st_("ntt", "pass", "通過", { r: 14 }), st_("ekimae", "pass", "通過", { r: 14 }) ] },
     { id: "truck_parcel", mode: "car", veh: "truck", name: "宅配トラック", star: 1, cargo: "荷物", comfortK: 3, gen: "truck",
-      blurb: "駐車場を出て、配送センターで荷物を積み、住宅街の路地や家の前へ 4〜6 件届ける。毎回ちがう配達先。",
+      blurb: "駐車場を出て、配送センターで荷物を積み、住宅街の路地や家の前へ 4〜6 件届ける。毎回ちがう配達先。荷物が揺れる急ブレーキ・急ハンドルは減点。",
       stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("yanagawa", "drop", "届ける", { r: 13 }), st_("ntt", "drop", "届ける", { r: 13 }), st_("tenmaya", "drop", "届ける", { r: 13 }), st_("chugin", "drop", "届ける", { r: 13 }) ] },
     { id: "truck_far", mode: "car", veh: "truck", name: "長距離配達", star: 3, cargo: "荷物", comfortK: 3, gen: "truckfar",
       blurb: "配送センターで積み、市内の遠い住宅街 4 件へ。道を選んで効率よく回る。毎回ちがう配達先。",
@@ -7760,7 +7765,7 @@ const Quest = (() => {
   function showHud(on){ const h = el("qhud"); if(h) h.classList.toggle("on", !!on); }
   function me(){
     if(heliMode()){ const H = Heli.H; return { x: H.x, z: H.z, y: H.y, v: Math.hypot(H.vF, H.vS), on: H.landed, yaw: H.yaw, hit: H.hitT > 0.3, heli: true }; }
-    const C = Car.C; return { x: C.x, z: C.z, y: C.h, v: Math.abs(C.v), on: true, yaw: C.yaw, hit: C.hitT > 1.0, acc: C.acc || 0, lat: C.aLat || 0, heli: false };
+    const C = Car.C; return { x: C.x, z: C.z, y: C.h, v: Math.abs(C.v), on: true, yaw: C.yaw, hit: C.hitT > 1.0, acc: C.accF || 0, lat: C.latF || 0, cmf: Car.P.cmf || { acc: 4.6, lat: 4.6 }, heli: false };
   }
 
   /* ---- 開始・終了 ---- */
@@ -7888,7 +7893,7 @@ const Quest = (() => {
         else if(near && Q.stops[Q.i].kind !== "pass"){ const b = g ? 25 : 15; Q.bonus.soft += b; toast("ソフトランディング +" + b + " 点", "good"); } }
     } else {
       // 乗り心地（乗せている間）・速度超過
-      if(Q.loaded && Q.def.comfortK && m.v > 0.5 && (Math.abs(m.acc) > 3.4 || m.lat > 3.6) && Q.comfortT <= 0){ Q.pen.comfort += Q.def.comfortK; Q.comfortT = 4; toast((Q.def.cargo === "お客さん" ? "急な操作でお客さんが驚いた" : "荷物が揺れた") + " −" + Q.def.comfortK + " 点", "bad"); }
+      if(Q.loaded && Q.def.comfortK && m.v > 0.5 && (Math.abs(m.acc) > m.cmf.acc || m.lat > m.cmf.lat) && Q.comfortT <= 0){ Q.pen.comfort += Q.def.comfortK; Q.comfortT = 4; toast((Math.abs(m.acc) > m.cmf.acc ? "急ブレーキ・急発進で" : "急ハンドルで") + (Q.def.cargo === "お客さん" ? "お客さんが驚いた" : "荷物が揺れた") + " −" + Q.def.comfortK + " 点", "bad"); }
       Q.comfortT = Math.max(0, Q.comfortT - dt);
       const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + SPEED_OVER_OK){ Q.pen.speed += dt * 1.2; Q.speedT -= dt; if(Q.speedT <= 0){ Q.speedT = 6; toast("制限速度 " + lim + " km/h を超えています", "bad"); } }
     }
