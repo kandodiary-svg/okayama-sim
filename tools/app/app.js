@@ -4254,21 +4254,23 @@ const Car = (() => {
     // v10.1: キーは「押している間その向きへ切る・離すと素早く真っすぐに戻る」。
     // 速度が上がるほど最大の切れ角を小さくする（車速感応）ので、低速では大きく曲がれ、高速でもふらつかない。
     const vv = Math.abs(C.v), oldMax = P.maxW * Math.max(0.22, Math.min(1, 1 - (vv * 3.6 - 12) / P.speedSens));
-    // v41.17: キー・パッドの切れ角の上限を「横加速度」で決める（速度が上がるほど切れ角は小さくなり、押しっぱなしでも横に滑らない）。
-    //   横加速度 = v²·tan(舵角)/軸距 なので、上限の横加速度 g から 舵角 = atan(g·軸距/v²)・ハンドル角 = 舵角×ギア比。低速（v<1.5 m/s）は従来どおり。雨は ×0.9。パッドはアナログなので ×1.3。Shift（スポーツ）は従来の上限
-    const latCap = (g) => vv > 1.5 ? Math.min(oldMax, Math.atan(g * P.kbLat * (Env.st.rain ? 0.9 : 1) * P.L / (vv * vv)) * P.ratio) : oldMax;
+    // v41.17→18: キー・パッドの切れ角の上限を「横加速度」で決める（横加速度 = v²·tan(舵角)/軸距 なので、上限 g から 舵角 = atan(g·軸距/v²)・ハンドル角 = 舵角×ギア比）。
+    //   g は速度で変える: 50 km/h 以下は滑る寸前（グリップの 0.95 倍＝交差点の角や街なかのカーブを曲がれる強さ）、そこから 90 km/h にかけてなめらかに kbLat（乗り心地の判定を超えない強さ）まで下げる。
+    //   → 高速は押しっぱなしでも滑らず、低〜中速は従来どおり曲がれる（v41.17 は全速度を kbLat にしたため、30 km/h 付近の角や 45 km/h 付近のカーブを曲がり切れなかった）。雨は ×0.8（雨の路面のグリップ 0.78 に合わせる）。パッドはアナログなので ×1.3。Shift（スポーツ）は従来の上限
+    const tpr = Math.max(0, Math.min(1, (vv - 13.9) / 11.1)), tp = tpr * tpr * (3 - 2 * tpr), gv = (P.grip * 9.8 * 0.95 + (P.kbLat - P.grip * 9.8 * 0.95) * tp) * (Env.st.rain ? 0.8 : 1);
+    const latCap = (k) => vv > 1.5 ? Math.min(oldMax, Math.atan(k * gv * P.L / (vv * vv)) * P.ratio) : oldMax;
     const maxW = sport ? oldMax : latCap(1), maxWp = sport ? oldMax : latCap(1.3);
-    // 切るスピードも横加速度の増え方（ジャーク）で決める: 押し始め 7 m/s³・切り返し 14 m/s³ 相当（低速は従来の 11／18 rad/s が上限）。手を離したときの戻りは 14 m/s³ 相当（低速は 16 rad/s が上限）
+    // 切るスピードも横加速度の増え方（ジャーク）で決める: 押し始め 24 m/s³・切り返し 36 m/s³ 相当（高速ほど遅くして 7・14 m/s³ まで。低速は従来の 11／18 rad/s が上限。従来は 50 km/h で 54・100 km/h で 220 m/s³ 相当と、ほぼ一瞬）。手を離したときの戻りは 36→14 m/s³ 相当（上限 16 rad/s）
     const jr = (J) => J * P.L * P.ratio / Math.max(vv * vv, 1);
     if (AP) C.wheel = AP.wheel;
     else if (touch.wheel !== null) C.wheel = touch.wheel;
     else if (PI_ && PI_.steer !== 0) { const tgt = -Math.sign(PI_.steer) * Math.pow(Math.abs(PI_.steer), 1.4) * maxWp; C.wheel += Math.max(-14 * dt, Math.min(14 * dt, tgt - C.wheel)); }
     else if (kSteer) {
       const tgt = kSteer * maxW, opp = !(Math.sign(tgt - C.wheel) === Math.sign(C.wheel) || C.wheel === 0), lowR = opp ? 18 : 11;   // 切り返しは速く
-      const rate = sport ? lowR : Math.min(lowR, jr(opp ? 14 : 7));
+      const rate = sport ? lowR : Math.min(lowR, jr(opp ? 36 - 22 * tp : 24 - 17 * tp));
       C.wheel += Math.max(-rate * dt, Math.min(rate * dt, tgt - C.wheel));
     }
-    else C.wheel -= Math.sign(C.wheel) * Math.min(Math.abs(C.wheel), dt * (vv > 0.5 ? (sport ? 16 : Math.min(16, jr(14))) : 9));   // 手を離すと真っすぐに戻る
+    else C.wheel -= Math.sign(C.wheel) * Math.min(Math.abs(C.wheel), dt * (vv > 0.5 ? (sport ? 16 : Math.min(16, jr(36 - 22 * tp))) : 9));   // 手を離すと真っすぐに戻る
     C.steer = C.wheel / P.ratio;                                                  // ステアリングギア比
     // 駆動力（km/h 別に 6速 AT 相当の包絡線）
     const sp = Math.abs(C.v);
