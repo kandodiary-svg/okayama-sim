@@ -4093,15 +4093,15 @@ const Car = (() => {
   let G = null;           // {nx,nz,x0,z0,step,H(Int16),K(Uint8)}
   // 車種ごとの諸元（v11: バスを追加）
   const PROFILES = {
-    sedan: { L: 2.7, rearOff: 1.35, vmax: 180 / 3.6, drive: 3.4, brake: 8.0, grip: 0.9, ratio: 14.5, maxW: 7.85, speedSens: 75, cmf: { acc: 4.6, lat: 4.6 },
+    sedan: { L: 2.7, rearOff: 1.35, vmax: 180 / 3.6, drive: 3.4, brake: 8.0, grip: 0.9, ratio: 14.5, maxW: 7.85, speedSens: 75, kbLat: 4.4, cmf: { acc: 4.6, lat: 4.6 },
              corners: [[2.2, 0.85], [2.2, -0.85], [-2.2, 0.85], [-2.2, -0.85], [2.3, 0]], len: 4.5, wid: 1.8,
              drv: { x: -0.37, y: 1.22, f: 0.15 }, cam: { back: 8.5, up: 3.2, look: 3 } },
     // v41.7: 2t トラック（キャブオーバー・箱型）: 軸距 3.35m・全長 6.0m・全幅 1.88m・最小回転半径 約 5.2m。最高 90km/h（速度抑制装置相当）
-    truck: { L: 3.35, rearOff: 1.9, vmax: 90 / 3.6, drive: 2.2, brake: 6.2, grip: 0.7, ratio: 15, maxW: 7.85, speedSens: 105, cmf: { acc: 4.0, lat: 4.0 }, pitchK: 0.0055, rollK: 0.011,
+    truck: { L: 3.35, rearOff: 1.9, vmax: 90 / 3.6, drive: 2.2, brake: 6.2, grip: 0.7, ratio: 15, maxW: 7.85, speedSens: 105, kbLat: 3.8, cmf: { acc: 4.0, lat: 4.0 }, pitchK: 0.0055, rollK: 0.011,
              corners: [[2.8, 0.92], [2.8, -0.92], [-3.0, 0.92], [-3.0, -0.92], [2.8, 0], [1.2, 0.95], [1.2, -0.95], [-0.8, 0.95], [-0.8, -0.95], [-2.0, 0.95], [-2.0, -0.95]], len: 6.0, wid: 1.88,
              drv: { x: -0.5, y: 2.05, f: 1.75 }, cam: { back: 11.5, up: 4.3, look: 4, lookH: 1.8 } },
     // 三菱ふそう エアロスター（ノンステップ 10.5m 級）相当: 軸距 5.3m・全幅 2.49m・最小回転半径 約 8.3m
-    bus:   { L: 5.3, rearOff: 2.75, vmax: 80 / 3.6, drive: 1.35, brake: 5.5, grip: 0.62, ratio: 13.5, maxW: 7.85, speedSens: 140, cmf: { acc: 3.6, lat: 3.6 },
+    bus:   { L: 5.3, rearOff: 2.75, vmax: 80 / 3.6, drive: 1.35, brake: 5.5, grip: 0.62, ratio: 13.5, maxW: 7.85, speedSens: 140, kbLat: 3.4, cmf: { acc: 3.6, lat: 3.6 },
              corners: [[5.2, 1.2], [5.2, -1.2], [-5.2, 1.2], [-5.2, -1.2], [5.3, 0], [2.6, 1.25], [2.6, -1.25], [0, 1.25], [0, -1.25], [-2.6, 1.25], [-2.6, -1.25]], len: 10.5, wid: 2.49,
              drv: { x: -0.7, y: 2.2, f: 4.6 }, cam: { back: 17, up: 5.6, look: 6 } },
   };
@@ -4199,8 +4199,10 @@ const Car = (() => {
   addEventListener("keydown", e => { if (!C.active || typing()) return; key[e.key.toLowerCase()] = true;
     if (e.key === "v" || e.key === "V") setView(C.view === "chase" ? "driver" : "chase");
     if ((e.key === "r" || e.key === "R")) toggleGear();
+    if (e.key === "Shift" && !e.repeat && !C._shiftMsg) { C._shiftMsg = 1; C.msgT = 3; C.msg = "Shift を押している間はスポーツ操作（ハンドル・ブレーキが鋭くなります）"; }
     if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(e.key.toLowerCase())) e.preventDefault(); });
   addEventListener("keyup", e => { key[e.key.toLowerCase()] = false; });
+  addEventListener("blur", () => { for (const k in key) key[k] = false; C.kT = 0; C.kB = 0; });   // v41.17: 別のウィンドウに移ったとき、押しっぱなし（特に Shift のスポーツ）が残らないように
   const touch = { thr: 0, brk: 0, wheel: null };
   function setGear(g) { if (C.gear === g) return; if (Math.abs(C.v) >= 0.5) { C.msgT = 2; C.msg = "停止してからギアを切り替えてください"; return; } C.gear = g; C.msgT = 1.5; C.msg = g === "R" ? "R（後退）に入れました" : "D（前進）に入れました"; hud(); }
   function toggleGear() { setGear(C.gear === "D" ? "R" : "D"); }
@@ -4229,7 +4231,17 @@ const Car = (() => {
     // 試験用の自動運転（C.autopilot が {thr, brk, wheel} を返す）
     const AP = C.autopilot ? C.autopilot(C) : null;
     const PI_ = (typeof Pad !== "undefined" && Pad.PIN.active) ? Pad.PIN : null;
-    const thrIn = AP ? AP.thr : Math.max(C.gear === "R" ? dn : up, touch.thr, PI_ ? PI_.thr : 0), brkIn = AP ? AP.brk : Math.max(C.gear === "R" ? up : dn, touch.brk, PI_ ? PI_.brk : 0);
+    // v41.17: キー・画面のボタン（オン／オフしかない入力）は「押している時間が長いほど強く」効く。
+    //   ブレーキ: 最初 15% → 0.7 秒で「快適な強さ」（体に感じる減速が乗り心地の判定 cmf を超えない強さ）→ 2.5 秒押し続けると 0.12/秒ずつ強まり全開へ（長く踏み続ける＝急いで止めたい）。
+    //     止まる直前はやわらげる（ガクッとならない）。離して 0.35 秒以内に押し直せば続きから（踏み替え・こまめな加減がしやすい）。
+    //   アクセル: 最初 30% → 約 0.45 秒で全開。Shift を押している間は従来どおり最初から全開（スポーツ）。ゲームパッドのアナログ入力・自動運転・Space（急ブレーキ）は変えない
+    const sport = !!key.shift; C.sport = sport;
+    const dT = Math.max(C.gear === "R" ? dn : up, touch.thr), dB = Math.max(C.gear === "R" ? up : dn, touch.brk);
+    C.kT = dT ? (C.kT || 0) + dt : 0; C.kB = dB ? (C.kB || 0) + dt : Math.max(0, Math.min(C.kB || 0, 0.7) - dt * 2);
+    const bp = Math.min(0.62, Math.max(0.3, (0.92 * (P.cmf ? P.cmf.acc : 4.6) - 0.8) / P.brake)), bt = C.kB;   // 0.8 = 転がり・空気・エンジンブレーキの目安
+    const kT = !dT ? 0 : sport ? 1 : Math.min(1, 0.3 + 1.6 * C.kT);
+    const kB = !dB ? 0 : sport ? 1 : Math.min(1, bt < 0.7 ? 0.15 + (bp - 0.15) * bt / 0.7 : bp + 0.12 * Math.max(0, bt - 2.5)) * (0.3 + 0.7 * Math.min(1, Math.abs(C.v) / 3));
+    const thrIn = AP ? AP.thr : Math.max(kT, PI_ ? PI_.thr : 0), brkIn = AP ? AP.brk : Math.max(kB, PI_ ? PI_.brk : 0);
     // アクセル・ブレーキの踏み込みは 0.25 秒程度で立ち上がる
     C.thr += (thrIn - C.thr) * Math.min(1, dt * 5); C.brk += (brkIn - C.brk) * Math.min(1, dt * 7);
     // 停止中にブレーキを押し続けると R、アクセルで D（AT 車の操作に近い簡易版）
@@ -4241,15 +4253,22 @@ const Car = (() => {
     const kSteer = kb("arrowleft") || kb("a") ? 1 : (kb("arrowright") || kb("d") ? -1 : 0);
     // v10.1: キーは「押している間その向きへ切る・離すと素早く真っすぐに戻る」。
     // 速度が上がるほど最大の切れ角を小さくする（車速感応）ので、低速では大きく曲がれ、高速でもふらつかない。
-    const maxW = P.maxW * Math.max(0.22, Math.min(1, 1 - (Math.abs(C.v) * 3.6 - 12) / P.speedSens));
+    const vv = Math.abs(C.v), oldMax = P.maxW * Math.max(0.22, Math.min(1, 1 - (vv * 3.6 - 12) / P.speedSens));
+    // v41.17: キー・パッドの切れ角の上限を「横加速度」で決める（速度が上がるほど切れ角は小さくなり、押しっぱなしでも横に滑らない）。
+    //   横加速度 = v²·tan(舵角)/軸距 なので、上限の横加速度 g から 舵角 = atan(g·軸距/v²)・ハンドル角 = 舵角×ギア比。低速（v<1.5 m/s）は従来どおり。雨は ×0.9。パッドはアナログなので ×1.3。Shift（スポーツ）は従来の上限
+    const latCap = (g) => vv > 1.5 ? Math.min(oldMax, Math.atan(g * P.kbLat * (Env.st.rain ? 0.9 : 1) * P.L / (vv * vv)) * P.ratio) : oldMax;
+    const maxW = sport ? oldMax : latCap(1), maxWp = sport ? oldMax : latCap(1.3);
+    // 切るスピードも横加速度の増え方（ジャーク）で決める: 押し始め 7 m/s³・切り返し 14 m/s³ 相当（低速は従来の 11／18 rad/s が上限）。手を離したときの戻りは 14 m/s³ 相当（低速は 16 rad/s が上限）
+    const jr = (J) => J * P.L * P.ratio / Math.max(vv * vv, 1);
     if (AP) C.wheel = AP.wheel;
     else if (touch.wheel !== null) C.wheel = touch.wheel;
-    else if (PI_ && PI_.steer !== 0) { const tgt = -Math.sign(PI_.steer) * Math.pow(Math.abs(PI_.steer), 1.4) * maxW; C.wheel += Math.max(-14 * dt, Math.min(14 * dt, tgt - C.wheel)); }
+    else if (PI_ && PI_.steer !== 0) { const tgt = -Math.sign(PI_.steer) * Math.pow(Math.abs(PI_.steer), 1.4) * maxWp; C.wheel += Math.max(-14 * dt, Math.min(14 * dt, tgt - C.wheel)); }
     else if (kSteer) {
-      const tgt = kSteer * maxW, rate = Math.sign(tgt - C.wheel) === Math.sign(C.wheel) || C.wheel === 0 ? 11 : 18;   // 切り返しは速く
+      const tgt = kSteer * maxW, opp = !(Math.sign(tgt - C.wheel) === Math.sign(C.wheel) || C.wheel === 0), lowR = opp ? 18 : 11;   // 切り返しは速く
+      const rate = sport ? lowR : Math.min(lowR, jr(opp ? 14 : 7));
       C.wheel += Math.max(-rate * dt, Math.min(rate * dt, tgt - C.wheel));
     }
-    else C.wheel -= Math.sign(C.wheel) * Math.min(Math.abs(C.wheel), dt * (Math.abs(C.v) > 0.5 ? 16 : 9));   // 手を離すと真っすぐに戻る
+    else C.wheel -= Math.sign(C.wheel) * Math.min(Math.abs(C.wheel), dt * (vv > 0.5 ? (sport ? 16 : Math.min(16, jr(14))) : 9));   // 手を離すと真っすぐに戻る
     C.steer = C.wheel / P.ratio;                                                  // ステアリングギア比
     // 駆動力（km/h 別に 6速 AT 相当の包絡線）
     const sp = Math.abs(C.v);
