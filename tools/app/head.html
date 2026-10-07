@@ -342,6 +342,31 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .qtoast{ position:fixed; z-index:13; left:50%; top:calc(104px + env(safe-area-inset-top,0px)); transform:translate(-50%,-8px); max-width:min(560px, calc(100% - 24px)); padding:9px 18px; border-radius:22px; font-size:14px; font-weight:700; text-align:center;
   background:rgba(20,17,12,.92); border:1px solid var(--line); color:var(--cream); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; }
 .qtoast.on{ opacity:1; transform:translate(-50%,0); } .qtoast.good{ border-color:#7dff9a; color:#c9ffd6; } .qtoast.bad{ border-color:#ff8a5c; color:#ffd0bd; } .qtoast.load{ border-color:#35d0ff; color:#c9f2ff; }
+/* v41.15: 岡山めぐり（スタンプ）・お客さんの会話 */
+.iconbtn.stbtn{ width:auto; padding:0 11px; font-size:12.5px; white-space:nowrap; } .iconbtn.stbtn small{ opacity:.55; margin-left:5px; font-size:10.5px; }
+.stpop{ position:fixed; z-index:14; left:50%; top:36%; transform:translate(-50%,-14px) scale(.96); width:min(440px, calc(100% - 24px)); display:flex; gap:16px; align-items:center; padding:14px 20px 14px 16px; border-radius:10px;
+  background:rgba(20,17,12,.95); border:1px solid var(--brass); box-shadow:0 18px 50px rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .3s, transform .3s; }
+.stpop.on{ opacity:1; transform:translate(-50%,0) scale(1); }
+.stpop-mark{ flex:0 0 auto; width:66px; height:66px; border-radius:50%; display:grid; place-items:center; color:#e0634c; font-size:32px; font-weight:900; font-family:'Zen Kaku Gothic New','Hiragino Sans',sans-serif;
+  border:3px solid #e0634c; box-shadow:inset 0 0 0 3px rgba(20,17,12,.95), inset 0 0 0 5px #e0634c; transform:rotate(-9deg); }
+.stpop.on .stpop-mark{ animation:stpIn .5s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes stpIn{ from{ transform:rotate(-9deg) scale(2.4); opacity:0; } to{ transform:rotate(-9deg) scale(1); opacity:1; } }
+@media (prefers-reduced-motion: reduce){ .stpop.on .stpop-mark{ animation:none; } .stpop{ transition:none; } }
+.stpop-t small{ display:block; font-size:10.5px; letter-spacing:.12em; color:var(--brass); }
+.stpop-t b{ display:block; font-size:19px; margin:2px 0 4px; } .stpop-t span{ display:block; font-size:12.5px; line-height:1.65; color:#cfc5ac; }
+.stp-card{ width:min(520px,100%); max-height:min(86vh,720px); display:flex; flex-direction:column; padding:18px 18px 14px; }
+.stp-card h2 small{ font-size:13px; color:var(--amber); margin-left:8px; font-weight:700; }
+.stp-bar{ height:6px; background:rgba(128,128,128,.28); border-radius:3px; overflow:hidden; margin:8px 0 6px; } .stp-bar i{ display:block; height:100%; width:0; background:#e0634c; transition:width .4s; }
+.stp-title{ margin:0 0 6px; font-size:12.5px; font-weight:700; color:var(--amber); }
+.stp-rows{ list-style:none; margin:0 0 8px; padding:0; overflow-y:auto; flex:1 1 auto; min-height:90px; }
+.stp-row{ display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:start; padding:7px 4px; border-bottom:1px solid rgba(128,128,128,.24); font-size:12.5px; line-height:1.55; }
+.stp-row i{ font-style:normal; text-align:center; opacity:.55; } .stp-row.got i{ color:#e0634c; font-weight:900; opacity:1; }
+.stp-row b{ font-size:13.5px; } .stp-row small{ display:block; font-size:11.5px; opacity:.78; } .stp-row em{ font-style:normal; font-size:11px; opacity:.65; white-space:nowrap; }
+.stp-row button{ font:inherit; font-size:11px; padding:3px 9px; border:1px solid currentColor; border-radius:3px; background:none; color:inherit; cursor:pointer; opacity:.9; }
+#menu .stp-rows{ max-height:34vh; margin-top:8px; } #menu .stp-row.got i{ color:#c8412c; }
+.txtalk{ position:fixed; z-index:13; left:50%; bottom:calc(176px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,8px); max-width:min(520px, calc(100% - 24px)); padding:9px 18px 10px; border-radius:18px;
+  background:rgba(244,238,224,.96); color:#2a241a; font-size:14px; font-weight:700; line-height:1.55; box-shadow:0 8px 26px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; }
+.txtalk.on{ opacity:1; transform:translate(-50%,0); } .txtalk small{ display:block; font-size:10px; letter-spacing:.12em; color:#8a6a2a; font-weight:700; }
 .qfin-card{ width:min(400px,100%); } .qscore{ display:flex; align-items:center; justify-content:center; gap:14px; margin:8px 0 6px; }
 .qscore b{ font-size:50px; font-family:'Shippori Mincho', serif; color:var(--amber); line-height:1; }
 .qgrade{ width:54px; height:54px; border-radius:50%; display:grid; place-items:center; font-size:30px; font-weight:900; border:3px solid currentColor; }
@@ -705,8 +730,9 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
     <footer class="mn-foot">
       <div class="mn-foot-l">
         <div class="mn-links">
-          <details class="mdet"><summary>操作方法</summary><div class="mdet-body">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます</div></details>
+          <details class="mdet"><summary>操作方法</summary><div class="mdet-body">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動　J スタンプ帳（岡山めぐり）<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます</div></details>
           <details class="mdet"><summary>データについて</summary><div class="mdet-body">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。開始画面の行先表示器のドット文字は DotGothic16（© The DotGothic16 Project Authors、SIL Open Font License 1.1）。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</div></details>
+          <details class="mdet"><summary id="stp-sum">岡山めぐり</summary><div class="mdet-body" id="stp-menu"></div></details>
         </div>
         <p class="foot" id="records"></p>
         <div class="loadbar"><i id="loadbar"></i></div>
@@ -721,6 +747,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
   <header class="topbar">
     <div class="chip"><span class="rname"><span class="rlab">ROUTE </span><b id="route-name">東山線</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
     <div class="topright">
+      <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
       <button class="iconbtn ttbtn" id="tt-btn" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn" id="view-toggle" title="視点切替">⟲</button>
       <button class="iconbtn" id="sound-btn" title="音を消す">音</button>
@@ -803,6 +830,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
   <header class="car-top">
     <div class="chip"><span class="rname"><span class="rlab">MODE </span><b id="car-mode-lbl">車で自由に走る</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
     <div class="topright">
+      <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
       <button class="iconbtn ttbtn" id="tt-btn2" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn rescue" id="rescue-btn" title="すぐそばの道路へ戻る（T）">道路に戻る <small>T</small></button>
       <button class="iconbtn" id="car-view" title="視点切替">⟲</button>
@@ -848,6 +876,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
   <header class="car-top">
     <div class="chip"><span class="rname"><span class="rlab">MODE </span><b id="heli-mode-lbl">ヘリコプター</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
     <div class="topright">
+      <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
       <button class="iconbtn" id="heli-auto" title="自動で街を周回（O）">自動周回 <small>O</small></button>
       <button class="iconbtn" id="heli-view" title="視点切替（V）">⟲</button>
       <button class="iconbtn" id="heli-menu" title="メニューへ">≡</button>
@@ -888,6 +917,18 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
   <div class="qfoot"><div class="qdots" id="q-dots"></div><small id="q-cargo"></small></div>
 </section>
 <div class="qtoast" id="qtoast" role="status" aria-live="polite"></div>
+<div class="txtalk" id="txtalk" role="status" aria-live="polite"><small>お客さん</small><span id="txtalk-t"></span></div>
+<div class="stpop" id="stpop" role="status" aria-live="polite"><div class="stpop-mark">岡</div><div class="stpop-t"><small id="stpop-n"></small><b id="stpop-name"></b><span id="stpop-fact"></span></div></div>
+<div class="overlay" id="stp" role="dialog" aria-label="岡山めぐり">
+  <div class="ocard stp-card">
+    <span class="kicker">OKAYAMA STAMP RALLY</span>
+    <h2 style="margin:2px 0 0;font-size:19px;">岡山めぐり<small id="stp-cnt"></small></h2>
+    <div class="stp-bar"><i id="stp-bar"></i></div>
+    <p class="stp-title" id="stp-title"></p>
+    <ol class="stp-rows" id="stp-rows"></ol>
+    <button type="button" class="startbtn alt" id="stp-close"><span>閉じる</span><span>J</span></button>
+  </div>
+</div>
 <div class="overlay" id="qfin">
   <div class="ocard finish-card qfin-card">
     <span class="kicker">MISSION COMPLETE</span>

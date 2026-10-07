@@ -6765,6 +6765,128 @@ const Rules = (() => {
      深夜早朝（22〜5 時）2 割増・迎車料金 300 円は一般的な値からの推定。実際の会社の運賃・メーターとは違う。
    ・お客さんの満足度（5.0 から減点）: 急発進・急ブレーキ・急ハンドル、衝突、速度超過、信号無視、逆走、遠回り、待たせすぎ。高いと「おつりはいらない」。
    ・お客さん・行き先は架空。地点は実在の場所（OSM／PLATEAU）。 */
+/* ---------------- v41.15: 岡山めぐり（スタンプラリー）----------------
+   どの乗り物で走っても（電車・バス・車・ヘリ）、名所のそばを通るとスタンプが押される。記録はこのブラウザに保存（Prefs の misc "stamps"）。
+   J キー（画面上の「スタンプ」ボタン）でスタンプ帳。位置は data/poi.json（OpenStreetMap）の座標。豆知識は、短く、確かな内容だけにした。
+   電車・ヘリは決まった道筋・高い所を通るので、判定の半径を広げる（電車 ×1.5・ヘリ ×1.7）。
+   talk: タクシーのお客さんが、そばを通ったときに話す一言（d: 岡山弁、s: ふつうの言葉）。 */
+const Stamps = (() => {
+  const LIST = [
+    { id: "eki", name: "岡山駅 東口", x: -85, z: 36, r: 90, fact: "新幹線・在来線・路面電車・バスが集まる、岡山の玄関口。駅前には桃太郎の像があります。",
+      talk: { d: "駅前は、いつ来ても人が多いなぁ。", s: "駅前は、いつ来ても人が多いですね。" } },
+    { id: "aeon", name: "イオンモール岡山", x: -213, z: 380, r: 80, fact: "岡山駅のすぐ近くにある、大きな商業施設。",
+      talk: { d: "このへんは、買い物の人が多いなぁ。", s: "このあたりは、買い物の人が多いですね。" } },
+    { id: "nishikawa", name: "西川緑道公園", x: 278, z: 24, r: 90, fact: "かつて街を流れていた用水路（西川）の跡につくられた、街なかの散歩道。",
+      talk: { d: "西川の緑道は、散歩にちょうどええんじゃ。", s: "西川の緑道は、散歩にちょうどいいんですよ。" } },
+    { id: "orient", name: "岡山市立オリエント美術館", x: 958, z: -95, r: 80, fact: "古代オリエント（エジプトやメソポタミアなど）の美術品や考古資料を集めた美術館。",
+      talk: { d: "オリエント美術館、いっぺん行ってみたいんじゃけどなぁ。", s: "オリエント美術館、一度行ってみたいんですよね。" } },
+    { id: "symphony", name: "岡山シンフォニーホール", x: 940, z: 39, r: 80, fact: "音楽会がひらかれる、岡山のコンサートホール。" },
+    { id: "castle", name: "岡山城", x: 1518, z: 78, r: 100, fact: "黒い外壁から「烏城（うじょう）」とも呼ばれるお城。",
+      talk: { d: "お城が見えるなぁ。烏城じゃ。", s: "お城が見えますね。烏城です。" } },
+    { id: "korakuen", name: "後楽園", x: 1507, z: -90, r: 120, fact: "旭川をはさんで岡山城の向かい側にある庭園。日本三名園の一つ。",
+      talk: { d: "後楽園は、ええ庭じゃけぇ、行ってみんさいな。", s: "後楽園は、いい庭ですよ。ぜひ行ってみてください。" } },
+    { id: "hakubutsu", name: "岡山県立博物館", x: 1293, z: -327, r: 115, fact: "岡山の歴史や文化を紹介する県立の博物館。後楽園のそばにあります。" },
+    { id: "hayashibara", name: "林原美術館", x: 1252, z: 209, r: 80, fact: "岡山城のすぐそばにある美術館。" },
+    { id: "yumeji", name: "夢二郷土美術館", x: 1370, z: -575, r: 100, fact: "岡山県出身の画家・詩人、竹久夢二の作品を紹介する美術館。",
+      talk: { d: "夢二の絵は、ええ雰囲気じゃなぁ。", s: "夢二の絵は、いい雰囲気ですよね。" } },
+    { id: "tenmaya", name: "天満屋", x: 847, z: 414, r: 80, fact: "岡山の街を代表する、老舗の百貨店。",
+      talk: { d: "天満屋で買い物して帰ろうかなぁ。", s: "天満屋で買い物して帰ろうかな。" } },
+    { id: "kencho", name: "岡山県庁", x: 1395, z: 415, r: 80, fact: "岡山県の県庁がある場所。路面電車の電停「県庁前」が目の前です。" },
+    { id: "harenowa", name: "ハレノワ（岡山芸術創造劇場）", x: 909, z: 959, r: 90, fact: "路面電車の電停の名前にもなっている、岡山芸術創造劇場。",
+      talk: { d: "ハレノワで芝居を観てみたいなぁ。", s: "ハレノワで観劇してみたいんですよね。" } },
+    { id: "koukichi", name: "鳥人幸吉ゆかりの地", x: 817, z: 178, r: 80, fact: "江戸時代に翼で空を飛んだと伝わる「鳥人幸吉」が、奉公した紙屋の跡。",
+      talk: { d: "鳥人幸吉いう、空を飛んだ人がおったんじゃってなぁ。", s: "鳥人幸吉という、空を飛んだ人がいたそうですね。" } },
+    { id: "hangaku", name: "旧岡山藩藩学", x: 690, z: -209, r: 90, fact: "江戸時代に岡山藩がつくった学校の跡。" },
+    { id: "okaden", name: "おかでんミュージアム", x: 2150, z: 1045, r: 90, fact: "路面電車を走らせる岡山電気軌道の、東山の車庫のそばにある電車の博物館。",
+      talk: { d: "路面電車は、ええなぁ。のんびり走りよる。", s: "路面電車は、のんびりしていていいですね。" } },
+    { id: "tenji", name: "点字ブロック発祥の地", x: 2960, z: -403, r: 90, fact: "世界で最初の点字ブロックは、岡山でうまれました。",
+      talk: { d: "点字ブロックは、岡山で生まれたんじゃって。", s: "点字ブロックは、岡山生まれなんですよ。" } },
+    { id: "stadium", name: "JFE晴れの国スタジアム", x: -11, z: -1671, r: 130, fact: "サッカー・ファジアーノ岡山のホームスタジアム。",
+      talk: { d: "ファジアーノ、応援に行きたいなぁ。", s: "ファジアーノを応援しに行きたいな。" } },
+    { id: "zoo", name: "池田動物園", x: -1230, z: -1029, r: 100, fact: "岡山市北区にある動物園。",
+      talk: { d: "動物園、子どもを連れて行きてぇなぁ。", s: "動物園、子どもを連れて行きたいな。" } },
+    { id: "handayama", name: "岡山市半田山植物園", x: 988, z: -3063, r: 145, fact: "半田山のふもとにある、市立の植物園。" },
+  ];
+  const N = LIST.length, KEY = "stamps";
+  let got = {}; try { const o = Prefs.getM(KEY, {}); if(o && typeof o === "object") got = o; } catch(e){}
+  const count = () => LIST.filter((s) => got[s.id]).length;
+  const title = (n) => n >= N ? "岡山マスター" : n >= N * 0.9 ? "岡山の達人" : n >= N * 0.65 ? "岡山通" : n >= N * 0.4 ? "地元ドライバー" : n >= N * 0.2 ? "まち歩き見習い" : n >= 1 ? "岡山ビギナー" : "スタンプ帳を手に入れた";
+  const byId = (id) => LIST.find((s) => s.id === id);
+
+  /* いまの位置（走っていないときは null）。k = 判定の半径にかける倍率 */
+  function where(){
+    const mo = S.mode;
+    if(mo === "car" || mo === "bus"){ const C = Car.C; return C.active ? { x: C.x, z: C.z, k: 1 } : null; }
+    if(mo === "heli"){ const H = Heli.H; return H.active ? { x: H.x, z: H.z, k: 1.7 } : null; }
+    if(mo === "tram"){ if(!S.running || !S.track || !S.track.length) return null; const p = pointAt(S.pos); return { x: p.x, z: p.z, k: 1.5 }; }
+    return null;
+  }
+  const $s = (id) => document.getElementById(id);
+  let popT = 0; const subs = [];
+  function pop(s, n){
+    const done = n >= N, el = $s("stpop"); if(!el) return;
+    $s("stpop-n").textContent = done ? "コンプリート！ 称号「" + title(n) + "」" : "スタンプ " + n + " / " + N + "　称号「" + title(n) + "」";
+    $s("stpop-name").textContent = s.name; $s("stpop-fact").textContent = s.fact;
+    el.classList.remove("on"); void el.offsetWidth; el.classList.add("on"); popT = done ? 9 : 6;   // 押す動きをもう一度見せるため、いったん外して付け直す
+    Snd.blip(done ? "done" : "stamp");
+  }
+  function collect(s){
+    got[s.id] = new Date().toISOString().slice(0, 10);
+    try { Prefs.setM(KEY, got); } catch(e){}
+    pop(s, count()); renderAll(); for(const f of subs){ try{ f(s); }catch(e){ console.warn("stamp", e); } }
+  }
+  let acc = 0;
+  function tick(dt){
+    if(popT > 0){ popT -= dt; if(popT <= 0){ const el = $s("stpop"); if(el) el.classList.remove("on"); } }
+    acc += dt; if(acc < 0.25) return; acc = 0;
+    const w = where(); if(!w) return;
+    for(const s of LIST){ if(got[s.id]) continue; if(Math.hypot(s.x - w.x, s.z - w.z) <= s.r * w.k){ collect(s); break; } }
+  }
+  /* タクシーのお客さんが話す名所（そばにあって、一言があるもの） */
+  function nearTalk(x, z, d){ let b = null, bd = d; for(const s of LIST){ if(!s.talk) continue; const q = Math.hypot(s.x - x, s.z - z); if(q < bd){ bd = q; b = s; } } return b; }
+
+  /* ---- スタンプ帳（ゲーム中の画面 #stp と、メニューの「岡山めぐり」）---- */
+  const DIRS = ["北", "北東", "東", "南東", "南", "南西", "西", "北西"];
+  const dirOf = (dx, dz) => DIRS[Math.round(((Math.atan2(dx, -dz) * 180 / Math.PI + 360) % 360) / 45) % 8];
+  const dstr = (m) => m >= 1000 ? (m / 1000).toFixed(1) + " km" : Math.round(m / 10) * 10 + " m";
+  function rowsHtml(live){
+    const w = live ? where() : null, car = live && S.mode === "car";
+    return LIST.map((s) => {
+      if(got[s.id]) return '<li class="stp-row got"><i>✓</i><div><b>' + s.name + '</b><small>' + s.fact + '</small></div><em>' + got[s.id] + '</em></li>';
+      const where_ = w ? dirOf(s.x - w.x, s.z - w.z) + "へ " + dstr(Math.hypot(s.x - w.x, s.z - w.z)) : "まだ行っていない";
+      return '<li class="stp-row"><i>○</i><div><b>' + s.name + '</b><small>' + where_ + '</small></div>' + (car ? '<button type="button" data-nav="' + s.id + '">ナビ</button>' : '<span></span>') + '</li>';
+    }).join("");
+  }
+  function renderAll(){
+    const n = count(), t = title(n);
+    const cnt = $s("stp-cnt"); if(cnt) cnt.textContent = n + " / " + N;
+    const bar = $s("stp-bar"); if(bar) bar.style.width = (n / N * 100).toFixed(0) + "%";
+    const tt = $s("stp-title"); if(tt) tt.textContent = "称号「" + t + "」";
+    const m = $s("stp-menu"); if(m){ m.innerHTML = '<b>岡山めぐり（スタンプラリー）　' + n + ' / ' + N + '</b>　称号「' + t + '」<br>電車・バス・車・ヘリ、どれで走っても、名所のそばを通るとスタンプが押されます（記録はこのブラウザに保存）。ゲーム中は J キーか「スタンプ」ボタンでスタンプ帳が開きます。<ol class="stp-rows">' + rowsHtml(false) + '</ol>'; }
+    const sm = $s("stp-sum"); if(sm) sm.textContent = "岡山めぐり " + n + "/" + N;
+    if(open) { const r = $s("stp-rows"); if(r) r.innerHTML = rowsHtml(true); }
+  }
+  let open = false;
+  function setOpen(v){
+    open = !!v; const el = $s("stp"); if(!el) return; el.classList.toggle("on", open);
+    if(open){ if(typeof TT !== "undefined" && TT.open) TT.setOpen(false); const r = $s("stp-rows"); if(r) r.innerHTML = rowsHtml(true); }
+  }
+  const toggle = () => { if(typeof Clock !== "undefined" && !Clock.inSession()) return; setOpen(!open); };
+  document.addEventListener("keydown", (e) => {
+    if(e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing()) return;
+    if(e.key === "j" || e.key === "J") toggle(); else if(e.key === "Escape" && open) setOpen(false);
+  });
+  document.addEventListener("click", (e) => {
+    if(e.target.closest(".stbtn")){ toggle(); return; }
+    if(e.target.id === "stp" || e.target.closest("#stp-close")){ setOpen(false); return; }
+    const b = e.target.closest("button[data-nav]"); if(b){ const s = byId(b.dataset.nav); if(s && S.mode === "car"){ Nav.setTarget({ x: s.x, z: s.z, name: s.name, r: Math.round(s.r * 0.6), kind: "drop" }, "user"); setOpen(false); } }
+  });
+  // 開いている間、まだ行っていない名所の方角・距離を更新する
+  setInterval(() => { if(open){ const r = $s("stp-rows"); if(r) r.innerHTML = rowsHtml(true); } }, 1500);
+  renderAll();
+  return { LIST, tick, count, title, byId, nearTalk, on(f){ subs.push(f); }, uncollected(){ return LIST.filter((q) => !got[q.id]); }, setOpen, toggle, renderAll, where, collect, reset(){ got = {}; try { Prefs.setM(KEY, got); } catch(e){} renderAll(); }, get got(){ return got; }, get open(){ return open; } };
+})();
+
 const Taxi = (() => {
   const FARE = { base: 700, baseM: 1100, step: 100, stepM: 250, slowV: 10 / 3.6, slowEq: 250 / 90, night: 1.2, dispatch: 300, goal: 10000 };
   const T = { on: false, st: "idle", t: 0, money: 0, tips: 0, rides: 0, cancels: 0, passed: 0, full: 0, empty: 0, rateSum: 0, rateN: 0, goalHit: false,
@@ -6965,12 +7087,13 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
   }
 
   /* ---- 乗せる・行き先・降ろす ---- */
-  function pickDest(fx, fz, startPlan){
+  function pickDest(fx, fz, startPlan, tour){
     const P = Nav.POI, sites = Quest.sites, m = me(); if(!P) return null;
     const want = Math.min(6500, 800 + -Math.log(1 - rnd()) * 1700), W = { 0: 3, 2: 2.2, 3: 1.4, 4: 0.5, 5: 1, 7: 2.2, 8: 1.2, 9: 0.3, 10: 1.6, 11: 1.4, 12: 0.8, 13: 0.5, 14: 1.2, 1: 0.6, 6: 0.4 };
     for(let tries = 0; tries < 8; tries++){
       const cand = [];
-      for(let k = 0; k < 70; k++){
+      if(tour){ for(const q of Stamps.uncollected()){ const d = Math.hypot(q.x - fx, q.z - fz); if(d < 500) continue; cand.push({ c: { name: q.name, x: q.x, z: q.z, r: 14, stamp: q.id }, e: Math.abs(d - want) }); } }   // v41.15: 観光のお客さん
+      else for(let k = 0; k < 70; k++){
         let c;
         if(rnd() < 0.3 && sites && sites.drop.length){ const s = pick(sites.drop); if(s.rw < 3.6) continue; c = { name: Quest.town(s.town) + "の自宅", x: s.x, z: s.z, y: s.y, r: 8, home: true }; }
         else { const it = pick(P.p); if(rnd() > (W[it[1]] || 0.5) / 3) continue; c = { name: it[0], x: it[2], z: it[3], r: 12 }; }
@@ -6978,7 +7101,7 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
       }
       cand.sort((a, b) => a.e - b.e);
       for(const { c } of cand.slice(0, 3)){
-        if(!c.home){ const ln = laneAt(c.x, c.z, 140); if(!ln || ln.d > 120) continue; c.x = ln.x; c.z = ln.z; c.y = ln.y; }
+        if(!c.home){ const ln = laneAt(c.x, c.z, c.stamp ? 260 : 140); if(!ln || ln.d > (c.stamp ? 260 : 120)) continue; c.x = ln.x; c.z = ln.z; c.y = ln.y; }   // 名所は敷地が広く、道が遠いことがある（岡山城・後楽園）
         const R = Nav.plan(startPlan.x, startPlan.z, startPlan.yaw, c.x, c.z); if(!R) continue;
         if(R.total > 9000 || R.total > Math.max(2600, Math.hypot(c.x - fx, c.z - fz) * 3.0)) continue;   // 直線の 3 倍を超える大回りは選ばない
         c.routeM = R.total; c.eta = R.time * 1.12; return c;
@@ -6987,12 +7110,14 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
     return null;
   }
   function startRide(from, n, dispatchFee, label){
-    const m = me(), dest = pickDest(m.x, m.z, m); if(!dest){ toast("お客さんの行き先が決まりませんでした。もう一度", "bad"); return false; }
-    T.ride = { n, from: label, dest, dist: 0, slowT: 0, sat: 5, events: [], t0: T.t, fee: dispatchFee, night: night(), routeM: dest.routeM, eta: dest.eta, detourDone: false };
+    const m = me(); let dest = null; const tour = Stamps.uncollected().length > 0 && rnd() < 0.2;   // v41.15: 2 割は観光のお客さん（まだ行っていない名所へ）
+    if(tour) dest = pickDest(m.x, m.z, m, true);
+    if(!dest) dest = pickDest(m.x, m.z, m); if(!dest){ toast("お客さんの行き先が決まりませんでした。もう一度", "bad"); return false; }
+    T.ride = { n, from: label, dest, dist: 0, slowT: 0, sat: 5, events: [], t0: T.t, fee: dispatchFee, night: night(), routeM: dest.routeM, eta: dest.eta, detourDone: false, tour: !!dest.stamp, dial: dest.stamp ? false : rnd() < 0.6, talkT: 4, talkN: 0, said: {}, lastDing: -99 };
     closeOffer(); T.st = "ride"; T.hold = 0; lamp("賃走"); markerSet(dest.x, dest.z, dest.y + 0.1, Math.max(10, dest.r + 2), 0xffb02e);
     Nav.setTarget({ x: dest.x, z: dest.z, name: dest.name, r: dest.r, kind: "drop" }, "auto");
     T.comfortT = 0; T.speedT = 0; T.speedAcc = 0; T.lastHit = false;
-    toast("「" + dest.name + " までお願いします」 — 目安 " + fmtKm(dest.routeM) + "・約 " + Math.max(1, Math.round(dest.eta / 60)) + " 分", "load", 4.2); say(dest.name + "までお願いします。");
+    toast("「" + (dest.stamp ? "観光で来ました。" : "") + dest.name + " までお願いします」 — 目安 " + fmtKm(dest.routeM) + "・約 " + Math.max(1, Math.round(dest.eta / 60)) + " 分", "load", 4.2); say((dest.stamp ? "観光で来ました。" : "") + dest.name + "までお願いします。");
     return true;
   }
   function boardCall(){
@@ -7005,28 +7130,85 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
     const g = s.q.shift(); s.figN = -1; Snd.blip("load");
     if(!startRide(s, g.n, 0, s.name)){ s.q.unshift(g); }
   }
-  function ding(pts, msg, tag){ const R = T.ride; if(!R) return; R.sat = Math.max(1, R.sat - pts); R.events.push(tag); toast(msg + "（評価 −" + pts.toFixed(1) + "）", "bad"); }
+  function ding(pts, msg, tag){ const R = T.ride; if(!R) return; R.sat = Math.max(1, R.sat - pts); R.events.push(tag); R.lastDing = T.t; toast(msg + "（評価 −" + pts.toFixed(1) + "）", "bad");
+    if(TALK.ding[tag]) bubble(tk(R, TALK.ding[tag]), 4.2); }
+  /* v41.15: お客さんの会話（吹き出し）。お客さんの約 6 割は岡山弁（言い回しは作り手の知識で書いたもの。違和感があれば TALK を直す）。
+     乗ってしばらくのあいさつ → 走っている間は 25〜50 秒おきに、そばの名所・遅れ・なめらかな運転・世間話。ぶつかる・急ブレーキなどは、その場で声が出る */
+  const TALK = {
+    hello: { d: ["よろしゅうお願いします。", "お願いしますけぇな。急がんでもええけぇ、安全にな。"], s: ["よろしくお願いします。", "お願いします。急がなくて大丈夫ですよ。"] },
+    rain: { d: ["雨じゃなぁ。晴れの国いうても、降る時は降るんじゃなぁ。", "雨の日は運転しにくかろう。気ぃつけてな。"], s: ["雨ですね。晴れの国といっても、降るときは降りますね。", "雨の日の運転は大変でしょう。気をつけてくださいね。"] },
+    night: { d: ["こねぇな遅うにすみません。", "夜遅うまで、ご苦労さんじゃなぁ。"], s: ["遅い時間にすみません。", "遅くまでお疲れさまです。"] },
+    morn: { d: ["朝から忙しいなぁ。", "朝は道が混むけぇなぁ。"], s: ["朝は道が混みますね。", "朝から忙しいですね。"] },
+    fine: { d: ["ええ天気じゃなぁ。", "今日は気持ちがええなぁ。"], s: ["いい天気ですね。", "気持ちのいい日ですね。"] },
+    hurry: { d: ["ちぃと急いでもらえるかなぁ。", "間に合うかなぁ…。"], s: ["少し急いでもらえますか？", "間に合うかな…。"] },
+    smooth: { d: ["ええ運転じゃなぁ。ゆっくり走ってくれて助かるわ。", "運転がなめらかじゃなぁ。眠とうなるわ。"], s: ["運転がなめらかで、助かります。", "運転が上手ですね。"] },
+    chat: { d: ["桃太郎のふるさとじゃけぇなぁ、岡山は。", "きびだんご、買うて帰ろうかなぁ。", "ばら寿司が食べとうなったわ。", "岡山は晴れの日が多うて、ええ街じゃなぁ。", "白桃の季節になったら、ええなぁ。", "路面電車がのんびり走りよるのを見ると、ほっとするなぁ。"],
+            s: ["桃太郎のふるさと、岡山ですからね。", "きびだんご、買って帰ろうかな。", "ばら寿司が食べたくなりました。", "岡山は晴れの日が多くて、いい街ですね。", "白桃の季節が楽しみです。", "路面電車がのんびり走っているのを見ると、ほっとします。"] },
+    ding: { hit: { d: "いってぇ！ ぶつかったんか？", s: "えっ、ぶつかりました？" }, comfort: { d: "ひゃっ、あぶねぇ！", s: "わっ、びっくりした！" }, red: { d: "信号、赤じゃがな！", s: "信号、赤ですよ！" },
+            speed: { d: "ちぃとはえぇなぁ。ゆっくりでええで。", s: "少し速くないですか？" }, wrong: { d: "逆じゃがな！", s: "逆走ですよ！" } },
+    end: { top: { d: "ぼっけぇ快適じゃった。ありがとうなぁ！", s: "とても快適でした。ありがとう！" }, good: { d: "ありがとうなぁ。助かったわ。", s: "ありがとうございました。" },
+           hit: { d: "ぶつかって、びっくりしたわ…", s: "ぶつかって、びっくりしました…" }, red: { d: "信号が赤じゃったで！", s: "信号が赤でしたよ！" }, wrong: { d: "逆走しとらんかったかな？", s: "逆走していませんでしたか？" },
+           comfort: { d: "急ブレーキ・急ハンドルが、こわかったわ。", s: "急ブレーキ・急ハンドルが怖かったです。" }, speed: { d: "もうちぃとゆっくりでええんじゃが。", s: "もう少しゆっくりでお願いしたかったです。" },
+           detour: { d: "遠回りされた気がするなぁ。", s: "遠回りされた気がします。" }, late: { d: "ずいぶん待ったで。", s: "ずいぶん待ちました。" } },
+  };
+  const tk = (R, o) => (R && R.dial ? o.d : o.s);
+  const tkPick = (R, o) => { const a = R && R.dial ? o.d : o.s; return a[Math.floor(rnd() * a.length)]; };
+  function bubble(txt, ms){
+    const b = document.getElementById("txtalk"); if(!b) return; document.getElementById("txtalk-t").textContent = "「" + txt + "」"; b.classList.add("on"); T.talkShow = ms || 5.6;
+  }
+  Stamps.on((s) => {   // 乗せている間に初めての名所を通ると、お客さんが喜ぶ
+    const R = T.ride; if(!T.on || T.st !== "ride" || !R) return; R.lastDing = -99;
+    if(R.dest && R.dest.stamp === s.id){ bubble(R.dial ? "おぉ、ここが" + s.name + "かぁ！" : "わぁ、ここが" + s.name + "なんですね！", 5.2); return; }   // 行き先そのものは「通った名所」に数えない
+    R.sights = (R.sights || 0) + 1;
+    bubble(R.dial ? "ほぉ、" + s.name + "か。いっぺん見たかったんじゃ。" : "へぇ、" + s.name + "ですか。一度見てみたかったんです。", 5.2);
+  });
+  function bubbleOff(){ T.talkShow = 0; const b = document.getElementById("txtalk"); if(b) b.classList.remove("on"); }
+  /* 次に話すこと（優先: そばの名所 → 遅れ → なめらかな運転 → あいさつ／世間話） */
+  function chatLine(R, m){
+    const s = Stamps.nearTalk(m.x, m.z, 230);
+    if(s && !R.said["s_" + s.id]){ R.said["s_" + s.id] = 1; return tk(R, s.talk); }
+    if(!R.said.hurry && T.t - R.t0 > R.eta * 1.3 + 30){ R.said.hurry = 1; return tkPick(R, TALK.hurry); }
+    if(!R.said.smooth && !R.events.length && T.t - R.t0 > 45){ R.said.smooth = 1; return tkPick(R, TALK.smooth); }
+    const pool = (R.dial ? TALK.chat.d : TALK.chat.s).filter((_, i) => !R.said["c" + i]); if(!pool.length) return null;
+    const line = pool[Math.floor(rnd() * pool.length)]; R.said["c" + (R.dial ? TALK.chat.d : TALK.chat.s).indexOf(line)] = 1; return line;
+  }
+  function openingLine(R){
+    if(R.tour) return ["初めての岡山なんです。楽しみです。", "観光で来ました。道中、よろしくお願いします。"][Math.floor(rnd() * 2)];
+    const h = hr(); const k = Env.st.rain ? "rain" : (h >= 22 || h < 5) ? "night" : (h >= 7 && h < 9.5) ? "morn" : (h >= 10 && h < 16 && !Env.st.rain) ? "fine" : "hello";
+    return tkPick(R, TALK[k]);
+  }
+  function talkTick(dt, m){
+    const R = T.ride; if(!R || R.talkN >= 6) return;
+    R.talkT -= dt; if(R.talkT > 0) return;
+    if(m.v < 2 || T.t - (R.lastDing || -99) < 8){ R.talkT = 3; return; }   // 止まっているとき・ひやっとした直後は話さない
+    const line = R.talkN === 0 ? openingLine(R) : chatLine(R, m);
+    if(line){ bubble(line); R.talkN++; }
+    R.talkT = 25 + rnd() * 25;
+  }
   const COMMENTS = { hit: "ぶつかって、びっくりしました…", red: "信号が赤でしたよ！", wrong: "逆走していませんでしたか？", comfort: "急ブレーキ・急ハンドルが怖かったです。", speed: "もう少しゆっくりでお願いしたかったです。", detour: "遠回りされた気がします。", late: "ずいぶん待ちました。" };
   function finishRide(){
     const R = T.ride, fare = meterFare(R), fee = R.fee || 0, base = fare + fee, stars = Math.max(1, Math.min(5, Math.round(R.sat * 10) / 10));
     if(!R.detourDone && R.dist > R.routeM * 1.45 + 500){ R.sat = Math.max(1, R.sat - 0.4); R.events.push("detour"); }
     const st2 = Math.max(1, Math.min(5, Math.round(R.sat * 10) / 10));
     let tip = 0; if(st2 >= 4.5 && rnd() < 0.55){ tip = Math.ceil((base * 1.04) / 100) * 100 - base; if(tip < 20) tip += 100; } else if(st2 >= 4.0 && rnd() < 0.2){ tip = Math.ceil(base / 100) * 100 - base; }
-    T.money += base; T.tips += tip; T.rides++; T.rateSum += st2; T.rateN++;
+    const sightTip = R.sights && st2 >= 3.5 ? Math.min(300, R.sights * 100) : 0;   // v41.15: 初めての名所を通ったぶん、観光チップ（1 か所 ¥100・最大 ¥300・評価 3.5 以上）
+    const tourTip = R.tour ? (st2 >= 4.5 ? 400 : st2 >= 3.5 ? 200 : 0) : 0;   // 観光のお客さんは、評価が高いとお礼がはずむ
+    T.money += base; T.tips += tip + sightTip + tourTip; T.rides++; T.rateSum += st2; T.rateN++;
     const worst = ["hit", "red", "wrong", "comfort", "speed", "detour", "late"].find((k) => R.events.includes(k));
-    const cm = st2 >= 4.8 ? "とても快適でした。ありがとう！" : st2 >= 4.2 ? "ありがとうございました。" : worst ? COMMENTS[worst] : "ありがとうございました。";
+    const cm = tk(R, st2 >= 4.8 ? TALK.end.top : st2 >= 4.2 ? TALK.end.good : worst ? TALK.end[worst] : TALK.end.good); bubbleOff();
     const stars5 = "★".repeat(Math.round(st2)) + "☆".repeat(5 - Math.round(st2));
     const rc = $e("txrc");
     rc.innerHTML = '<h4><span>領収書</span><span class="st">' + stars5 + " " + st2.toFixed(1) + "</span></h4>" +
       '<div class="r"><span>' + R.dest.name + " まで</span><span>" + fmtKm(R.dist) + "</span></div>" +
       '<div class="r"><span>運賃' + (R.night ? "（深夜早朝 2 割増）" : "") + "</span><span>" + yen(fare) + "</span></div>" +
-      (fee ? '<div class="r"><span>迎車料金</span><span>' + yen(fee) + "</span></div>" : "") + (tip ? '<div class="r"><span>おつりはいらない</span><span>+' + yen(tip) + "</span></div>" : "") +
-      '<div class="r tot"><span>合計</span><span>' + yen(base + tip) + '</span></div><div class="cm">「' + cm + "」</div>";
+      (fee ? '<div class="r"><span>迎車料金</span><span>' + yen(fee) + "</span></div>" : "") + (tip ? '<div class="r"><span>おつりはいらない</span><span>+' + yen(tip) + "</span></div>" : "") + (sightTip ? '<div class="r"><span>観光チップ（名所 ' + R.sights + ' か所）</span><span>+' + yen(sightTip) + "</span></div>" : "") + (tourTip ? '<div class="r"><span>観光案内のお礼</span><span>+' + yen(tourTip) + "</span></div>" : "") +
+      '<div class="r tot"><span>合計</span><span>' + yen(base + tip + sightTip + tourTip) + '</span></div><div class="cm">「' + cm + "」</div>";
     rc.classList.add("on"); T.payT = 3.4; T.st = "pay"; T.hold = 0; markerOff(); Nav.clear("auto"); lamp("空車"); Snd.blip("done");
     // お客さんが降りて歩いていく
     const C = Car.C, lx = Math.cos(C.yaw), lz = -Math.sin(C.yaw);
     for(let k = 0; k < R.n; k++){ const p = person(R.dest.name.length * 3 + k * 5); const x0 = C.x + lx * 1.9 + Math.sin(C.yaw) * (-0.8 + k * 0.6), z0 = C.z + lz * 1.9 + Math.cos(C.yaw) * (-0.8 + k * 0.6); p.position.set(x0, Car.hAt(x0, z0), z0); p.rotation.y = Math.atan2(lx, lz); grp.add(p); T.walkers.push({ m: p, vx: lx * 1.3, vz: lz * 1.3, t: 5 }); }
     T.nextCall = Math.min(T.nextCall || 1e9, T.t + 20 + rnd() * 35); if(T.nextCall < T.t + 12) T.nextCall = T.t + 12;
+    if(R.tour && R.dest.stamp && !Stamps.got[R.dest.stamp]){ const q = Stamps.byId(R.dest.stamp); if(q) Stamps.collect(q); }   // 敷地まで道が遠い名所（岡山城・後楽園）も、お客さんを降ろしたらスタンプ
     T.ride = null;
     if(!T.goalHit && T.money + T.tips >= FARE.goal){ T.goalHit = true; setTimeout(() => toast("営業目標 " + yen(FARE.goal) + " を達成！ このまま続けても、終了してもOKです", "good", 4.4), 3200); }
   }
@@ -7085,6 +7267,7 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
     if(!T.on) return;
     if(S.mode !== "car"){ stop(); return; }
     if(T.toastT > 0){ T.toastT -= dt; if(T.toastT <= 0){ const t = document.getElementById("qtoast"); if(t) t.className = "qtoast"; } }
+    if(T.talkShow > 0){ T.talkShow -= dt; if(T.talkShow <= 0){ const b = document.getElementById("txtalk"); if(b) b.classList.remove("on"); } }
     T.t += dt; const m = me(); standTick(dt);
     for(let i = T.walkers.length - 1; i >= 0; i--){ const w = T.walkers[i]; w.t -= dt; w.m.position.x += w.vx * dt; w.m.position.z += w.vz * dt; w.m.position.y = Car.hAt(w.m.position.x, w.m.position.z); if(w.t <= 0){ grp.remove(w.m); T.walkers.splice(i, 1); } }
     if(mk && mk.g.visible){ const k = performance.now() / 1000, p = 0.6 + 0.4 * Math.sin(k * 3.2); mk.beam.material.opacity = 0.28 + 0.2 * p; mk.ring.material.opacity = 0.6 + 0.35 * p; }
@@ -7114,6 +7297,7 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
         if(m.v > 0.5 && (Math.abs(C.acc || 0) > 3.4 || Math.abs(C.aLat || 0) > 3.6) && T.comfortT <= 0){ ding(0.3, "急な操作でお客さんが驚いた", "comfort"); T.comfortT = 4; } T.comfortT = Math.max(0, T.comfortT - dt);
         const L = Loc.last, lim = L && L.v; if(lim && m.v * 3.6 > lim + SPEED_OVER_OK){ T.speedAcc += dt; if(T.speedAcc > 3 && T.speedT <= 0){ ding(0.3, "制限速度 " + lim + " km/h を超えています", "speed"); T.speedT = 12; } } else T.speedAcc = Math.max(0, T.speedAcc - dt);
         T.speedT = Math.max(0, T.speedT - dt);
+        talkTick(dt, m);   // v41.15: お客さんの会話
       }
     }
     T.hudT -= dt; if(T.hudT <= 0){ T.hudT = 0.15; hud(m); }
@@ -7846,6 +8030,7 @@ function loop(now){
     const live = carM ? Car.C.active : S.mode==="heli" ? Heli.H.active : S.running;
     const inCab = carM ? Car.C.view==="driver" : (S.mode==="tram" && S.view==="cab");
     Snd.rainSound(dt, !!(Env.st.rain && live), S.mode==="heli" ? "heli" : inCab ? "cab" : "out"); }
+  Stamps.tick(dt);   // v41.15: 岡山めぐり
   if(S.mode!=="heli") Snd.heliSound(Heli.H);
   if(S.mode==="car"||S.mode==="bus"){}
   else if(S.mode==="heli"){ S.t+=dt; S.clock+=dt; Heli.tick(dt); if(S.car) S.car.visible=false; Heli.updateCam(dt); Heli.hud(); Loc.update(dt, Heli.H.x, Heli.H.z, ""); Snd.heliSound(Heli.H); }
@@ -7870,5 +8055,5 @@ applyMenu();
 loadAll().catch(e=>{ console.error(e); Boot.fail("データの読み込みに失敗しました。通信の状態を確認して、もう一度お試しください。", e, true); });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
-window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream;
+window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream; window.__Stamps = Stamps;
 })();
