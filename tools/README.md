@@ -23,8 +23,9 @@
   - v41.16: `comfort_driver_test.js`（キーボードで運転する人をモデルにして、旧しきい値と新しい判定で「急な操作」が 1 km に何回出るかを比べる。`repl.js` の命令ファイル。使い方は冒頭のコメント）
   - v41.17: `handling_feel_test.js`（キーボードの押しっぱなしで、ハンドルの横加速度・ブレーキ・アクセル・Space の感触を車種ごとに測る。`window.__feelShift=true` で Shift（スポーツ）を押した状態＝従来の値。`repl.js` の命令ファイル）
   - v41.18: `corner_turn_test.js`（街なかの経路の交差点・カーブを、速度ごとに「←→ だけで曲がれるか」を測る。旧版・現行版の比較表が冒頭のコメント。`repl.js` の命令ファイル）
+  - v41.19: `bike_feel_test.js`（バイクの長押し・ちょん押しの傾き、加速・シフト・制動・傾いたままのブレーキ/転倒を測る）と `bike_corner_test.js`（バイクで交差点・カーブを速度ごとに通れるか。先に `__Car.setProfile('bike')` と `window.__cornerCfg` を設定。結果は冒頭のコメント）。どちらも車モードを始めた `repl.js` に流す
 - `app/`: `index.html` の元（`head.html`・`vehicles.js`・`app.js` をつなげる。`work/mkx.sh`）
-  - `vehicles.js`: 車・トラック・バスの形を作るコード（v41.9）。`vehicles_src/veh_base.js`（周りの車の形・車体の作り方・材質）と `vehicles_src/veh_hi.js`（自分の車・運転席・バスの車体）から `bash app/vehicles_src/mkveh.sh` で作る（直接は編集しない）
+  - `vehicles.js`: 車・トラック・バス・バイクの形を作るコード（v41.9、バイクは v41.19）。`vehicles_src/veh_base.js`（周りの車の形・車体の作り方・材質）と `vehicles_src/veh_hi.js`（自分の車・運転席・バスの車体）と `vehicles_src/veh_bike.js`（自分のバイクとライダー）から `bash app/vehicles_src/mkveh.sh` で作る（直接は編集しない）
   - 形の確認用ページ: `tests/lab/lab.html`（街なしで車だけを表示）と `tests/vehicle_lab.js`（撮影）
 
 ## 作業フォルダ

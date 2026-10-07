@@ -3657,7 +3657,20 @@ const Snd = (() => {
   function text(id){ return ANNF && ANNF[id] ? ANNF[id].text : ""; }
   // ---- 車モードの音: エンジン（回転数に応じた倍音）・ロードノイズ・タイヤ鳴き・衝突 ----
   // ---- 車・バスの音（v18: 実録音のループ）: エンジン（回転数で再生速度・踏み込みで明るく）・ロードノイズ・タイヤ鳴き。バスはディーゼルと車内の音 ----
-  let eng = null, wasMoving = false;
+  let eng = null, wasMoving = false, bkv = null;
+  /* v41.19: バイクのエンジン音（合成。録音ではない）。400cc 並列 4 気筒の目安: 1 回転に 2 回の爆発 → 基音 = 回転数/30 Hz（アイドル 1,300rpm で 43Hz・11,000rpm で 367Hz）。
+     基音（倍音を少し足した波）＋ 半分の周波数の波（気筒のばらつき）をローパスに通し、回転と踏み込みで明るく・大きく。帯域を絞った雑音で吸気・排気の「ゴー」、風切り音（速度の 2 乗）。シフトの瞬間は音を一瞬落とす */
+  function bikeVoice(){
+    if(bkv || !noiseBuf) return bkv;
+    const N = 28, re = new Float32Array(N), im = new Float32Array(N); for(let k = 1; k < N; k++) im[k] = (1 / k) * (k % 2 ? 1 : 0.65) * Math.exp(-k / 10);
+    const b = {}; b.o1 = ctx.createOscillator(); b.o1.setPeriodicWave(ctx.createPeriodicWave(re, im)); b.o2 = ctx.createOscillator(); b.o2.type = "sawtooth";
+    b.lp = ctx.createBiquadFilter(); b.lp.type = "lowpass"; b.lp.Q.value = 2.0; b.lp.frequency.value = 900; b.g = ctx.createGain(); b.g.gain.value = 0; b.g2 = ctx.createGain(); b.g2.gain.value = 0.3;
+    b.o1.connect(b.lp); b.o2.connect(b.g2).connect(b.lp); b.lp.connect(b.g).connect(sfxBus); b.o1.start(); b.o2.start();
+    const nz = (type, f, q, dest) => { const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(0, Math.random() * 2.5); const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; const g = ctx.createGain(); g.gain.value = 0; s.connect(fl).connect(g).connect(dest); return { fl, g }; };
+    const n1 = nz("bandpass", 600, 0.7, sfxBus), n2 = nz("lowpass", 1400, 0.6, sfxBus); b.nb = n1.fl; b.ng = n1.g; b.wf = n2.fl; b.wg = n2.g;
+    return (bkv = b);
+  }
+  function bikeOff(t){ if(!bkv) return; for(const g of [bkv.g, bkv.ng, bkv.wg]) g.gain.setTargetAtTime(0, t, 0.03); }
   function carSound(C){
     if(!ctx) return;
     if(!eng){
@@ -3667,10 +3680,23 @@ const Snd = (() => {
       const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = 1050; const g = ctx.createGain(); g.gain.value = 0; o.connect(g).connect(sfxBus); o.start(); eng.bp = g;
     }
     const t = ctx.currentTime, set = (n, v, tc) => { if(n) n.g.gain.setTargetAtTime(v, t, tc || 0.1); };
-    if(!on || !C.active){ for(const k of ["car","bus","road","cabin","sq"]) set(eng[k], 0); eng.bp.gain.setTargetAtTime(0, t, 0.02); wasMoving = false; return; }
-    const bus = S.mode === "bus" || C.profile === "truck", sp = Math.abs(C.v), inside = C.view === "driver";
+    if(!on || !C.active){ for(const k of ["car","bus","road","cabin","sq"]) set(eng[k], 0); eng.bp.gain.setTargetAtTime(0, t, 0.02); bikeOff(t); wasMoving = false; return; }
+    const bus = S.mode === "bus" || C.profile === "truck", sp = Math.abs(C.v), inside = C.view === "driver", bike = C.profile === "bike" && S.mode === "car";
     const r = Math.max(0, Math.min(1, (C.rpm - 800) / 5200));
-    if(bus){
+    if(!bike) bikeOff(t);
+    if(bike){
+      set(eng.car, 0); set(eng.bus, 0); set(eng.cabin, 0);
+      const b = bikeVoice();
+      if(b){
+        const rr = Math.max(0, Math.min(1, (C.rpm - 1300) / 9700)), cut = (C.shT || 0) > 0 ? 0.4 : 1, thr = C.fall ? 0 : C.thr, f = C.rpm / 30;
+        b.o1.frequency.setTargetAtTime(f, t, 0.025); b.o2.frequency.setTargetAtTime(f * 0.5 * 1.004, t, 0.025);
+        b.lp.frequency.setTargetAtTime((inside ? 650 : 900) + rr * (inside ? 2200 : 3600) + thr * (inside ? 900 : 1800), t, 0.06);
+        b.g.gain.setTargetAtTime((C.fall ? 0.02 : (inside ? 0.12 : 0.17)) * (0.45 + 0.55 * thr + 0.35 * rr) * cut, t, 0.04);
+        b.nb.frequency.setTargetAtTime(350 + C.rpm * 0.28, t, 0.08); b.ng.gain.setTargetAtTime((C.fall ? 0 : (inside ? 0.05 : 0.07)) * (0.15 + thr * 0.9) * (0.4 + rr), t, 0.08);
+        b.wf.frequency.setTargetAtTime(600 + sp * 45, t, 0.2); b.wg.gain.setTargetAtTime((inside ? 0.22 : 0.10) * Math.min(1, (sp / 38) * (sp / 38)), t, 0.15);
+      }
+      set(eng.road, (inside ? 0.3 : 0.22) * Math.min(1, sp / 18) * (Env.st.rain ? 1.35 : 1));
+    } else if(bus){
       set(eng.car, 0);
       eng.bus.src.playbackRate.setTargetAtTime(0.72 + r * 0.85 + C.thr * 0.06, t, 0.12);
       set(eng.bus, (inside ? 0.38 : 0.5) * (0.55 + C.thr * 0.6));
@@ -3688,7 +3714,7 @@ const Snd = (() => {
       eng.lp.frequency.setTargetAtTime(1100 + C.thr * 4000 + r * 2500, t, 0.08);
     }
     if(eng.road) eng.road.src.playbackRate.setTargetAtTime(0.7 + Math.min(sp, 30) / 30 * 0.6, t, 0.2);
-    set(eng.sq, Math.min(0.6, C.slip * 0.7), 0.05);
+    set(eng.sq, bike && C.fall && sp > 1 ? 0.55 : Math.min(0.6, C.slip * 0.7), 0.05);   // v41.19: 転倒して滑るときは路面にこする音
     // 後退時の警告音: 約 1kHz を 0.4 秒ごとに断続
     const beepOn = C.gear === "R" && (ctx.currentTime % 0.8) < 0.4;
     eng.bp.gain.setTargetAtTime(beepOn ? 0.06 : 0, t, 0.01);
@@ -4089,7 +4115,8 @@ const Cab = (() => {
          エンジン（6速AT相当の駆動力）、ブレーキ、空気抵抗・転がり抵抗、路面勾配 */
 const Car = (() => {
   const C = { x: 60, z: 6, h: 0, yaw: Math.PI / 2, v: 0, steer: 0, wheel: 0, gear: "D", thr: 0, brk: 0, view: "chase",
-              pitch: 0, roll: 0, rpm: 800, slip: 0, odo: 0, active: false, hitT: 0 };
+              pitch: 0, roll: 0, rpm: 800, slip: 0, odo: 0, active: false, hitT: 0,
+              lean: 0, leanV: 0, dCur: 0, kS: 0, kSd: 0, fall: false, fallT: 0, absK: 1, tcK: 1, shT: 0, gearN: 1, loT: 0, util: 0 };   // v41.19: バイクの状態（傾き・長押し・転倒・ABS・ギア）
   let G = null;           // {nx,nz,x0,z0,step,H(Int16),K(Uint8)}
   // 車種ごとの諸元（v11: バスを追加）
   const PROFILES = {
@@ -4104,6 +4131,12 @@ const Car = (() => {
     bus:   { L: 5.3, rearOff: 2.75, vmax: 80 / 3.6, drive: 1.35, brake: 5.5, grip: 0.62, ratio: 13.5, maxW: 7.85, speedSens: 140, kbLat: 3.4, cmf: { acc: 3.6, lat: 3.6 },
              corners: [[5.2, 1.2], [5.2, -1.2], [-5.2, 1.2], [-5.2, -1.2], [5.3, 0], [2.6, 1.25], [2.6, -1.25], [0, 1.25], [0, -1.25], [-2.6, 1.25], [-2.6, -1.25]], len: 10.5, wid: 2.49,
              drv: { x: -0.7, y: 2.2, f: 4.6 }, cam: { back: 17, up: 5.6, look: 6 } },
+    // v41.19: バイク（400cc クラスの標準的なネイキッド。実在の車種そのものではない）: 軸距 1.45m・全長 2.08m・全幅（ハンドル）0.75m・車重 約 200kg＋乗員。
+    //   曲がり方は「ハンドルを切る」のではなく「車体を傾ける（バンク）」: 旋回の速さは傾きで決まる（yawRate = g·tan(傾き)/速度）。ratio・kbLat・speedSens は使わない（傾きの上限は bikeStep で決める）。
+    //   cmf: 荷物が揺れたと判定する体感加速度（バイクは乗用車より大きな加減速・横Gが普通。横 6.4 ≒ 傾き 33°、前後 6.2 ＞ 全開加速 5.9）
+    bike:  { bike: true, L: 1.45, rearOff: 0.73, vmax: 170 / 3.6, drive: 7.0, brake: 8.6, grip: 0.95, ratio: 1, maxW: 7.85, speedSens: 75, kbLat: 5.2, cmf: { acc: 6.2, lat: 6.4 }, pitchK: 0.0105,
+             corners: [[1.1, 0.3], [1.1, -0.3], [-1.0, 0.26], [-1.0, -0.26], [1.15, 0], [0.1, 0.32], [0.1, -0.32]], len: 2.1, wid: 0.7,
+             drv: { x: 0, y: 1.3, f: 0.1 }, cam: { back: 5.4, up: 2.0, look: 2.6, lookH: 1.0 } },
   };
   let P = PROFILES.sedan;
   const L0 = 2.7;
@@ -4172,7 +4205,7 @@ const Car = (() => {
     for(const f of taxiL.face){ f.material.map = taxiL.tex[k]; f.material.needsUpdate = true; }
     taxiL.g.visible = true; if(!taxiL.on){ hiU.setPaint(new THREE.Color(0xf2c230)); taxiL.on = true; }
   }
-  const eyeV = new THREE.Vector3(), tgtV = new THREE.Vector3();
+  const eyeV = new THREE.Vector3(), tgtV = new THREE.Vector3(), UP0 = new THREE.Vector3(0, 1, 0);
   /* v41.11: 運転席視点の見回し。Q=左 E=右 Z=後ろ（押している間）、画面のドラッグ、ゲームパッドの右スティック／LB・RB。離すとなめらかに正面へ戻る。
      手で見回していないときは、ハンドルを切った向き（曲がる向き）へ自動で視線を向ける。yaw は左が正（車の局所座標で +x が左） */
   const look = { m: 0, mp: 0, auto: 0, yaw: 0, pitch: 0, drag: false, x0: 0, y0: 0, dYaw: 0, dPitch: 0, hint: 0 };
@@ -4183,7 +4216,7 @@ const Car = (() => {
     if (look.drag) { tY += look.dYaw; tP += look.dPitch; }
     const manual = Math.abs(tY) > 0.01 || Math.abs(tP) > 0.01;
     look.m += (tY - look.m) * Math.min(1, dt * (manual ? 10 : 6)); look.mp += (tP - look.mp) * Math.min(1, dt * (manual ? 10 : 6));
-    const aT = Math.max(-0.5, Math.min(0.5, C.steer * 1.1)) * Math.min(1, Math.abs(C.v) / 3);
+    const aT = Math.max(-0.5, Math.min(0.5, P.bike ? C.lean * 0.85 : C.steer * 1.1)) * Math.min(1, Math.abs(C.v) / 3);   // v41.19: バイクは傾けた（曲がる）向きを見る
     look.auto += (aT - look.auto) * Math.min(1, dt * 3.5);
     look.yaw = look.m + look.auto * (1 - Math.min(1, Math.abs(look.m) / 0.35)); look.pitch = look.mp;
   }
@@ -4204,7 +4237,7 @@ const Car = (() => {
   addEventListener("keyup", e => { key[e.key.toLowerCase()] = false; });
   addEventListener("blur", () => { for (const k in key) key[k] = false; C.kT = 0; C.kB = 0; });   // v41.17: 別のウィンドウに移ったとき、押しっぱなし（特に Shift のスポーツ）が残らないように
   const touch = { thr: 0, brk: 0, wheel: null };
-  function setGear(g) { if (C.gear === g) return; if (Math.abs(C.v) >= 0.5) { C.msgT = 2; C.msg = "停止してからギアを切り替えてください"; return; } C.gear = g; C.msgT = 1.5; C.msg = g === "R" ? "R（後退）に入れました" : "D（前進）に入れました"; hud(); }
+  function setGear(g) { if (C.gear === g) return; if (Math.abs(C.v) >= 0.5) { C.msgT = 2; C.msg = "停止してからギアを切り替えてください"; return; } C.gear = g; C.msgT = 1.5; C.msg = g === "R" ? (P.bike ? "R（押し歩き）: バイクを歩く速さで後ろへ押します" : "R（後退）に入れました") : "D（前進）に入れました"; hud(); }
   function toggleGear() { setGear(C.gear === "D" ? "R" : "D"); }
   function bindUI() {
     const hold = (el, k) => { const on = e => { e.preventDefault(); touch[k] = 1; el.classList.add("on"); }, off = () => { touch[k] = 0; el.classList.remove("on"); };
@@ -4220,6 +4253,89 @@ const Car = (() => {
       a0 = ang(e); w0 = Math.max(-7.85, Math.min(7.85, w0 - d)); touch.wheel = w0; });
     const up = () => { drag = false; touch.wheel = null; };
     sw.addEventListener("pointerup", up); sw.addEventListener("pointercancel", up);
+  }
+
+  // ---- v41.19 バイク ----
+  const sm01 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
+  /* 入力（キー・パッド・画面）→「曲がりたい強さ」d（-1〜1、左が正）。
+     キーは長押しするほど深く傾く: 押し始めは控えめ（細かい修正・車線変更向き）で、約 0.75 秒かけて最大へ。離して 0.4 秒以内に押し直すと続きから。
+     低速（自転車ぐらいの速さまで）はハンドルで曲がるので最初から大きく、速度が上がるほど最初は控えめ。Shift（スポーツ）は立ち上がりが速く、傾きの上限も大きい（滑りやすい） */
+  function bikeDemand(dt, vv, AP, PI_, sport, kSteer) {
+    let dT = 0, ramp = false;
+    if (C.fall) dT = 0;
+    else if (AP) dT = clampN(AP.wheel / 7.85, -1, 1);
+    else if (touch.wheel !== null) dT = clampN(touch.wheel / 7.85, -1, 1);
+    else if (PI_ && PI_.steer !== 0) dT = -Math.sign(PI_.steer) * Math.pow(Math.abs(PI_.steer), 1.2);
+    else if (kSteer) {
+      if (kSteer !== C.kSd) { C.kSd = kSteer; C.kS = 0; }
+      C.kS = (C.kS || 0) + dt;
+      const a0 = sport ? 0.6 : 0.82 - 0.52 * sm01(3, 9, vv), Th = sport ? 0.35 : 0.75, u = Math.min(1, C.kS / Th);
+      dT = kSteer * (a0 + (1 - a0) * u * u * (3 - 2 * u)); ramp = true;
+    }
+    if (!ramp) C.kS = Math.max(0, Math.min(C.kS || 0, 0.5) - dt * 2.5);
+    const dc = C.dCur || 0, rate = dT * dc < 0 ? 10 : (Math.abs(dT) > Math.abs(dc) ? 7 : 6);
+    C.dCur = dc + clampN(dT - dc, -rate * dt, rate * dt);
+    C.wheel = C.dCur * 7.85;
+  }
+  /* 旋回: 速度が上がるほど「車体を傾ける」で曲がる（定常旋回では yawRate = g·tan(傾き)/速度）。低速はハンドルを切って曲がる（自転車モデル）。この 2 つを速度でなめらかにつなぐ（2.5〜6.5 m/s）。
+     傾きの上限は「滑る寸前」に対する割合: 50km/h 以下で 86%、100km/h で 52%、150km/h で 44%（高速ほど浅く＝高速で倒し込みすぎない）。Shift は 97%。
+     傾きは目標へ 2 次遅れで追いかける（約 0.15 秒・最大 約 70°/秒、高速ほどゆっくり） */
+  function bikeStep(dt, wet, sport) {
+    const vv = Math.abs(C.v), g = 9.8, mu = P.grip * (wet ? 0.78 : 1);
+    const capG = sport ? 0.97 : 0.86 - 0.34 * sm01(13.9, 27.8, vv) - 0.08 * sm01(27.8, 41, vv), phiMax = Math.atan(capG * mu);
+    C.phiMax = phiMax;
+    const phiT = C.fall ? C.fallSide * 1.43 : (C.dCur || 0) * phiMax * sm01(1.2, 4.5, vv);
+    const w0 = C.fall ? 5 : 10, zeta = C.fall ? 0.7 : 0.95, vLmax = C.fall ? 3 : 1.25 - 0.5 * sm01(15, 40, vv);
+    C.leanV = clampN((C.leanV || 0) + (w0 * w0 * (phiT - (C.lean || 0)) - 2 * zeta * w0 * (C.leanV || 0)) * dt, -vLmax, vLmax);
+    C.lean = (C.lean || 0) + C.leanV * dt;
+    let yawRate;
+    if (C.fall) { C.fallYaw = (C.fallYaw || 0) * Math.exp(-dt * 1.5); yawRate = C.fallYaw; }
+    else {
+      const wL = sm01(2.5, 6.5, vv), dm = 0.52 * (1 - 0.75 * sm01(2, 9, vv));
+      const yawH = C.v * Math.tan((C.dCur || 0) * dm) / P.L, yawL = C.v >= 0 ? g * Math.tan(C.lean) / Math.max(vv, 1.5) : 0;
+      yawRate = yawH * (1 - wL) + yawL * wL;
+    }
+    // ハンドルの角（見た目）: 実際に必要な角（高速ほど小さい）＋ 倒し込みの瞬間だけ逆に切る（カウンターステア）
+    C.steer = C.fall ? (C.steer || 0) * 0.96 : clampN(Math.atan(P.L * yawRate / Math.max(vv, 1)) - 0.06 * (C.leanV || 0) * Math.min(1.5, vv / 10), -0.6, 0.6);
+    return yawRate;
+  }
+  /* タイヤのグリップ: 前後（ブレーキ・加速）と横（傾き）の力の合計は、グリップの円の中に収まる。
+     ABS／トラクションコントロール: 傾いているときはブレーキと加速が絞られる（Space の急ブレーキは ABS なし）。
+     Space で傾いたまま踏む＝前輪ロックで転倒。横の力がグリップを超え続けても転倒（Shift で深く倒して濡れた路面など） */
+  function bikeGrip(dt, aLat, aMax, brakeRaw, thrustA) {
+    const allow = Math.sqrt(Math.max(0, aMax * aMax - aLat * aLat)), k = Math.min(1, dt * 20);
+    C.absK = (C.absK === undefined ? 1 : C.absK) + ((brakeRaw > allow ? allow / brakeRaw : 1) - (C.absK === undefined ? 1 : C.absK)) * k;
+    C.tcK = (C.tcK === undefined ? 1 : C.tcK) + ((thrustA > allow ? Math.max(0.2, allow / thrustA) : 1) - (C.tcK === undefined ? 1 : C.tcK)) * k;
+    C.util = Math.hypot(aLat, Math.max(brakeRaw, thrustA)) / aMax;
+    if (C.fall) return;
+    const lock = key[" "] && aLat > 1.5 && brakeRaw > allow * 1.05 && Math.abs(C.v) > 6, over = aLat > aMax * 1.04;
+    if (lock || over) { C.loT = (C.loT || 0) + dt; C.slip = Math.max(C.slip || 0, 0.5); } else C.loT = Math.max(0, (C.loT || 0) - dt * 2);
+    if (C.loT > 0.2) bikeFall(C.lean >= 0 ? 1 : -1, lock ? "傾いたまま急ブレーキをかけて前輪がロック。転倒しました" : "傾けすぎてタイヤが滑り、転倒しました", false);
+  }
+  function bikeFall(side, why, crash) {
+    if (C.fall) return;
+    C.fall = true; C.fallT = 2.8; C.fallSide = side || 1; C.fallYaw = (C.yawRateLast || 0) * 0.4; C.loT = 0; C.fallN = (C.fallN || 0) + 1;
+    C.hitT = 1.2; C.hitWhat = "転倒"; C.msgT = 4; C.msg = why; C.slip = 1; Snd.carHit && Snd.carHit(Math.max(6, Math.abs(C.v)));
+  }
+  function bikeStand() {
+    C.fall = false; C.lean = 0; C.leanV = 0; C.dCur = 0; C.v = 0; C.steer = 0; C.fallYaw = 0; C.absK = 1; C.tcK = 1; C.msgT = 3; C.msg = "バイクを起こしました。走り出せます";
+  }
+  /* エンジン: 400cc 並列 4 気筒の目安（アイドル 1,300 rpm・レッドゾーン 11,000 rpm）の 6 段。自動でシフトする（シフトの間 0.2 秒ほど駆動が途切れる）。
+     1 km/h あたりの回転数（段ごと）: 150・105・80・66・57・50 → 6 速 100km/h で 約 5,000 rpm */
+  const GRPK = [0, 150, 105, 80, 66, 57, 50];
+  function bikeEngine(dt, kmh) {
+    let g = C.gearN || 1; if (C.gear === "R") g = 1;
+    C.shT = Math.max(0, (C.shT || 0) - dt);
+    if (C.gear !== "R" && !C.shT) {
+      const now = kmh * GRPK[g];
+      if (g < 6 && now > 6200 + 3800 * C.thr) { g++; C.shT = 0.22; }
+      else if (g > 1 && kmh * GRPK[g - 1] < 9200 && now < 3000 + 1500 * C.thr) { g--; C.shT = 0.18; }
+    }
+    let t = Math.max(1300, kmh * GRPK[g]);
+    if (g === 1) t = Math.max(t, 1300 + C.thr * 4200 * (1 - Math.min(1, kmh / 10)));   // 発進（クラッチが滑っている間は空吹かし気味）
+    t += C.thr * 450 - (C.shT > 0 ? 1500 : 0);
+    C.rpm += (clampN(t, 1200, 11500) - C.rpm) * Math.min(1, dt * 9); C.gearN = g;
   }
 
   // ---- 物理 ----
@@ -4262,7 +4378,9 @@ const Car = (() => {
     const maxW = sport ? oldMax : latCap(1), maxWp = sport ? oldMax : latCap(1.3);
     // 切るスピードも横加速度の増え方（ジャーク）で決める: 押し始め 24 m/s³・切り返し 36 m/s³ 相当（高速ほど遅くして 7・14 m/s³ まで。低速は従来の 11／18 rad/s が上限。従来は 50 km/h で 54・100 km/h で 220 m/s³ 相当と、ほぼ一瞬）。手を離したときの戻りは 36→14 m/s³ 相当（上限 16 rad/s）
     const jr = (J) => J * P.L * P.ratio / Math.max(vv * vv, 1);
-    if (AP) C.wheel = AP.wheel;
+    if (P.bike && C.fall) { C.fallT -= dt; if (C.fallT <= 0) bikeStand(); }
+    if (P.bike) bikeDemand(dt, vv, AP, PI_, sport, kSteer);
+    else if (AP) C.wheel = AP.wheel;
     else if (touch.wheel !== null) C.wheel = touch.wheel;
     else if (PI_ && PI_.steer !== 0) { const tgt = -Math.sign(PI_.steer) * Math.pow(Math.abs(PI_.steer), 1.4) * maxWp; C.wheel += Math.max(-14 * dt, Math.min(14 * dt, tgt - C.wheel)); }
     else if (kSteer) {
@@ -4271,16 +4389,23 @@ const Car = (() => {
       C.wheel += Math.max(-rate * dt, Math.min(rate * dt, tgt - C.wheel));
     }
     else C.wheel -= Math.sign(C.wheel) * Math.min(Math.abs(C.wheel), dt * (vv > 0.5 ? (sport ? 16 : Math.min(16, jr(36 - 22 * tp))) : 9));   // 手を離すと真っすぐに戻る
-    C.steer = C.wheel / P.ratio;                                                  // ステアリングギア比
+    if (!P.bike) C.steer = C.wheel / P.ratio;                                     // ステアリングギア比
     // 駆動力（km/h 別に 6速 AT 相当の包絡線）
     const sp = Math.abs(C.v);
     let a = 0;
     const fwd = C.gear === "D" ? 1 : -1;
-    const drive = C.gear === "D" ? P.drive * Math.min(1, 9 / Math.max(6, sp)) * Math.max(0, 1 - sp / P.vmax) : Math.min(2.0, P.drive * 1.2) * Math.max(0, 1 - sp / 6);
+    // v41.19: バイクは出力で決まる加速（低速はタイヤのグリップで頭打ち 5.9m/s²・そのあと 175/速度）。後退は押し歩き（歩く速さ）。シフトの間は駆動が途切れる。転倒中は駆動なし
+    const drive = P.bike ? (C.gear === "D" ? Math.min(P.drive, 175 / Math.max(sp, 1)) * Math.max(0, 1 - Math.pow(sp / P.vmax, 4)) * ((C.shT || 0) > 0 ? 0.35 : 1) * (C.rpm > 11000 ? 0.2 : 1) * (C.tcK === undefined ? 1 : C.tcK) : 1.2 * Math.max(0, 1 - sp / 1.4))
+      : C.gear === "D" ? P.drive * Math.min(1, 9 / Math.max(6, sp)) * Math.max(0, 1 - sp / P.vmax) : Math.min(2.0, P.drive * 1.2) * Math.max(0, 1 - sp / 6);
+    if (P.bike && C.fall) C.thr = 0;
     a += fwd * C.thr * drive;
-    if (C.thr < 0.05 && sp < 1.8 && !brkIn) a += fwd * 0.35 * (1 - sp / 1.8);   // クリープ
-    const wet = Env.st.rain, brakeA = (C.brk * P.brake + (key[" "] ? 6 : 0)) * (wet ? 0.85 : 1);   // v41.14: 雨の路面は止まりにくい（ブレーキ ×0.85・横のグリップ ×0.78）
-    const resist = 0.12 + 0.00045 * sp * sp + (C.thr < 0.05 ? 0.25 : 0);           // 転がり・空気抵抗・エンジンブレーキ
+    if (C.thr < 0.05 && sp < 1.8 && !brkIn && !C.fall) a += fwd * (P.bike ? 0.25 : 0.35) * (1 - sp / 1.8);   // クリープ
+    const wet = Env.st.rain;
+    let brakeA = (C.brk * P.brake + (key[" "] ? 6 : 0)) * (wet ? 0.85 : 1);   // v41.14: 雨の路面は止まりにくい（ブレーキ ×0.85・横のグリップ ×0.78）
+    // v41.19: バイクは前後のタイヤの力（ブレーキ＋横）の合計がグリップの円を超えないように ABS が絞る（Space の急ブレーキだけは ABS なし＝傾いたまま踏むと転ぶ）。転倒中は路面を滑って止まる
+    const brakeRaw = Math.min(brakeA, P.grip * 9.8 * (wet ? 0.78 : 1));   // バイクの最大の減速はタイヤのグリップまで（ABS 前の値）
+    if (P.bike) { brakeA = brakeRaw; if (!key[" "]) brakeA *= C.absK === undefined ? 1 : C.absK; if (C.fall) brakeA = 4.6 * (wet ? 0.85 : 1); }
+    const resist = (P.bike ? 0.12 + 0.00052 * sp * sp : 0.12 + 0.00045 * sp * sp) + (C.thr < 0.05 ? 0.25 : 0);           // 転がり・空気・エンジンブレーキ
     // 勾配
     const fx = Math.sin(C.yaw), fz = Math.cos(C.yaw);
     const hl = P.L / 2;
@@ -4294,10 +4419,10 @@ const Car = (() => {
     const dec = (brakeA + resist) * dt;
     if (Math.abs(v) <= dec) v = 0; else v -= Math.sign(v) * dec;
     if (C.gear === "D" && v < 0 && C.thr > 0.05) v = 0;
-    C.v = Math.max(-8, Math.min(P.vmax, v));
+    C.v = Math.max(P.bike ? -1.4 : -8, Math.min(P.vmax, v));
     C.acc = (C.v - (C._pv || 0)) / Math.max(1e-3, dt); C._pv = C.v;
     // 旋回: 自転車モデル + グリップ限界
-    let yawRate = C.v * Math.tan(C.steer) / P.L;
+    let yawRate = P.bike ? bikeStep(dt, wet, sport) : C.v * Math.tan(C.steer) / P.L;
     const aLat = Math.abs(yawRate * C.v), aMax = P.grip * 9.8 * (wet ? 0.78 : 1);
     C.aLat = aLat;
     // v41.16: 乗り心地の判定用「体に感じる加速度」。坂の成分は除き、0.45 秒ぶんなめらかにならす（1 フレームの揺れや、キーを一瞬押しただけでは減点しない）。衝突の直後は数えない（衝突は別に減点）
@@ -4306,6 +4431,7 @@ const Car = (() => {
       else { C.accF = (C.accF || 0) + (fAcc - (C.accF || 0)) * k; C.latF = (C.latF || 0) + (fLat - (C.latF || 0)) * k; } }
     C.slip = aLat > aMax ? Math.min(1, (aLat - aMax) / 4) : 0;
     if (aLat > aMax) yawRate *= aMax / aLat;
+    if (P.bike) { bikeGrip(dt, aLat, aMax, brakeRaw, C.gear === "D" ? C.thr * drive : 0); C.yawRateLast = yawRate; }
     // 後輪軸を基準に動かす（長い車体は前が外へ振り出す）
     const rx0 = C.x - Math.sin(C.yaw) * P.rearOff, rz0 = C.z - Math.cos(C.yaw) * P.rearOff;
     const rx1 = rx0 + Math.sin(C.yaw) * C.v * dt, rz1 = rz0 + Math.cos(C.yaw) * C.v * dt;
@@ -4322,7 +4448,10 @@ const Car = (() => {
       if (inB(px, pz) && !inB(C.x + f0x * u + sx0 * w, C.z + f0z * u + sz0 * w)) hit = true; }
     C.hitWhat = "建物";
     if (!hit && C.obst) { const w = C.obst(nx, nz, f2x, f2z, Math.sign(C.v)); if (w) { hit = true; C.hitWhat = w; } }
-    if (hit) { if (Math.abs(C.v) > 3) { C.hitT = 1.2; Snd.carHit && Snd.carHit(Math.abs(C.v)); } C.v = -C.v * 0.15; C.yaw = yaw0; }
+    if (hit) { const bf = P.bike && C.fall;
+      if (Math.abs(C.v) > 3 && !bf) { C.hitT = 1.2; Snd.carHit && Snd.carHit(Math.abs(C.v)); }
+      if (P.bike && !bf && Math.abs(C.v) > 5.5) bikeFall(C.lean >= 0 ? 1 : -1, "壁や障害物にぶつかって転倒しました", true);
+      C.v = -C.v * (bf ? 0 : 0.15); C.yaw = yaw0; }
     else { C.odo += Math.abs(C.v) * dt; C.x = nx; C.z = nz; }
     C.hitT = Math.max(0, C.hitT - dt);
     // 高さ・姿勢（ピッチ: 勾配＋加減速、ロール: 横加速度）
@@ -4331,11 +4460,15 @@ const Car = (() => {
       C.h = Math.abs(hn - C.h) > 4 ? hn : C.h + Math.max(-vmax, Math.min(vmax, hn - C.h)); }
     const pitchT = Math.atan(grade) - (a - Math.sign(C.v) * brakeA) * (P.pitchK || (P === PROFILES.bus ? 0.006 : 0.004)), rollT = Math.atan((lz - rz) / (P.wid * 0.9)) + Math.sign(C.v) * yawRate * Math.abs(C.v) * (P.rollK || (P === PROFILES.bus ? 0.012 : 0.006));
     C.pitch += (pitchT - C.pitch) * Math.min(1, dt * 6); C.roll += (rollT - C.roll) * Math.min(1, dt * 6);
+    if (P.bike) C.roll = -C.lean;   // バイクは傾き＝車体のロール
     // エンジン回転（6速 AT の簡易シフト）
-    const kmh = sp * 3.6, gearN = C.gear === "R" ? 1 : Math.min(6, 1 + Math.floor(kmh / 22));
+    const kmh = sp * 3.6;
+    if (P.bike) bikeEngine(dt, kmh);
+    else {
+    const gearN = C.gear === "R" ? 1 : Math.min(6, 1 + Math.floor(kmh / 22));
     const ratio = [0, 3.6, 2.1, 1.4, 1.0, 0.8, 0.65][gearN];
     const target = 800 + kmh * ratio * 32 + C.thr * 900;
-    C.rpm += (Math.min(6500, target) - C.rpm) * Math.min(1, dt * 6); C.gearN = gearN;
+    C.rpm += (Math.min(6500, target) - C.rpm) * Math.min(1, dt * 6); C.gearN = gearN; }
     place(dt);
   }
   function place(dt) {
@@ -4343,6 +4476,7 @@ const Car = (() => {
     car.rotation.set(0, 0, 0); car.rotateY(C.yaw); body.rotation.set(-C.pitch, 0, C.roll); if (extBody) extBody.rotation.set(-C.pitch, 0, C.roll);
     if (P === PROFILES.sedan) { hiU.drive(C.v, dt || 0.016, C.steer); hiU.update(C); }
     else if (P === PROFILES.truck && extBody && extBody.userData.hiU) extBody.userData.hiU.update(C);   // v41.14: トラックのワイパー・水滴
+    else if (P.bike && extBody && extBody.userData.hiU) extBody.userData.hiU.update(C, dt || 0.016);   // v41.19: バイクの車輪・ハンドル・ライダーの腕・計器
     if (extBody && extBody.userData.spin) for (const w of extBody.userData.spin) { w.m.rotation.x += C.v * 0.016 / (w.r || 0.42); if (w.front) w.grp.rotation.y = C.steer; }
   }
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
@@ -4357,6 +4491,7 @@ const Car = (() => {
         lookUpdate(dt);
         const e = rigU.eye; eyeV.set(e.x, e.y, e.z); rigB.localToWorld(eyeV); tgtV.set(e.x + Math.sin(look.yaw) * 20, e.y - Math.tan(e.pitch * Math.PI / 180) * 20 + Math.tan(look.pitch) * 20, e.z + Math.cos(look.yaw) * 20); rigB.localToWorld(tgtV);
         camera.up.set(0, 1, 0).transformDirection(rigB.matrixWorld);
+        if (P.bike) camera.up.lerp(UP0, 0.45).normalize();   // v41.19: バイクは頭を車体ほどは傾けない（水平線の傾きは車体の傾きの約 55%）
         camera.position.copy(eyeV); camera.lookAt(tgtV);
         if (camera.near > 0.15) { camera.near = 0.12; camera.updateProjectionMatrix(); }
         rigU.setSky(hemi.color); rigU.setInside(true);
@@ -4367,7 +4502,7 @@ const Car = (() => {
         camera.lookAt(C.x + (fx * cy + sx * sy) * 20 + fx * d.f + sx * d.x, C.h + d.y - 0.22 + Math.sin(-C.pitch) * 20 + Math.tan(look.pitch) * 20, C.z + (fz * cy + sz * sy) * 20 + fz * d.f + sz * d.x);
       }
       // 画角: 横が見えるように広く（横の画角が約 100°。縦長の画面でも縦 88° まで）。車の外から見る視点では元の 56° に戻す
-      { const fv = Math.max(62, Math.min(88, 2 * Math.atan(Math.tan(50 * Math.PI / 180) / camera.aspect) * 180 / Math.PI)); if (Math.abs(camera.fov - fv) > 0.05) { camera.fov = fv; camera.updateProjectionMatrix(); } }
+      { const fv = Math.max(62, Math.min(88, 2 * Math.atan(Math.tan(50 * Math.PI / 180) / camera.aspect) * 180 / Math.PI)) + (P.bike ? 10 : 0); if (Math.abs(camera.fov - fv) > 0.05) { camera.fov = fv; camera.updateProjectionMatrix(); } }
     } else {
       if (C.onDriverView) C.onDriverView(false);
       if (camera.near < 0.2 || camera.fov !== 56) { camera.near = 0.3; camera.fov = 56; camera.updateProjectionMatrix(); }
@@ -4385,11 +4520,11 @@ const Car = (() => {
   function hud() {
     $("car-speed").textContent = Math.round(Math.abs(C.v) * 3.6);
     $("car-gd").classList.toggle("on", C.gear === "D"); $("car-gr").classList.toggle("on", C.gear === "R");
-    $("car-gearlbl").textContent = C.gear === "R" ? "R 後退" : "D 前進"; $("car-gearlbl").classList.toggle("rev", C.gear === "R");
-    $("car-rpm").style.width = Math.min(100, C.rpm / 65) + "%";
-    $("car-wheel").style.transform = `rotate(${-C.wheel}rad)`;
+    $("car-gearlbl").textContent = P.bike ? (C.fall ? "転倒中" : (C.gear === "R" ? "R 押し歩き" : (C.gearN || 1) + "速") + "　傾き " + Math.round(Math.abs(C.lean) * 57.3) + "°" + (C.lean > 0.02 ? " ←" : C.lean < -0.02 ? " →" : "")) : C.gear === "R" ? "R 後退" : "D 前進"; $("car-gearlbl").classList.toggle("rev", C.gear === "R");
+    $("car-rpm").style.width = Math.min(100, C.rpm / (P.bike ? 110 : 65)) + "%";
+    $("car-wheel").style.transform = `rotate(${-(P.bike ? C.lean * 1.4 : C.wheel)}rad)`;   // バイクは「傾き」の計器として回る
     C.msgT = Math.max(0, (C.msgT || 0) - 0.016);
-    $("car-msg").textContent = C.hitT > 0 ? "衝突しました（" + (C.hitWhat || "建物") + "）" : C.msgT > 0 ? C.msg : C.gear === "R" ? "後退中 — ↓ で下がる・↑ で止まる（後方に注意）" : (kindAt(C.x, C.z, C.h) === 2 ? "歩道・交通島の上です" : "");
+    $("car-msg").textContent = C.hitT > 0 ? (C.hitWhat === "転倒" ? "転倒しました" : "衝突しました（" + (C.hitWhat || "建物") + "）") : C.msgT > 0 ? C.msg : C.gear === "R" ? "後退中 — ↓ で下がる・↑ で止まる（後方に注意）" : (kindAt(C.x, C.z, C.h) === 2 ? "歩道・交通島の上です" : "");
     $("car-place").textContent = "走行距離 " + (C.odo / 1000).toFixed(2) + " km";
   }
   function start() {
@@ -4397,13 +4532,15 @@ const Car = (() => {
     // 桃太郎大通り（岡山駅前〜）の東行き車線が見つからない場合は近くの車道へ
     if (G && kindAt(C.x, C.z) !== 1) { outer: for (let r = 1; r < 40; r++) for (let a = 0; a < 16; a++) { const x = 60 + Math.cos(a / 16 * 6.283) * r, z = 6.5 + Math.sin(a / 16 * 6.283) * r; if (kindAt(x, z) === 1) { C.x = x; C.z = z; break outer; } } }
     C.h = hAt(C.x, C.z); camPos.set(0, 0, 0);
-    if (Env.st.rain) { C.msg = "雨です。路面が滑りやすいので、車間を広めに。ワイパーが動いています"; C.msgT = 5; }
+    if (P.bike) { C.msg = Env.st.rain ? "雨です。路面が滑りやすいので、浅めに傾けて。←→ は長押しするほど深く傾きます" : "バイクです。←→ を長押しするほど深く傾いて、しっかり曲がります（Space の急ブレーキは傾いたままだと転倒）"; C.msgT = 7; }
+    else if (Env.st.rain) { C.msg = "雨です。路面が滑りやすいので、車間を広めに。ワイパーが動いています"; C.msgT = 5; }
   }
   function stop() { C.active = false; car.visible = false; camera.up.set(0, 1, 0); lookEnd(); if (camera.near < 0.2 || camera.fov !== 56) { camera.near = 0.3; camera.fov = 56; camera.updateProjectionMatrix(); } }
   // 車種の切り替え（バスモード）。外観は extBody（バスの車体など）を差し込んで使う
   let extBody = null;
   function setProfile(name, ext) {
     P = PROFILES[name] || PROFILES.sedan; C.profile = name;
+    C.lean = C.leanV = C.dCur = C.kS = C.kSd = C.fallT = C.loT = 0; C.fall = false; C.absK = C.tcK = 1; C.shT = 0; C.gearN = 1; C.roll = 0; C.fallYaw = 0;
     if (extBody) { car.remove(extBody); extBody = null; }
     const own = name === "sedan";
     body.visible = own; for (const w of hiU.wheels) w.steer.visible = own;
@@ -4949,9 +5086,11 @@ document.querySelectorAll(".hstart-opt").forEach(b=>b.addEventListener("click",(
 Heli.bindUI();
 function beginCar(){
   MWT.reset();   leaveJR(); Clock.reset(); S.mode="car"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.add("on");
-  Quest.end(); Nav.clear(); const truck = S.cveh==="truck", mission = S.play==="mission" && Quest.def(Quest.sel.car);
-  if(truck){ TRUCK = makeTruck(); Car.setProfile("truck", TRUCK); Car.C.onDriverView = truckDV; } else { TRUCK = null; Car.setProfile("sedan"); Car.C.onDriverView = null; }
-  $("car-mode-lbl").textContent = mission ? mission.name : truck ? "トラックで自由に走る" : "車で自由に走る"; $("busui").classList.remove("on");
+  Quest.end(); Nav.clear(); const truck = S.cveh==="truck", bike = S.cveh==="bike", mission = S.play==="mission" && Quest.def(Quest.sel.car);
+  if(truck){ TRUCK = makeTruck(); Car.setProfile("truck", TRUCK); Car.C.onDriverView = truckDV; }
+  else if(bike){ TRUCK = null; const bk = makeBike(); if(mission && mission.id === "bike_courier") bk.userData.setCargo(true); Car.setProfile("bike", bk); Car.C.onDriverView = null; }   // バイク便は後ろにリアボックス   // v41.19: バイク
+  else { TRUCK = null; Car.setProfile("sedan"); Car.C.onDriverView = null; }
+  $("car-mode-lbl").textContent = mission ? mission.name : truck ? "トラックで自由に走る" : bike ? "バイクで自由に走る" : "車で自由に走る"; $("busui").classList.remove("on");
   setupRoute("higashi", true); S.pos=S.cum[0]+60;
   Snd.init(); Snd.hush(); placeCar();
   // v37: 山陽自動車道から出発（ミッションは市街地から）
@@ -4960,6 +5099,8 @@ function beginCar(){
   Trams.populate(null, 0, "none"); Traffic.reset(); if(S.car) S.car.visible=false;
   if(mission) Quest.begin(mission.id); }
 let TRUCK = null;
+/* v41.19: 自分のバイク（vehicles.js の Veh.bike。400cc クラスのネイキッド＋ライダー）。車体は Car の extBody として差し込み、userData.hiU が視点・更新の窓口 */
+function makeBike(){ const b = Veh.bike({ color: new THREE.Color(0x2b58b0) }); b.userData.hiU = b.userData; return b; }
 const truckDV = (drv) => { if(!TRUCK) return; TRUCK.userData.hiU.update(Car.C); };       // v41.9: 運転席は常にある（窓ごしに見える）。計器・ハンドルの動きだけ更新
 // 出発点: 桃太郎大通りの東行き車線（左側通行）
 function placeCar(){ Car.start(); const sp = Traffic.ready ? Traffic.startPose(40, -12, 1, 0) : null; if(sp){ Car.C.x=sp.x; Car.C.z=sp.z; Car.C.yaw=sp.yaw; Car.C.h=Car.hAt(sp.x, sp.z); } }
@@ -4994,7 +5135,7 @@ function applyMenu(){
   const o = document.querySelector(".mode-opt.on"), m = o ? o.dataset.mode : "tram", C = MENU[m] || MENU.tram, menu = $("menu");
   if(!menu) return;
   menu.dataset.mode = m;
-  const play = C.noplay ? "free" : (S.playBy[m] || "mission"), mis = play === "mission", car = m === "car", heli = m === "heli", truck = car && S.cveh === "truck";
+  const play = C.noplay ? "free" : (S.playBy[m] || "mission"), mis = play === "mission", car = m === "car", heli = m === "heli", truck = car && S.cveh === "truck", bike = car && S.cveh === "bike";
   S.play = play;
   if(m === "tram" || m === "bus"){ const d = document.querySelector(".dia-opt"); if(d && d.classList.contains("on") !== mis) d.click(); }   // ダイヤ運行 = ミッション
   const show = (id, v) => { const e = $(id); if(e) e.style.display = v ? "" : "none"; };
@@ -5012,9 +5153,9 @@ function applyMenu(){
   if(m === "tram"){ l1 = "路面電車 " + txt(q("#routes .route-opt.on strong")); l2 = txt(q("#routes .route-opt.on .dir")).replace(/（.*$/, ""); }
   else if(m === "jr"){ l1 = txt(q("#jr-routes .route-opt.on strong")) || "JR・新幹線"; l2 = txt(q("#jr-vehs .veh-opt.on b")); }
   else if(m === "bus"){ l1 = "両備バス 314"; l2 = "西大寺線 岡山駅東口 → 東山"; }
-  else if(car){ ic = truck ? "truck" : "car"; const vl = truck ? "トラック" : "乗用車", qd = mis ? Quest.def(Quest.sel.car) : null;
+  else if(car){ ic = truck ? "truck" : bike ? "bike" : "car"; const vl = truck ? "トラック" : bike ? "バイク" : "乗用車", qd = mis ? Quest.def(Quest.sel.car) : null;
     if(mis && qd){ l1 = qd.name; l2 = vl + "　" + "★".repeat(qd.star) + "☆".repeat(3 - qd.star); }
-    else { l1 = (truck ? "トラックで" : "車で") + "自由に走る"; l2 = vl + "　" + (S.carStart === "mw" ? "山陽自動車道 " + txt(q("#mw-place option:checked")).replace(/（.*$/, "") : "岡山駅前"); } }
+    else { l1 = (truck ? "トラックで" : bike ? "バイクで" : "車で") + "自由に走る"; l2 = vl + "　" + (S.carStart === "mw" ? "山陽自動車道 " + txt(q("#mw-place option:checked")).replace(/（.*$/, "") : "岡山駅前"); } }
   else { const qd = mis ? Quest.def(Quest.sel.heli) : null;
     if(mis && qd){ l1 = qd.name; l2 = "ヘリコプター　" + "★".repeat(qd.star) + "☆".repeat(3 - qd.star); }
     else { l1 = "ヘリで自由に飛ぶ"; l2 = "出発地　" + txt(q(".hstart-opt.on")); } }
@@ -5953,7 +6094,7 @@ const Mirrors = (() => {
   }
   function render(renderer, scene) {
     const C = Car.C; if (!C.active || C.view !== "driver") return;
-    const bus = Car.P === undefined ? false : Car.P.len > 8, tr = C.profile === "truck";   // v41.7: トラックは左右ミラーだけ（荷台でルームミラーは使えない）
+    const bus = Car.P === undefined ? false : Car.P.len > 8, bk = C.profile === "bike", tr = C.profile === "truck" || bk;   // v41.7: トラックは左右ミラーだけ（荷台でルームミラーは使えない）。v41.19: バイクも左右（ハンドルのミラーの位置から後ろを写す）
     const W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
     frameN++;
     const use = (bus || tr) ? ["L", "R"] : ["L", "R", "C"];
@@ -5962,6 +6103,7 @@ const Mirrors = (() => {
       if (C.onDriverView) C.onDriverView(false);
       const sm = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
       if (bus) { aim(M.L, C, Car.P, 1.45, 5.7, 2.1, 14, 3); aim(M.R, C, Car.P, -1.45, 5.7, 2.1, 14, 3); }
+      else if (bk) { aim(M.L, C, Car.P, 0.31, 0.23, 1.2, 9, 5); aim(M.R, C, Car.P, -0.31, 0.23, 1.2, 9, 5); }
       else if (tr) { aim(M.L, C, Car.P, 1.4, 2.55, 1.95, 12, 3); aim(M.R, C, Car.P, -1.4, 2.55, 1.95, 12, 3); }
       else { aim(M.L, C, Car.P, 0.98, 0.55, 1.02, 16, 2); aim(M.R, C, Car.P, -0.98, 0.55, 1.02, 16, 2); aim(M.C, C, Car.P, -0.1, -0.2, 1.28, 0, 1); }
       for (const k of use) { renderer.setRenderTarget(M[k].rt); renderer.clear(); renderer.render(scene, M[k].cam); }
@@ -6010,7 +6152,7 @@ const Prefs = (() => {
       const sh = document.querySelector(".shadow-opt"); if(sh && s.shadow === false && sh.classList.contains("on")) sh.click();
       if(s.play && typeof s.play === "object"){ for(const k of ["tram", "bus", "car", "heli"]) if(s.play[k] === "mission" || s.play[k] === "free") S.playBy[k] = s.play[k]; }
       else if(s.dia === false){ S.playBy.tram = "free"; S.playBy.bus = "free"; }   // v41.6 までの「ダイヤ運行: なし」
-      if(s.cveh === "sedan" || s.cveh === "truck") S.cveh = s.cveh;
+      if(s.cveh === "sedan" || s.cveh === "truck" || s.cveh === "bike") S.cveh = s.cveh;
       if(s.qsel){ if(typeof s.qsel.heli === "string") Quest.sel.heli = s.qsel.heli; if(typeof s.qsel.car === "string") Quest.sel.car = s.qsel.car; }
       if(s.time || s.rain != null) Env.set(s.time || null, !!s.rain);
       if(s.hstart) click('.hstart-opt[data-start="' + s.hstart + '"]');
@@ -7547,6 +7689,14 @@ const Quest = (() => {
     { id: "truck_parcel", mode: "car", veh: "truck", name: "宅配トラック", star: 1, cargo: "荷物", comfortK: 3, gen: "truck",
       blurb: "駐車場を出て、配送センターで荷物を積み、住宅街の路地や家の前へ 4〜6 件届ける。毎回ちがう配達先。荷物が揺れる急ブレーキ・急ハンドルは減点。",
       stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("yanagawa", "drop", "届ける", { r: 13 }), st_("ntt", "drop", "届ける", { r: 13 }), st_("tenmaya", "drop", "届ける", { r: 13 }), st_("chugin", "drop", "届ける", { r: 13 }) ] },
+    // v41.19: バイク便（細い路地にも入れる）とバイクのチェックポイント（傾けて曲がる練習にもなる）
+    { id: "bike_courier", mode: "car", veh: "bike", name: "バイク便", star: 1, cargo: "荷物", comfortK: 3, gen: "truck", bike: true,
+      blurb: "駐車場を出て、配送センターで荷物を積み、バイクでしか入れない細い路地の奥まで 4〜6 件届ける。毎回ちがう配達先。荷物が揺れる急ブレーキ・急な切り返しは減点。",
+      stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("yanagawa", "drop", "届ける", { r: 13 }), st_("ntt", "drop", "届ける", { r: 13 }), st_("tenmaya", "drop", "届ける", { r: 13 }), st_("chugin", "drop", "届ける", { r: 13 }) ] },
+    { id: "bike_check", mode: "car", veh: "bike", name: "バイクでチェックポイント", star: 1, cargo: "", gen: "check",
+      blurb: "駐車場を出て、幹線道路のチェックポイントを順に通過するタイムアタック。カーブは ←→ を長押しして傾けて曲がる。毎回ちがうコース。",
+      stops: [ st_("nishikawa", "pass", "通過", { r: 14 }), st_("yanagawa", "pass", "通過", { r: 14 }), st_("jouge", "pass", "通過", { r: 14 }), st_("kenchodori", "pass", "通過", { r: 14 }),
+               st_("tenmaya", "pass", "通過", { r: 14 }), st_("ntt", "pass", "通過", { r: 14 }), st_("ekimae", "pass", "通過", { r: 14 }) ] },
     { id: "truck_far", mode: "car", veh: "truck", name: "長距離配達", star: 3, cargo: "荷物", comfortK: 3, gen: "truckfar",
       blurb: "配送センターで積み、市内の遠い住宅街 4 件へ。道を選んで効率よく回る。毎回ちがう配達先。",
       stops: [ st_("ekimae", "load", "荷物を積む", { r: 13 }), st_("kyoukyo", "drop", "届ける", { r: 13 }), st_("higashiyama", "drop", "届ける", { r: 13 }), st_("seikibashi", "drop", "届ける", { r: 13 }) ] },
@@ -7605,14 +7755,14 @@ const Quest = (() => {
   /* 駐車場の中心から出入口まで、車幅（左右 1m）ぶん塞がれていないか */
   const parkOk = (p) => { const L = Math.hypot(p.gx - p.x, p.gz - p.z) || 1, n = Math.max(2, Math.ceil(L)), nx = -(p.gz - p.z) / L, nz = (p.gx - p.x) / L;
     for(let i = 0; i <= n; i++){ const x = p.x + (p.gx - p.x) * i / n, z = p.z + (p.gz - p.z) * i / n; for(const o of [-1, 0, 1]) if(Car.blocked(x + nx * o, z + nz * o)) return false; } return true; };
-  function genTruck(far, rnd){
+  function genTruck(far, rnd, bike){
     const deps = SITES.depot.filter((s) => Math.hypot(s.bx, s.bz) < 5000);
     for(let tries = 0; tries < 80 && deps.length; tries++){
       const dep = choice(deps, rnd), dock = { x: dep.dx, z: dep.dz };
       const parks = SITES.park.filter((p) => { const k = dd(p, dock); return k > 120 && k < 650 && p.r >= 6.5 && parkOk(p); });
       if(!parks.length) continue;
       const park = choice(parks, rnd), n = far ? 4 : 4 + Math.floor(rnd() * 2), rmin = far ? 1000 : 400, rmax = far ? 2200 : 1700;
-      const pool = SITES.drop.filter((s) => { const k = dd(s, dock); return s.rw >= 3.4 && k > rmin && k < rmax; });
+      const pool = SITES.drop.filter((s) => { const k = dd(s, dock); return s.rw >= (bike ? 2.4 : 3.4) && k > rmin && k < rmax; });
       if(pool.length < n * 6) continue;
       const picks = chain(pool, dock, n, far ? 350 : 200, far ? 1000 : 900, rnd, 0.4);
       if(picks.length >= n) return { dep, park, picks };
@@ -7823,7 +7973,7 @@ const Quest = (() => {
     let d = d0, gen = null;
     if(d0.gen && SITES && (d0.gen !== "check" || Traffic.ready)){
       const sd = seed === undefined ? ((Math.random() * 4294967296) >>> 0) : seed, rnd = rngOf(sd);
-      gen = d0.gen === "truck" ? genTruck(false, rnd) : d0.gen === "truckfar" ? genTruck(true, rnd) : d0.gen === "taxi" ? genTaxi(rnd) : d0.gen === "check" ? genCheck(rnd) : d0.gen === "heli" ? genHeli(rnd) : null;
+      gen = d0.gen === "truck" ? genTruck(false, rnd, d0.bike) : d0.gen === "truckfar" ? genTruck(true, rnd) : d0.gen === "taxi" ? genTaxi(rnd) : d0.gen === "check" ? genCheck(rnd) : d0.gen === "heli" ? genHeli(rnd) : null;
       if(gen){ d = Object.assign({}, d0, { stops: stopsOf(d0, gen) }); Q.seed = sd; }
     }
     Q.gen = gen;
@@ -7850,12 +8000,12 @@ const Quest = (() => {
       s.face = Math.atan2(s.x - prev.x, s.z - prev.z); prev = s;
     });
     // 目安時間（累積）: 距離 ÷ 平均速度 ＋ 停止・着陸の時間
-    const V = heli ? (d.gentle ? 34 : 32) : (Car.C.profile === "truck" ? 8.2 : 9.4), F = heli ? 1.04 : (Q.gen ? 1.6 : 1.38), DW = heli ? 22 : 12;
+    const V = heli ? (d.gentle ? 34 : 32) : (Car.C.profile === "truck" ? 8.2 : Car.C.profile === "bike" ? 10.5 : 9.4), F = heli ? 1.04 : (Q.gen ? 1.6 : 1.38), DW = heli ? 22 : 12;
     let t = 0; prev = { x: m.x, z: m.z };
     Q.stops.forEach((s) => { const dist = Math.hypot(s.x - prev.x, s.z - prev.z); t += dist * F / V + (s.kind === "pass" ? 3 : DW); s.parCum = t; prev = s; });
     Q.parT = t;
     buildMarker(Q.stops[0]); grp.visible = true; navTo(Q.stops[0]);
-    el("q-name").textContent = d.name; el("q-kick").textContent = (heli ? "HELI MISSION" : (d.veh === "truck" ? "TRUCK MISSION" : "DRIVE MISSION"));
+    el("q-name").textContent = d.name; el("q-kick").textContent = (heli ? "HELI MISSION" : (d.veh === "truck" ? "TRUCK MISSION" : d.veh === "bike" ? "BIKE MISSION" : "DRIVE MISSION"));
     dots(); showHud(true); el("qfin").classList.remove("on"); hud(true);
     toast(d.name + " スタート" + (Q.startName ? "（" + Q.startName + "から）" : "") + " — 最初は「" + Q.stops[0].name + "」", "");
     return true;
