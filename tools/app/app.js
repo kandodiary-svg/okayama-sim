@@ -584,7 +584,7 @@ const Env = (() => {
     scene.fog.color.copy(fogC); scene.fog.near = wet ? p.near*0.45 : p.near; scene.fog.far = wet ? p.far*0.55 : p.far; scene.background.copy(fogC);
     FOG_BASE.near = scene.fog.near; FOG_BASE.far = scene.fog.far;
     FACADE_UNIFORMS.uSkyTop.value.copy(H); FACADE_UNIFORMS.uSkyHor.value.copy(L);
-    NIGHT_U.value = p.night; Veh.setNight(p.night);
+    NIGHT_U.value = p.night; Veh.setNight(p.night); Veh.setRain(wet);   // v41.14: 雨の日は車の窓に水滴・ワイパー
     for(const [k, m] of Object.entries(MATS)){ const kind = k.replace(/_\d+$/,""); apply1(m, kind); }
     buildLamps(); if(lamps){ lamps.visible = p.night > 0.3; lamps.material.opacity = p.night; }
     if(!rain) buildRain(); rain.visible = wet;
@@ -2381,12 +2381,13 @@ const Traffic = (()=>{
           if((nAct-(had?1:0))>=cap || !spawnCar(c, center, 200, 450, true)){ if(had) nAct--; c.type=null; } else if(!had) nAct++; } }
       let add=0; while(cars.length<MAXN && nAct<cap && add++<30){ const c={id:cars.length}; if(spawnCar(c, center, 20, 420, false)){ cars.push(c); nAct++; } else break; }
     }
+    const wetK = Env.st.rain ? 0.86 : 1, gapK = Env.st.rain ? 1.3 : 1;   // v41.14: 雨は車間を 3 割広く、強いブレーキを控える
     for(const c of cars){
       if(!c.type) continue;
       const seg=segs[c.plan[0]]; const hl=c.type.l/2;
       // v41.8: クラクション（利用者）を聞いた車。少し間をおいて（反応時間）から、譲り合い待ち・歩行者待ちを解いて前へ進む（赤信号は守る）
       if(c.honkT>0){ c.honkT-=dt; if(c.honkDly>0) c.honkDly-=dt; } const hk = c.honkT>0 && !(c.honkDly>0);
-      let vlim = (seg.lane ? seg.v : Math.min(segs[segs[c.plan[0]].next[0]].v, seg.v)) / 3.6 * c.v0;
+      let vlim = (seg.lane ? seg.v : Math.min(segs[segs[c.plan[0]].next[0]].v, seg.v)) / 3.6 * c.v0 * wetK;   // v41.14: 雨では巡航を 14% 落とす
       let gap=1e9, gsrc=0, sigHold=false, jw=null;   // sigHold: 信号待ち  jw: 譲り合いで待っている相手
       // 前方の曲がり（接続の制限速度）
       let acc=seg.P.len-c.s;
@@ -2439,8 +2440,8 @@ const Traffic = (()=>{
       // 安全運転: 車間は 3m＋速度×1.5秒、加速は穏やか
       // v41.11: 前が車のときは、その車の速さ（vL）を考える。以前は前の車を「止まっている壁」として扱っていたため、車間 50m では時速 45km までしか出ず、流れに乗れなかった
       let vL=0; if(gsrc===4 && c.blockedBy && c.blockedBy.type && (c.blockedBy.dx*c.dx+c.blockedBy.dz*c.dz)>0.5) vL=Math.max(0, c.blockedBy.v||0);
-      const vt=Math.min(vlim, Math.sqrt(vL*vL + Math.max(0, 2*2.5*Math.max(0,gap-3.0-c.v*1.3))));
-      const a = vt>c.v ? Math.min(2.4, (vt-c.v)*2.0) : Math.max(-7.5, (vt-c.v)*2.6);   // v41.11: 加速 1.3→2.4 m/s²（目標速度への追いつきも速く: 係数 0.9→2.0）
+      const vt=Math.min(vlim, Math.sqrt(vL*vL + Math.max(0, 2*2.5*Math.max(0,gap-(3.0+c.v*1.3)*gapK))));
+      const a = vt>c.v ? Math.min(2.4, (vt-c.v)*2.0) : Math.max(-7.5*(wetK<1?0.8:1), (vt-c.v)*2.6);   // v41.11: 加速 1.3→2.4 m/s²（目標速度への追いつきも速く: 係数 0.9→2.0）
       c.brake = a < -0.6 || c.v < 0.5;
       c.v=Math.max(0, c.v + a*dt); if(gap<2.2 && c.v<0.5) c.v=Math.max(0,c.v-3*dt);
       // 行き詰まり（お互いに相手待ち）の解消
@@ -2645,7 +2646,7 @@ function makeRyobiBus(dest){
     const mg=new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.42), mirG); mg.position.set(s*1.58,2.0,Lb/2-0.162); mg.rotation.y=Math.PI; g.add(mg); outer.push(arm,arm2,mir,mg); }
   outer.push(body, ac);
   // 運転席（運転席視点で表示）と車輪: vehicles.js（Veh.hi("busP")）。運転席の内側は車体の中に隠れていて、運転席視点のときだけ車体を消して見せる
-  const hi=Veh.hi("busP", { color:new THREE.Color(0xf2f3f1) }), hu=hi.userData, cab=hu.cab; cab.visible=false; g.add(cab);
+  const hi=Veh.hi("busP", { color:new THREE.Color(0xf2f3f1), wipers:false }), hu=hi.userData, cab=hu.cab; cab.visible=false; g.add(cab);
   for(const ch of hu.body.children) if(ch!==cab && ch.geometry) ch.geometry.dispose();      // 使わない外観（キャブの車体）のぶんは捨てる
   const wheels=[], spin=[];
   for(const w of hu.wheels){ g.add(w.steer); wheels.push(w.steer); spin.push({ m:w.spin, grp:w.steer, front:w.front, r:w.r }); }
@@ -3361,6 +3362,7 @@ const Dia = (() => {
    ドア: 開扉（函館の実録音）・閉扉（路面電車の閉扉音, CC0）/ 警鐘: 路面電車のベル（CC0）
    放送: 女性アナウンスの音声ファイル（事前生成。固有名詞はひらがなで読みを指定）。
          読み込めない場合のみブラウザの音声合成で代替。 */
+Veh.wipeCb = (up) => { if(typeof Snd !== "undefined") Snd.wiper(up); };   // v41.14: ワイパーが払うたびに音（vehicles.js から呼ばれる）
 const Snd = (() => {
   let ctx = null, master = null, sfxBus = null, annBus = null, on = true;
   const buf = {};
@@ -3682,7 +3684,7 @@ const Snd = (() => {
       set(eng.bus, 0); set(eng.cabin, 0);
       eng.car.src.playbackRate.setTargetAtTime(0.8 + r * 1.7, t, 0.06);
       set(eng.car, (inside ? 0.3 : 0.42) * (0.5 + C.thr * 0.7));
-      set(eng.road, (inside ? 0.55 : 0.4) * Math.min(1, sp / 18));
+      set(eng.road, (inside ? 0.55 : 0.4) * Math.min(1, sp / 18) * (Env.st.rain ? 1.35 : 1));   // v41.14: 濡れた路面は「シャー」と大きい
       eng.lp.frequency.setTargetAtTime(1100 + C.thr * 4000 + r * 2500, t, 0.08);
     }
     if(eng.road) eng.road.src.playbackRate.setTargetAtTime(0.7 + Math.min(sp, 30) / 30 * 0.6, t, 0.2);
@@ -3697,7 +3699,36 @@ const Snd = (() => {
   function debug(){ const g = o => o ? +o.g.gain.value.toFixed(3) : null; return { ctx: ctx && ctx.state, bufs: Object.keys(buf).length, plays, last: Snd._last,
     car: eng && { car: g(eng.car), bus: g(eng.bus), road: g(eng.road), cabin: g(eng.cabin), rate: eng.car && +eng.car.src.playbackRate.value.toFixed(2), brate: eng.bus && +eng.bus.src.playbackRate.value.toFixed(2) },
     heli: hs && { rotor: g(hs.rotor), body: g(hs.body), cabin: g(hs.cabin) } }; }
-  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, blip, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, get on(){ return on; }};
+  /* v41.14: 雨の音とワイパーの音（合成。録音ではない）。雨音は広帯域のノイズ（ザーッ）と、帯域を絞ってゆっくり揺らしたノイズ（パラパラ）。
+     車内・運転台では高い音を削って小さく（屋根に当たる音）、外では大きめ、ヘリではローターの音が大きいので小さく */
+  let rainN = null, rainLv = 0;
+  function rainSound(dt, wet, place){
+    if(!ctx || !noiseBuf) return;
+    if(!rainN){
+      const nz = (type, f, q) => { const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = true; s.start(0, Math.random() * 2.5); const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q; s.connect(fl); return fl; };
+      const hiG = ctx.createGain(); hiG.gain.value = 0; const hiLp = ctx.createBiquadFilter(); hiLp.type = "lowpass"; hiLp.frequency.value = 8000;
+      nz("highpass", 1100, 0.5).connect(hiLp).connect(hiG).connect(sfxBus);
+      const patG = ctx.createGain(); patG.gain.value = 0; nz("bandpass", 2400, 1.2).connect(patG).connect(sfxBus);
+      const lfoG = ctx.createGain(); lfoG.gain.value = 0; nz("lowpass", 7, 0.7).connect(lfoG).connect(patG.gain);   // パラパラの強さをゆっくり揺らす（揺れの大きさは下で場所ごとに決める。計測: 7Hz に絞ったピンクノイズの実効値は 0.18）
+      rainN = { hiG, hiLp, patG, lfoG };
+    }
+    rainLv += ((on && wet ? 1 : 0) - rainLv) * Math.min(1, dt * 0.8);
+    const t = ctx.currentTime, cfg = place === "cab" ? { hi: 0.09, pat: 0.08, lp: 2600 } : place === "heli" ? { hi: 0.05, pat: 0.04, lp: 6000 } : { hi: 0.16, pat: 0.10, lp: 8000 };
+    rainN.hiG.gain.setTargetAtTime(cfg.hi * rainLv, t, 0.25); rainN.patG.gain.setTargetAtTime(cfg.pat * rainLv, t, 0.25); rainN.lfoG.gain.setTargetAtTime(cfg.pat * 2.4 * rainLv, t, 0.25); rainN.hiLp.frequency.setTargetAtTime(cfg.lp, t, 0.3);
+  }
+  // ワイパーが 1 回払うごとの「スー」（上り・下りで音程が逆）と、折り返しの「コトッ」。運転席視点では大きく、外から見ているときは小さく
+  function wiper(up){
+    if(!ctx || !on || !noiseBuf || !sfxBus) return;
+    const inside = (S.mode === "car" || S.mode === "bus") && Car.C.view === "driver", k = inside ? 1 : 0.25, t = ctx.currentTime;
+    const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 0.9;
+    f.frequency.setValueAtTime(up ? 900 : 2000, t); f.frequency.linearRampToValueAtTime(up ? 2000 : 900, t + 0.5);
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.2 * k, t + 0.14); g.gain.linearRampToValueAtTime(0.0001, t + 0.56);
+    s.connect(f).connect(g).connect(sfxBus); s.start(t, Math.random() * 2, 0.6);
+    const th = ctx.createBufferSource(); th.buffer = noiseBuf; const tl = ctx.createBiquadFilter(); tl.type = "lowpass"; tl.frequency.value = 170;
+    const tg = ctx.createGain(); tg.gain.setValueAtTime(0.0001, t + 0.62); tg.gain.linearRampToValueAtTime(0.22 * k, t + 0.635); tg.gain.linearRampToValueAtTime(0.0001, t + 0.72);
+    th.connect(tl).connect(tg).connect(sfxBus); th.start(t + 0.6, Math.random() * 2, 0.15);
+  }
+  return {init, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, blip, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, rainSound, wiper, get on(){ return on; }};
 })();
 
 /* 放送文は audio/ann.json（提供の書き起こしを整えた文面。広告は除外、運賃は改定があるため入れていない）。 */
@@ -4227,7 +4258,7 @@ const Car = (() => {
     const drive = C.gear === "D" ? P.drive * Math.min(1, 9 / Math.max(6, sp)) * Math.max(0, 1 - sp / P.vmax) : Math.min(2.0, P.drive * 1.2) * Math.max(0, 1 - sp / 6);
     a += fwd * C.thr * drive;
     if (C.thr < 0.05 && sp < 1.8 && !brkIn) a += fwd * 0.35 * (1 - sp / 1.8);   // クリープ
-    const brakeA = C.brk * P.brake + (key[" "] ? 6 : 0);
+    const wet = Env.st.rain, brakeA = (C.brk * P.brake + (key[" "] ? 6 : 0)) * (wet ? 0.85 : 1);   // v41.14: 雨の路面は止まりにくい（ブレーキ ×0.85・横のグリップ ×0.78）
     const resist = 0.12 + 0.00045 * sp * sp + (C.thr < 0.05 ? 0.25 : 0);           // 転がり・空気抵抗・エンジンブレーキ
     // 勾配
     const fx = Math.sin(C.yaw), fz = Math.cos(C.yaw);
@@ -4246,7 +4277,7 @@ const Car = (() => {
     C.acc = (C.v - (C._pv || 0)) / Math.max(1e-3, dt); C._pv = C.v;
     // 旋回: 自転車モデル + グリップ限界
     let yawRate = C.v * Math.tan(C.steer) / P.L;
-    const aLat = Math.abs(yawRate * C.v), aMax = P.grip * 9.8;
+    const aLat = Math.abs(yawRate * C.v), aMax = P.grip * 9.8 * (wet ? 0.78 : 1);
     C.aLat = aLat;
     C.slip = aLat > aMax ? Math.min(1, (aLat - aMax) / 4) : 0;
     if (aLat > aMax) yawRate *= aMax / aLat;
@@ -4286,6 +4317,7 @@ const Car = (() => {
     car.position.set(C.x, C.h, C.z);
     car.rotation.set(0, 0, 0); car.rotateY(C.yaw); body.rotation.set(-C.pitch, 0, C.roll); if (extBody) extBody.rotation.set(-C.pitch, 0, C.roll);
     if (P === PROFILES.sedan) { hiU.drive(C.v, dt || 0.016, C.steer); hiU.update(C); }
+    else if (P === PROFILES.truck && extBody && extBody.userData.hiU) extBody.userData.hiU.update(C);   // v41.14: トラックのワイパー・水滴
     if (extBody && extBody.userData.spin) for (const w of extBody.userData.spin) { w.m.rotation.x += C.v * 0.016 / (w.r || 0.42); if (w.front) w.grp.rotation.y = C.steer; }
   }
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
@@ -4340,6 +4372,7 @@ const Car = (() => {
     // 桃太郎大通り（岡山駅前〜）の東行き車線が見つからない場合は近くの車道へ
     if (G && kindAt(C.x, C.z) !== 1) { outer: for (let r = 1; r < 40; r++) for (let a = 0; a < 16; a++) { const x = 60 + Math.cos(a / 16 * 6.283) * r, z = 6.5 + Math.sin(a / 16 * 6.283) * r; if (kindAt(x, z) === 1) { C.x = x; C.z = z; break outer; } } }
     C.h = hAt(C.x, C.z); camPos.set(0, 0, 0);
+    if (Env.st.rain) { C.msg = "雨です。路面が滑りやすいので、車間を広めに。ワイパーが動いています"; C.msgT = 5; }
   }
   function stop() { C.active = false; car.visible = false; camera.up.set(0, 1, 0); lookEnd(); if (camera.near < 0.2 || camera.fov !== 56) { camera.near = 0.3; camera.fov = 56; camera.updateProjectionMatrix(); } }
   // 車種の切り替え（バスモード）。外観は extBody（バスの車体など）を差し込んで使う
@@ -7809,6 +7842,10 @@ function loop(now){
     else { S.clock+=dt; Loc.update(dt, Car.C.x, Car.C.z, ""); }
     Snd.carSound(Car.C); }
   if(S.mode!=="car" && S.mode!=="bus") Snd.carSound(Car.C);   // 他のモードでは車・バスの音を止めておく
+  { const carM = S.mode==="car" || S.mode==="bus";   // v41.14: 雨音（走っているときだけ。運転席・運転台の中では小さく）
+    const live = carM ? Car.C.active : S.mode==="heli" ? Heli.H.active : S.running;
+    const inCab = carM ? Car.C.view==="driver" : (S.mode==="tram" && S.view==="cab");
+    Snd.rainSound(dt, !!(Env.st.rain && live), S.mode==="heli" ? "heli" : inCab ? "cab" : "out"); }
   if(S.mode!=="heli") Snd.heliSound(Heli.H);
   if(S.mode==="car"||S.mode==="bus"){}
   else if(S.mode==="heli"){ S.t+=dt; S.clock+=dt; Heli.tick(dt); if(S.car) S.car.visible=false; Heli.updateCam(dt); Heli.hud(); Loc.update(dt, Heli.H.x, Heli.H.z, ""); Snd.heliSound(Heli.H); }

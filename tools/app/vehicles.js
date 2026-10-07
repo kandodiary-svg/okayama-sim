@@ -127,6 +127,9 @@ const Veh = (() => {
      映り込みの色は、街の半球ライト（空の色・地面の色）から取る → 朝・夕・夜・天気にそのまま追従する（環境マップは使わない） */
   V.lampU = { value: 0.35 };
   V.setNight = (n) => { V.lampU.value = 0.35 + 0.75 * n; };       // 夜は灯火が明るい（街の時間帯から呼ぶ）
+  /* v41.14: 雨。自分の車の窓に水滴がつき、ワイパーが動く（運転席から見える）。街の天気（Env）から呼ぶ。wipeCb は払うたびの音（画面側で登録） */
+  V.rainU = { value: 0 }; V.wipeCb = null;
+  V.setRain = (on) => { V.rainU.value = on ? 1 : 0; };
   V.makeMat = function(opt){
     opt = opt || {};       // cabin: 車内（直射を弱める）  glass: 窓（外からは暗く・中からは透ける）  side: THREE.DoubleSide など
     const mat = new THREE.MeshPhongMaterial({ vertexColors: true, specular: 0xffffff, shininess: opt.shininess || 70 });
@@ -134,13 +137,23 @@ const Veh = (() => {
     if(opt.cabin) mat.defines.CABIN = "";
     if(opt.side) mat.side = opt.side;
     if(opt.glass){ mat.defines.GLASS = ""; mat.transparent = true; mat.depthWrite = false; mat.side = THREE.DoubleSide; }
+    if(opt.glass && opt.rainGlass) mat.defines.RAINGLASS = "";
     const U = { uPaint: { value: new THREE.Color(1, 1, 1) }, uLamp: V.lampU, uBrake: { value: 0 }, uCabin: { value: new THREE.Vector2(1, 1) } };
     mat.userData.U = U;
+    // 雨の窓の値（uRain: 雨かどうか uRainT: 雨が降り始めてからの秒 uWipeT: ワイパーが動き始めてからの秒（負なら止まっている）
+    //   uWO/uWA/uWB/uWN: フロントガラスの面（原点・左・上り方向・外向きの法線）uWP1/uWP2: ワイパーの軸（面の座標 u,v と長さ）uWS: 振れ角・1 往復の秒・次の往復までの周期の秒）
+    const RU = (opt.glass && opt.rainGlass) ? { uRain: { value: 0 }, uRainT: { value: 0 }, uWipeT: { value: -1 }, uWO: { value: new THREE.Vector3() }, uWA: { value: new THREE.Vector3(1, 0, 0) },
+      uWB: { value: new THREE.Vector3(0, 1, 0) }, uWN: { value: new THREE.Vector3(0, 0, 1) }, uWP1: { value: new THREE.Vector4() }, uWP2: { value: new THREE.Vector4() }, uWS: { value: new THREE.Vector3(1.45, 1.3, 2.6) } } : null;
+    mat.userData.RU = RU;
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uPaint = U.uPaint; sh.uniforms.uLamp = U.uLamp; sh.uniforms.uBrake = U.uBrake; sh.uniforms.uCabin = U.uCabin;
+      if(RU) for(const k in RU) sh.uniforms[k] = RU[k];
       sh.vertexShader = sh.vertexShader
-        .replace("#include <common>", "#include <common>\nattribute float aPaint;\nattribute float aBrake;\nvarying float vK;\nvarying float vBr;\nuniform vec3 uPaint;\nuniform float uBrake;")
+        .replace("#include <common>", "#include <common>\nattribute float aPaint;\nattribute float aBrake;\nvarying float vK;\nvarying float vBr;\nuniform vec3 uPaint;\nuniform float uBrake;\n#ifdef RAINGLASS\nvarying vec3 vLoc;\nvarying vec3 vNL;\n#endif")
         .replace("#include <color_vertex>", `vK = aPaint; vBr = aBrake + uBrake;
+          #ifdef RAINGLASS
+            vLoc = position; vNL = normal;
+          #endif
           vColor = vec3(1.0);
           #ifdef USE_COLOR
             vColor.xyz *= color.xyz;
@@ -152,7 +165,39 @@ const Veh = (() => {
             vColor.xyz *= mix(vec3(1.0), uPaint, isP);
           #endif`);
       sh.fragmentShader = sh.fragmentShader
-        .replace("#include <common>", "#include <common>\nvarying float vK;\nvarying float vBr;\nuniform float uLamp;\nuniform vec2 uCabin;")
+        .replace("#include <common>", `#include <common>
+varying float vK;
+varying float vBr;
+uniform float uLamp;
+uniform vec2 uCabin;
+#ifdef RAINGLASS
+varying vec3 vLoc; varying vec3 vNL;
+uniform float uRain; uniform float uRainT; uniform float uWipeT;
+uniform vec3 uWO; uniform vec3 uWA; uniform vec3 uWB; uniform vec3 uWN;
+uniform vec4 uWP1; uniform vec4 uWP2; uniform vec3 uWS;
+float rgH12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec3 rgH32(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.xxy + p3.yzz) * p3.zyx); }
+// ワイパー（軸 pv.xy・長さ pv.z）が、この点を最後に通ってからの秒。通らない所・止まっているときは大きい値
+float rgWipe(vec4 pv, float wu, float wv){
+  if(uWipeT < 0.0) return 1000.0;
+  vec2 d = vec2(wu - pv.x, wv - pv.y); float rr = length(d), th = atan(d.y, d.x);
+  if(rr > pv.z || th < -0.04 || th > uWS.x + 0.04) return 1000.0;
+  float c = clamp(1.0 - 2.0 * clamp(th, 0.0, uWS.x) / uWS.x, -1.0, 1.0);
+  float t1 = acos(c) / 6.2831853 * uWS.y, t2 = uWS.y - t1, tm = mod(uWipeT, uWS.z);
+  return tm >= t2 ? tm - t2 : (tm >= t1 ? tm - t1 : tm + uWS.z - t2);
+}
+// 水滴の 1 層（升目ごとに 1 つ・位置と大きさは乱数）。acc 秒ぶんだけ育っている。core は水滴の中の明るい部分
+float rgDrops(vec2 p, float cell, float dens, float rmin, float rmax, float acc, float dly, out float core){
+  vec2 q = p / cell, ci = floor(q), f = fract(q);
+  vec3 h = rgH32(ci); float on = step(rgH12(ci + 17.3), dens);
+  float gr = smoothstep(h.z * dly, h.z * dly + 0.8, acc);
+  vec2 ctr = vec2(0.5) + (h.xy - 0.5) * (1.0 - 2.0 * rmax);
+  float r = mix(rmin, rmax, h.z) * (0.45 + 0.55 * gr);
+  vec2 dv = f - ctr; dv.y *= 1.15;
+  core = smoothstep(r * 0.8, 0.0, length(f - ctr - vec2(-0.12, 0.12) * r));
+  return on * step(0.001, gr) * smoothstep(r, r * 0.55, length(dv));
+}
+#endif`)
         .replace("#include <specularmap_fragment>", "float kc = floor(vK + 0.5); float specularStrength = kc < 0.5 ? 0.04 : (kc < 1.5 ? 0.8 : (kc < 3.5 ? 1.0 : (kc < 4.5 ? 0.5 : (kc < 5.5 ? 0.25 : (kc < 6.5 ? 0.5 : 0.16)))));")
         .replace("#include <aomap_fragment>", `#include <aomap_fragment>
           #ifdef CABIN
@@ -182,6 +227,23 @@ const Veh = (() => {
           if(kc > 5.5 && kc < 6.5) outgoingLight += diffuseColor.rgb * uLamp * 0.8 + vec3(1.0, 0.10, 0.06) * min(vBr, 1.0) * 1.5;
           #ifdef GLASS
             diffuseColor.a = gl_FrontFacing ? clamp(0.78 + 0.2 * fr, 0.0, 1.0) : 0.10;
+          #endif
+          #ifdef RAINGLASS
+            if(!gl_FrontFacing && uRain > 0.5){
+              vec3 nl = normalize(vNL); vec3 rl = vLoc - uWO; float wu = dot(rl, uWA), wv = dot(rl, uWB);
+              bool ws = dot(nl, uWN) > 0.75;
+              float since = 1000.0;
+              if(ws) since = min(rgWipe(uWP1, wu, wv), rgWipe(uWP2, wu, wv));
+              float acc = min(since, uRainT);
+              vec2 p2 = ws ? vec2(wu, wv) : (abs(nl.x) > 0.7 ? vec2(vLoc.z, vLoc.y) : vec2(vLoc.x, vLoc.z));
+              float c1, c2;
+              float mA = rgDrops(p2, 0.024, 0.55, 0.16, 0.30, acc, 0.45, c1);
+              float mB = rgDrops(p2 + 3.7, 0.055, 0.22, 0.22, 0.38, acc, 0.8, c2);
+              float m = max(mA, mB), core = mA >= mB ? c1 : c2;
+              vec3 dcol = mix(vec3(0.12, 0.15, 0.18), skyC * 0.9 + vec3(0.18), core * 0.85);
+              outgoingLight = mix(outgoingLight, dcol, m * 0.65);
+              diffuseColor.a = max(diffuseColor.a, m * (0.30 + 0.35 * core));
+            }
           #endif
         }`);
     };
@@ -893,7 +955,7 @@ const Veh = (() => {
   V.hi = (name, opt) => {
     opt = opt || {};
     const S = SPEC[name], { B, P } = V.build(name, 2, true), g = new THREE.Group(), ud = g.userData; ud.cabItems = [];
-    const matBody = opt.mat || V.makeMat(), matGlass = V.makeMat({ glass: true }), matCab = V.makeMat({ cabin: true, side: THREE.DoubleSide });
+    const matBody = opt.mat || V.makeMat(), matGlass = V.makeMat({ glass: true, rainGlass: true }), matCab = V.makeMat({ cabin: true, side: THREE.DoubleSide });
     matCab.userData.U.uCabin.value.set(0.55, 0.95); ud.matBody = matBody; ud.matCab = matCab; ud.matGlass = matGlass;
     if(opt.color) matBody.userData.U.uPaint.value.copy(opt.color);
     ud.setPaint = (c) => matBody.userData.U.uPaint.value.copy(c);
@@ -912,6 +974,37 @@ const Veh = (() => {
       const cp = new THREE.Mesh(geo.calip, matBody); steer.add(cp); g.add(steer);
       ud.wheels.push({ steer, spin, r: w.r, front: frontZ !== undefined && Math.abs(w.z - frontZ) < 1e-6 }); }
     { const e = (S.cab && S.cab.eye) || [-0.37, 1.2, -0.12]; ud.eye = { x: e[0], y: e[1], z: e[2], pitch: (S.cab && S.cab.pitch) || 4 }; }
+    // v41.14: ワイパー（フロントガラスの下に 2 本。雨の間は 1.3 秒で 1 往復して、少し休む（周期 2.6 秒）。止まっているときはガラスの下の縁に寄せる）と、ガラスの水滴の面
+    const RU = matGlass.userData.RU, rots = [], SW = 1.45, SWP = 1.3, CYC = 2.6;
+    if(RU && opt.wipers !== false && S.gh && S.gh.z0 !== undefined && P && P.yR){
+      const gh = S.gh, zo = S.zo || 0, zb = gh.z0 - 0.03, zt = gh.zr1 + 0.03, yb = P.yR(zb), yt = P.yR(zt);
+      const Av = new THREE.Vector3(1, 0, 0), Bv = new THREE.Vector3(0, yt - yb, zt - zb).normalize(), Nv = new THREE.Vector3().crossVectors(Av, Bv).normalize();
+      const Ov = new THREE.Vector3(0, yb, zb + zo), hb = P.ghH(zb)[0][0];
+      const WP = [[-0.58 * hb, 0.05, 0.92 * hb], [0.12 * hb, 0.05, 0.84 * hb]];   // 運転席側（右）と中央寄りの 2 本（軸の u: 左が +、v: ガラスの下の縁から上、長さ）
+      RU.uWO.value.copy(Ov); RU.uWA.value.copy(Av); RU.uWB.value.copy(Bv); RU.uWN.value.copy(Nv);
+      RU.uWP1.value.set(WP[0][0], WP[0][1], WP[0][2], 0); RU.uWP2.value.set(WP[1][0], WP[1][1], WP[1][2], 0); RU.uWS.value.set(SW, SWP, CYC);
+      const blackM = new THREE.MeshPhongMaterial({ color: 0x0e0f11, shininess: 25, specular: 0x333333 });
+      for(const [u, v, L] of WP){
+        const h = new THREE.Group(); h.matrixAutoUpdate = false;
+        h.matrix.makeBasis(Av, Bv, Nv).setPosition(Ov.x + Av.x * u + Bv.x * v, Ov.y + Av.y * u + Bv.y * v, Ov.z + Av.z * u + Bv.z * v); h.matrixWorldNeedsUpdate = true;
+        const rot = new THREE.Group(); h.add(rot);
+        const armG = new THREE.BoxGeometry(L, 0.011, 0.009); armG.translate(L / 2, 0, 0.013);
+        const bladeG = new THREE.BoxGeometry(L * 0.8, 0.017, 0.012); bladeG.translate(L * 0.6, 0, 0.007);
+        const capG = new THREE.CylinderGeometry(0.014, 0.014, 0.022, 10); capG.rotateX(Math.PI / 2); capG.translate(0, 0, 0.011);
+        for(const gg of [armG, bladeG, capG]) rot.add(new THREE.Mesh(gg, blackM));
+        body.add(h); rots.push(rot); }
+    }
+    const rainUp = () => {
+      if(!rots.length) return;
+      const nowS = performance.now() / 1000, rain = V.rainU.value > 0.5;
+      if(rain){
+        if(!ud._rain){ ud._rain = true; ud._t0 = nowS; ud._r0 = nowS - (CYC - 1.2); ud._sub = -1; }   // 降り始めて 1.2 秒でまず 1 回払う（それまでは休みの状態から始める）
+        const rt = nowS - ud._r0, tm = rt % CYC, sub = tm < SWP / 2 ? 0 : (tm < SWP ? 1 : 2), key = Math.floor(rt / CYC) * 3 + sub;
+        RU.uRain.value = 1; RU.uRainT.value = nowS - ud._t0; RU.uWipeT.value = rt;
+        const th = tm < SWP ? SW * (0.5 - 0.5 * Math.cos(2 * Math.PI * tm / SWP)) : 0; for(const r of rots) r.rotation.z = th;
+        if(key !== ud._sub){ ud._sub = key; if(sub < 2 && V.wipeCb) V.wipeCb(sub === 1); }
+      } else if(ud._rain){ ud._rain = false; RU.uRain.value = 0; RU.uWipeT.value = -1; for(const r of rots) r.rotation.z = 0; }
+    };
     ud.drive = (v, dt, steer) => { for(const w of ud.wheels){ w.spin.rotation.x += v * dt / w.r; if(w.front) w.steer.rotation.y = steer; } };
     ud.setInside = (inside) => { if(ud.rvmG) ud.rvmG.visible = !inside; };      // 運転席視点では画面上のルームミラー（街側で実際の後方映像を重ねる）を使うので、立体のルームミラーは隠す
     ud.setSky = (c) => { if(ud.rvm) ud.rvm.material.color.copy(c).multiplyScalar(1.05); };
@@ -920,6 +1013,7 @@ const Veh = (() => {
       if(ud.nSpeed){ ud.nSpeed.rotation.z = -(-135 + 270 * Math.min(1.04, kmh / 180)) * R2D; ud.nTacho.rotation.z = -(-135 + 270 * Math.min(1.02, rpm / 8000)) * R2D; }
       if(ud.steerG) ud.steerG.rotation.z = -(C.wheel || 0);
       matBody.userData.U.uBrake.value = (C.brk || 0) > 0.05 ? 1 : 0;
+      rainUp();
       if(ud.mid){ const key = (C.gear || "D") + "|" + Math.round(kmh) + "|" + Math.floor((C.odo || 0) / 100); if(key !== ud.mid.key){ ud.mid.key = key; const c = ud.mid.c.getContext("2d");
         c.fillStyle = "#07090b"; c.fillRect(0, 0, 256, 192); c.textAlign = "center"; c.textBaseline = "middle";
         c.fillStyle = C.gear === "R" ? "#ff7a3a" : "#7be08a"; c.font = "bold 74px sans-serif"; c.fillText(C.gear === "R" ? "R" : "D", 128, 58);

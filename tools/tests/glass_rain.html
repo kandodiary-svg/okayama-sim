@@ -1,0 +1,26 @@
+<!doctype html><meta charset="utf-8"><body style="margin:0;background:#888">
+<script src="../../vendor/three.r128.min.js"></script>
+<script src="../app/vehicles.js"></script>
+<script>
+const W=1100,H=700;
+const r=new THREE.WebGLRenderer({antialias:true}); r.setSize(W,H); document.body.appendChild(r.domElement);
+const sc=new THREE.Scene(); sc.background=new THREE.Color(0xb8c4cc);
+sc.add(new THREE.HemisphereLight(0xcfd8de,0x555a55,0.9)); const dl=new THREE.DirectionalLight(0xffffff,0.5); dl.position.set(3,6,2); sc.add(dl);
+// 背景: 縞の壁とビル
+const g=new THREE.Mesh(new THREE.PlaneGeometry(200,80), new THREE.MeshBasicMaterial({map:(()=>{const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');x.fillStyle='#c9d3da';x.fillRect(0,0,512,256);for(let i=0;i<30;i++){x.fillStyle=['#8a7260','#a99884','#6c7580','#d8cfc0'][i%4];x.fillRect(i*17,100-(i*37%70),15,156);}x.fillStyle='#444';x.fillRect(0,200,512,56);return new THREE.CanvasTexture(c);})()}));
+g.position.set(0,12,40); g.rotation.y=Math.PI; sc.add(g);
+const q=new URLSearchParams(location.search);
+const name=q.get('v')||'sedan';
+const car=Veh.hi(name,{color:new THREE.Color(0xe9eaec)}); sc.add(car); const ud=car.userData;
+ud.setInside(true);
+const cam=new THREE.PerspectiveCamera(56,W/H,0.05,500);
+const e=ud.eye; cam.position.set(e.x,e.y,e.z); cam.rotation.order='YXZ'; cam.rotation.set(-(e.pitch||0)*Math.PI/180, Math.PI, 0);
+// 車の +z が前。カメラは -z を見るのがデフォルトなので Y 軸に π 回して +z を見る
+let T=+(q.get('t')||0); const R0=performance.now.bind(performance); let fz=null; performance.now=()=>fz===null?R0():fz;
+Veh.setRain(q.get('rain')!=='0');
+window.render=(tm)=>{ // tm: 雨が降り始めてからの秒（休みの状態から始まる）
+  fz=1000; ud.update({v:0,rpm:800,gear:'D',wheel:0,brk:0,odo:0});   // 雨の開始を記録
+  fz=1000+tm*1000; ud.update({v:0,rpm:800,gear:'D',wheel:0,brk:0,odo:0});
+  r.render(sc,cam); return 'ok'; };
+window.ready=true;
+</script>

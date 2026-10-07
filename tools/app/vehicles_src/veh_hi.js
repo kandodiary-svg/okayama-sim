@@ -239,7 +239,7 @@
   V.hi = (name, opt) => {
     opt = opt || {};
     const S = SPEC[name], { B, P } = V.build(name, 2, true), g = new THREE.Group(), ud = g.userData; ud.cabItems = [];
-    const matBody = opt.mat || V.makeMat(), matGlass = V.makeMat({ glass: true }), matCab = V.makeMat({ cabin: true, side: THREE.DoubleSide });
+    const matBody = opt.mat || V.makeMat(), matGlass = V.makeMat({ glass: true, rainGlass: true }), matCab = V.makeMat({ cabin: true, side: THREE.DoubleSide });
     matCab.userData.U.uCabin.value.set(0.55, 0.95); ud.matBody = matBody; ud.matCab = matCab; ud.matGlass = matGlass;
     if(opt.color) matBody.userData.U.uPaint.value.copy(opt.color);
     ud.setPaint = (c) => matBody.userData.U.uPaint.value.copy(c);
@@ -258,6 +258,37 @@
       const cp = new THREE.Mesh(geo.calip, matBody); steer.add(cp); g.add(steer);
       ud.wheels.push({ steer, spin, r: w.r, front: frontZ !== undefined && Math.abs(w.z - frontZ) < 1e-6 }); }
     { const e = (S.cab && S.cab.eye) || [-0.37, 1.2, -0.12]; ud.eye = { x: e[0], y: e[1], z: e[2], pitch: (S.cab && S.cab.pitch) || 4 }; }
+    // v41.14: ワイパー（フロントガラスの下に 2 本。雨の間は 1.3 秒で 1 往復して、少し休む（周期 2.6 秒）。止まっているときはガラスの下の縁に寄せる）と、ガラスの水滴の面
+    const RU = matGlass.userData.RU, rots = [], SW = 1.45, SWP = 1.3, CYC = 2.6;
+    if(RU && opt.wipers !== false && S.gh && S.gh.z0 !== undefined && P && P.yR){
+      const gh = S.gh, zo = S.zo || 0, zb = gh.z0 - 0.03, zt = gh.zr1 + 0.03, yb = P.yR(zb), yt = P.yR(zt);
+      const Av = new THREE.Vector3(1, 0, 0), Bv = new THREE.Vector3(0, yt - yb, zt - zb).normalize(), Nv = new THREE.Vector3().crossVectors(Av, Bv).normalize();
+      const Ov = new THREE.Vector3(0, yb, zb + zo), hb = P.ghH(zb)[0][0];
+      const WP = [[-0.58 * hb, 0.05, 0.92 * hb], [0.12 * hb, 0.05, 0.84 * hb]];   // 運転席側（右）と中央寄りの 2 本（軸の u: 左が +、v: ガラスの下の縁から上、長さ）
+      RU.uWO.value.copy(Ov); RU.uWA.value.copy(Av); RU.uWB.value.copy(Bv); RU.uWN.value.copy(Nv);
+      RU.uWP1.value.set(WP[0][0], WP[0][1], WP[0][2], 0); RU.uWP2.value.set(WP[1][0], WP[1][1], WP[1][2], 0); RU.uWS.value.set(SW, SWP, CYC);
+      const blackM = new THREE.MeshPhongMaterial({ color: 0x0e0f11, shininess: 25, specular: 0x333333 });
+      for(const [u, v, L] of WP){
+        const h = new THREE.Group(); h.matrixAutoUpdate = false;
+        h.matrix.makeBasis(Av, Bv, Nv).setPosition(Ov.x + Av.x * u + Bv.x * v, Ov.y + Av.y * u + Bv.y * v, Ov.z + Av.z * u + Bv.z * v); h.matrixWorldNeedsUpdate = true;
+        const rot = new THREE.Group(); h.add(rot);
+        const armG = new THREE.BoxGeometry(L, 0.011, 0.009); armG.translate(L / 2, 0, 0.013);
+        const bladeG = new THREE.BoxGeometry(L * 0.8, 0.017, 0.012); bladeG.translate(L * 0.6, 0, 0.007);
+        const capG = new THREE.CylinderGeometry(0.014, 0.014, 0.022, 10); capG.rotateX(Math.PI / 2); capG.translate(0, 0, 0.011);
+        for(const gg of [armG, bladeG, capG]) rot.add(new THREE.Mesh(gg, blackM));
+        body.add(h); rots.push(rot); }
+    }
+    const rainUp = () => {
+      if(!rots.length) return;
+      const nowS = performance.now() / 1000, rain = V.rainU.value > 0.5;
+      if(rain){
+        if(!ud._rain){ ud._rain = true; ud._t0 = nowS; ud._r0 = nowS - (CYC - 1.2); ud._sub = -1; }   // 降り始めて 1.2 秒でまず 1 回払う（それまでは休みの状態から始める）
+        const rt = nowS - ud._r0, tm = rt % CYC, sub = tm < SWP / 2 ? 0 : (tm < SWP ? 1 : 2), key = Math.floor(rt / CYC) * 3 + sub;
+        RU.uRain.value = 1; RU.uRainT.value = nowS - ud._t0; RU.uWipeT.value = rt;
+        const th = tm < SWP ? SW * (0.5 - 0.5 * Math.cos(2 * Math.PI * tm / SWP)) : 0; for(const r of rots) r.rotation.z = th;
+        if(key !== ud._sub){ ud._sub = key; if(sub < 2 && V.wipeCb) V.wipeCb(sub === 1); }
+      } else if(ud._rain){ ud._rain = false; RU.uRain.value = 0; RU.uWipeT.value = -1; for(const r of rots) r.rotation.z = 0; }
+    };
     ud.drive = (v, dt, steer) => { for(const w of ud.wheels){ w.spin.rotation.x += v * dt / w.r; if(w.front) w.steer.rotation.y = steer; } };
     ud.setInside = (inside) => { if(ud.rvmG) ud.rvmG.visible = !inside; };      // 運転席視点では画面上のルームミラー（街側で実際の後方映像を重ねる）を使うので、立体のルームミラーは隠す
     ud.setSky = (c) => { if(ud.rvm) ud.rvm.material.color.copy(c).multiplyScalar(1.05); };
@@ -266,6 +297,7 @@
       if(ud.nSpeed){ ud.nSpeed.rotation.z = -(-135 + 270 * Math.min(1.04, kmh / 180)) * R2D; ud.nTacho.rotation.z = -(-135 + 270 * Math.min(1.02, rpm / 8000)) * R2D; }
       if(ud.steerG) ud.steerG.rotation.z = -(C.wheel || 0);
       matBody.userData.U.uBrake.value = (C.brk || 0) > 0.05 ? 1 : 0;
+      rainUp();
       if(ud.mid){ const key = (C.gear || "D") + "|" + Math.round(kmh) + "|" + Math.floor((C.odo || 0) / 100); if(key !== ud.mid.key){ ud.mid.key = key; const c = ud.mid.c.getContext("2d");
         c.fillStyle = "#07090b"; c.fillRect(0, 0, 256, 192); c.textAlign = "center"; c.textBaseline = "middle";
         c.fillStyle = C.gear === "R" ? "#ff7a3a" : "#7be08a"; c.font = "bold 74px sans-serif"; c.fillText(C.gear === "R" ? "R" : "D", 128, 58);
