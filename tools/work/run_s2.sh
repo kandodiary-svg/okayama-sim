@@ -36,6 +36,8 @@ rm_v10(){ rm -f $W/roads_final_v10.pkl; }
 step rmv10 rm_v10
 step bridges $M patch_bridges.py
 step gaps $M gap_roads.py
+# v41.20: 道路のトンネル（路面・壁・天井。roads.py が書いた tunnels_prof.pkl から）
+step tunnels $M tunnels.py
 restore_marks(){ cp $W/markings_v13_core.pkl $W/markings_v13.pkl; cp $W/markings_core.pkl $W/markings.pkl; rm -f $W/markings_ext.pkl; }
 step marks0 restore_marks
 step marks env MARK_ALL=1 MARK_EXT=1 $M markings.py

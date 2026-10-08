@@ -175,8 +175,15 @@ MARK_EXT = bool(os.environ.get("MARK_EXT"))
 if MARK_EXT:
     zone_p = prep(box(BX0 + 2, BZ0 + 2, BX1 - 2, BZ1 - 2))
     _OR = pickle.load(open("/home/claude/wx/roads_final_core.pkl", "rb"))
-    OLDCOV = TileGeo(np.concatenate([t for t in _OR["tris"].values() if len(t)]))   # v28 の道路面（全部の種類の三角形）
-    del _OR
+    _tt = np.concatenate([t for t in _OR["tris"].values() if len(t)])   # v28 の道路面（全部の種類の三角形）
+    # v41.20: 新しい高架に差し替えた領域（merge_roads.py の core_replace.pkl）の v28 の面は無いものとする（そこは新しい面から標示を作る）
+    if os.path.exists("/home/claude/wx/core_replace.pkl"):
+        _RC = shapely.from_wkb(pickle.load(open("/home/claude/wx/core_replace.pkl", "rb")))
+        _cc = np.asarray(_tt, np.float64).reshape(-1, 3, 3).mean(1)
+        _in = shapely.contains_xy(_RC, _cc[:, 0], _cc[:, 2])
+        _tt = np.asarray(_tt).reshape(-1, 3, 3)[~_in].reshape(-1, 3); print("markings: v28 coverage excluding replaced viaducts, tris dropped", int(_in.sum()), flush=True)
+    OLDCOV = TileGeo(_tt)
+    del _OR, _tt
 def zl(ln): return zone_p.intersects(ln)
 def zp(p): return zone_p.contains(p)
 

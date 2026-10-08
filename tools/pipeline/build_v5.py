@@ -48,6 +48,10 @@ if not os.environ.get("TRACK_ONLY"):
 # v30: 道路の高さ・区分のラスタ（0.5m）はファイルのまま読む（範囲拡大で大きい。common.load_roads）
 from common import load_roads, road_parts, PartsIndex, BX1 as _BX1, BZ1 as _BZ1
 R = load_roads("/home/claude/wx/roads_final.pkl", "r")
+# v41.20: 道路のトンネル（tunnels.py）。路面・壁・天井・走行格子の床・地面を下げる範囲
+import tunnels as TUN
+TUNNELS = pickle.load(open("/home/claude/wx/tunnels.pkl", "rb")) if os.path.exists("/home/claude/wx/tunnels.pkl") else []
+print("tunnels", len(TUNNELS), [t["id"] for t in TUNNELS], flush=True)
 T = pickle.load(open("/home/claude/wx/tracks.pkl", "rb"))
 M = pickle.load(open("/home/claude/wx/markings_v13.pkl" if os.path.exists("/home/claude/wx/markings_v13.pkl") else "/home/claude/wx/markings.pkl", "rb"))
 # v29: v28 の格子の端（最後の DEM 節点より外）の標示は、道路面の直し（merge_roads.py）と同じだけ高さを動かす
@@ -68,6 +72,15 @@ if os.path.exists("/home/claude/wx/dem_grid_core.npz"):
         if _o.any():
             _m = _m.copy(); _m[_o, 1] += _demf(_dN, _m[_o, 0], _m[_o, 2]) - _demf(_dO, _m[_o, 0], _m[_o, 2]); M[_k] = _m
             print("markings edge fix", _k, int(_o.sum()), flush=True)
+# v41.20: 新しい高架に差し替えた領域（merge_roads.py の core_replace.pkl）の v28 の標示（地面に貼り付いた高さ）は捨てる
+if os.path.exists("/home/claude/wx/core_replace.pkl"):
+    import shapely as _shp
+    _RC = _shp.from_wkb(pickle.load(open("/home/claude/wx/core_replace.pkl", "rb")))
+    for _k in ("white", "yellow"):
+        _m = np.asarray(M[_k], np.float64)
+        if not len(_m): continue
+        _c = _m.reshape(-1, 3, 3).mean(1); _in = _shp.contains_xy(_RC, _c[:, 0], _c[:, 2])
+        if _in.any(): M[_k] = _m.reshape(-1, 3, 3)[~_in].reshape(-1, 3); print("markings: v28 markings dropped in replaced viaducts", _k, int(_in.sum()), flush=True)
 # v29: 範囲拡大で道路の増えた所の標示（markings.py MARK_EXT=1）
 if os.path.exists("/home/claude/wx/markings_ext.pkl") and not os.environ.get("NO_MARK_EXT"):
     _ME = pickle.load(open("/home/claude/wx/markings_ext.pkl", "rb"))
@@ -544,6 +557,27 @@ assert abs((DX0 - GX0) / RES - round((DX0 - GX0) / RES)) < 1e-6 and abs((DZ0 - G
 _rj = (np.round((DZ0 - GZ0) / RES).astype(int) + np.arange(nz) * fac); _ci = (np.round((DX0 - GX0) / RES).astype(int) + np.arange(nx) * fac)
 _okj = (_rj >= 0) & (_rj < HR.shape[0]); _oki = (_ci >= 0) & (_ci < HR.shape[1])
 _sub = np.full((nz, nx), np.inf, np.float32)
+# v41.20: トンネルの上の地面を下げる範囲を、道路の高さのラスタ（HR と同じ 0.5m 格子）の升目として持つ。
+#   箱（壁・天井）の区間でかぶりが浅い所 = 屋根の上面の高さ、箱でない区間（坑口の近く）= 床の高さ。深い山岳トンネルの山は削らない
+_tj, _ti, _tv = [], [], []
+for _t in TUNNELS:
+    for _poly, _val in ((_t["roof_poly"], "roof"), (_t["floor_only_poly"], "floor")):
+        _a, _b, _c = TUN.raster_cells(_t, _poly, GX0, GZ0, RES, HR.shape[1], HR.shape[0], _val)
+        _tj.append(_a); _ti.append(_b); _tv.append(_c)
+if _tj:
+    _tj = np.concatenate(_tj); _ti = np.concatenate(_ti); _tv = np.concatenate(_tv)
+    _o = np.argsort(_tj, kind="stable"); _tj, _ti, _tv = _tj[_o], _ti[_o], _tv[_o]
+else:
+    _tj = np.zeros(0, np.int64); _ti = np.zeros(0, np.int64); _tv = np.zeros(0)
+print("  tunnel terrain cells", len(_tj), flush=True)
+def _paint_tun(h, r0):
+    """行 r0 から始まる HR の帯 h（float32 のコピー）に、トンネルの升目を（HR が無い所だけでなく）低い方の値で入れる"""
+    if not len(_tj): return h
+    a = np.searchsorted(_tj, r0); b = np.searchsorted(_tj, r0 + h.shape[0])
+    if b > a:
+        jj = _tj[a:b] - r0; ii = _ti[a:b]; cur = h[jj, ii]
+        h[jj, ii] = np.where(np.isfinite(cur), np.minimum(cur, _tv[a:b]), _tv[a:b]).astype(np.float32)
+    return h
 # v30: 0.5m のラスタ全体を一度に持たず、節点の行 64 本ずつ（上下に窓の半分の余白）で求める（結果は全体で求めた時と同じ）
 # v32: 窓を ±2m → ±4m（地面の 4m 格子の 1 升）に。地面の三角形のどの頂点も、その三角形に重なる道路の点の高さより下になる
 #      （斜面で地面の三角形が道路の縁にかぶり、縁がギザギザに埋もれていた）
@@ -553,7 +587,7 @@ for _b0 in range(0, len(_jl), 64):
     _js = _jl[_b0:_b0 + 64]; _r0 = int(_rj[_js[0]]) - _hw; _r1 = int(_rj[_js[-1]]) + _hw + 1
     _blk = np.full((_r1 - _r0, HR.shape[1]), np.inf, np.float32)
     _a0, _a1 = max(0, _r0), min(HR.shape[0], _r1)
-    _h = np.asarray(HR[_a0:_a1], np.float32); _blk[_a0 - _r0:_a1 - _r0] = np.where(np.isfinite(_h), _h, np.inf); del _h
+    _h = _paint_tun(np.array(HR[_a0:_a1], np.float32), _a0); _blk[_a0 - _r0:_a1 - _r0] = np.where(np.isfinite(_h), _h, np.inf); del _h
     _mf = ndimage.minimum_filter(_blk, size=2 * _hw + 1, mode="constant", cval=np.inf)
     _sub[np.ix_(_js, np.nonzero(_oki)[0])] = _mf[np.ix_(_rj[_js] - _r0, _ci[_oki])]
     del _blk, _mf
@@ -568,7 +602,7 @@ CUT_S = 1.0; _MG = 26
 _cap = np.full((nz, nx), np.inf)
 for _b0 in range(0, len(_jl), 64):
     _js = _jl[_b0:_b0 + 64]; _r0 = max(0, int(_rj[_js[0]]) - _MG); _r1 = min(HR.shape[0], int(_rj[_js[-1]]) + _MG + 1)
-    _h = np.asarray(HR[_r0:_r1], np.float32); _nr = ~np.isfinite(_h)
+    _h = _paint_tun(np.array(HR[_r0:_r1], np.float32), _r0); _nr = ~np.isfinite(_h)
     if _nr.all(): continue
     _dd, (_ji, _ii) = ndimage.distance_transform_edt(_nr, return_indices=True)
     _cols = np.nonzero(_oki)[0]; _rr = _rj[_js] - _r0; _cc = _ci[_oki]
@@ -865,6 +899,10 @@ _DK = STR.Deck(HR, (GX0, GZ0, RES), R.get("upper"))
 _bparts = [q for q in (R.get("bridge_parts") or []) if q is not None and not q.is_empty]
 _bunion = unary_union(_bparts) if _bparts else None
 if _bunion is not None: shapely.prepare(_bunion)
+# v41.20: トンネルの坑口の周り（床の幅＋両端 8m）は、道路の縁の法面・擁壁を作らない（坑口をふさがない）
+_zones = [t["zone"] for t in TUNNELS]
+_bunion_t = unary_union(([_bunion] if _bunion is not None else []) + _zones) if (_bunion is not None or _zones) else None
+if _bunion_t is not None: shapely.prepare(_bunion_t)
 print("  v32 bridge parts", len(_bparts), "upper cells", 0 if R.get("upper") is None else len(R["upper"][0]), flush=True)
 _blines = [LineString(w["xy"]) for w in ways if w["tags"].get("highway") and w["tags"].get("bridge") not in (None, "no") and len(w["xy"]) >= 2]
 _rlines = [LineString(w["xy"]) for w in ways if w["tags"].get("railway") in ("rail", "light_rail", "narrow_gauge", "tram") and len(w["xy"]) >= 2]
@@ -877,14 +915,29 @@ if _bparts:
 # 道路の縁の擁壁（道路の縁が地面より 0.35m 以上高い所）
 _PI = PartsIndex(list(road_parts(R, "lanes")) + list(road_parts(R, "raised")))
 _tl = [(x_, z_, x_ + 500.0, z_ + 500.0) for x_ in np.arange(math.floor(_BX0 / 500) * 500, _BX1, 500.0) for z_ in np.arange(math.floor(_BZ0 / 500) * 500, _BZ1, 500.0)]
-_sk, _skc = STR.road_skirts(_PI, _tl, _bunion, _DK, _GR, 0.35, log=lambda *a: print(*a, flush=True))
+_sk, _skc = STR.road_skirts(_PI, _tl, _bunion_t, _DK, _GR, 0.35, log=lambda *a: print(*a, flush=True))
 if len(_sk): add_chunk("skirt", _sk, col=_skc * np.random.default_rng(14).uniform(0.96, 1.04, (len(_skc) // 3, 1)).repeat(3, 0), mat="color", file_key="road")
 del _sk, _skc
 # 切土の法面（道路の縁から 1:1 で上がって地形に当たるまで）
 _GRo = STR.Ground(np.round(Hg_orig * 100).astype(np.int16), water, DX0, DZ0, DSTEP)
-_cf, _cfc = STR.cut_faces(_PI, _tl, _bunion, _DK, _GRo, CUT_S, 0.3, 12.0, log=lambda *a: print(*a, flush=True))
+_cf, _cfc = STR.cut_faces(_PI, _tl, _bunion_t, _DK, _GRo, CUT_S, 0.3, 12.0, log=lambda *a: print(*a, flush=True))
 if len(_cf): add_chunk("cutface", _cf, col=_cfc * np.random.default_rng(15).uniform(0.95, 1.05, (len(_cfc) // 3, 1)).repeat(3, 0), mat="color", file_key="road")
 del _cf, _cfc, _GRo, _PI
+# v41.20: トンネルの路面・壁・天井・屋根・路面標示
+if TUNNELS:
+    def _tcat(key): 
+        L_ = [t["tris"][key] for t in TUNNELS if len(t["tris"][key])]
+        return np.concatenate(L_) if L_ else np.zeros((0, 3))
+    _g = _tcat("floor")
+    if len(_g): add_chunk("road", _g, col=tri_colors(len(_g) // 3, ROAD_TINT["lane"], 0.04, 21), mat=MAT["lane"], file_key="road", nrm=np.tile([0.0, 1.0, 0.0], (len(_g), 1)))
+    for _k, _c, _j in (("wall", (0.64, 0.63, 0.60), 0.03), ("ceil", (0.52, 0.52, 0.50), 0.02), ("roof", (0.62, 0.62, 0.59), 0.02), ("cap", (0.66, 0.65, 0.62), 0.02)):
+        _g = _tcat(_k)
+        if len(_g): add_chunk("bridge", _g, col=tri_colors(len(_g) // 3, _c, _j, 22), mat="color", file_key="road")
+    _g = _tcat("white")
+    if len(_g): add_chunk("mark", _g, col=tri_colors(len(_g) // 3, (0.92, 0.92, 0.90)), mat="paint", file_key="road", nrm=np.tile([0.0, 1.0, 0.0], (len(_g), 1)))
+    _g = _tcat("yellow")
+    if len(_g): add_chunk("mark", _g, col=tri_colors(len(_g) // 3, (0.93, 0.74, 0.20)), mat="paint", file_key="road")
+    print("  tunnel meshes: floor", len(_tcat("floor")) // 3, "wall", len(_tcat("wall")) // 3, "ceil", len(_tcat("ceil")) // 3, "roof", len(_tcat("roof")) // 3, flush=True)
 
 # ================= 4) 軌道（軌道敷・レール） =================
 print("track...", flush=True); print("  [rss MB]", _rss(), flush=True)
@@ -1676,6 +1729,25 @@ for _b0 in range(0, dnz, _SB):
     for j_, i_ in zip(*np.nonzero(m_ext)): _dh[j_, i_] += ext_delta(GXs[j_, i_], GZs[j_, i_])
     DH_[_b0:_b1s] = _dh; DC_[_b0:_b1s] = np.where(np.isfinite(hr), kd, 0).astype(np.uint8)
     del hr, kd, Hgv, GXs, GZs, _dh, m_ext, _hn
+# v41.20: トンネルの床の升目（高さ・区分=1）
+_ntc = 0
+for _t in TUNNELS:
+    _jj, _ii, _vv = TUN.raster_cells(_t, _t["floor_poly"], DX0, DZ0, DG, dnx, dnz, "floor")
+    if len(_jj): DH_[_jj, _ii] = _vv; DC_[_jj, _ii] = 1; _ntc += len(_jj)
+print("  drive grid tunnel floor cells", _ntc, flush=True)
+# v41.20: トンネルの両端の外側 7m（PLATEAU の道路の面が坑口から数 m 離れて始まる所の隙間）で、走行格子が地面（切土の法面）の高さになって
+#   1m ほどの盛り上がりになっていた。隙間の升目（道路が無く、地面の高さで埋まっている升目）だけ、端の床の高さで埋める
+_nte = 0
+for _t in TUNNELS:
+    _xy = _t["xy"]
+    for _pe, _dv, _ze in ((_xy[0], _xy[0] - _xy[1], _t["z"][0]), (_xy[-1], _xy[-1] - _xy[-2], _t["z"][-1])):
+        _dv = _dv / (np.linalg.norm(_dv) + 1e-9)
+        _q = LineString([tuple(_pe), tuple(_pe + _dv * 7.0)]).buffer(_t["hw"], cap_style=2, join_style=2).difference(_t["floor_poly"])
+        _jj, _ii, _vv = TUN.raster_cells(_t, _q, DX0, DZ0, DG, dnx, dnz, float(_ze) + TUN.FLOOR_LIFT)
+        if not len(_jj): continue
+        _sel = DC_[_jj, _ii] == 0
+        DH_[_jj[_sel], _ii[_sel]] = _vv[_sel]; DC_[_jj[_sel], _ii[_sel]] = 1; _nte += int(_sel.sum())
+print("  drive grid tunnel end-gap cells", _nte, flush=True)
 import gc as _gc; _gc.collect()
 _rtl = [RP.reshape(-1, 3, 3)]
 for L_ in tex_groups.values():
@@ -1744,6 +1816,16 @@ for _r0 in range(0, _fnz, _FB):
     _b1L.append(_fm[1::2, 1::2]); _fmL.append(np.packbits(_fm, axis=1)); del _fm
 del _ptsF
 _b1 = np.concatenate(_b1L); del _b1L
+# v41.20: トンネルの床の上は「建物」にしない（上の建物の屋根が通れなくしていた）。箱の壁の外側の帯は通れなくする（壁をすり抜けて地面へ出ない）
+_nb_clr = 0; _nb_set = 0
+for _t in TUNNELS:
+    _jj, _ii, _ = TUN.raster_cells(_t, _t["floor_poly"], DX0, DZ0, 1.0, _b1.shape[1], _b1.shape[0], 0)
+    if len(_jj): _b1[_jj, _ii] = False; _nb_clr += len(_jj)
+for _t in TUNNELS:
+    if _t["band_poly"] is None: continue
+    _jj, _ii, _ = TUN.raster_cells(_t, _t["band_poly"], DX0, DZ0, 1.0, _b1.shape[1], _b1.shape[0], 0)
+    if len(_jj): _b1[_jj, _ii] = True; _nb_set += len(_jj)
+print("  tunnel building-mask bits cleared", _nb_clr, "wall bits set", _nb_set, flush=True)
 _FMB = np.concatenate(_fmL); del _fmL   # v30: 0.5m の建物マスク（アーケード・小物で使う）はビット列で持つ
 _bnz, _bnx = _b1.shape
 _bbits = np.packbits(_b1.astype(np.uint8), axis=1)
@@ -1760,11 +1842,14 @@ if _up is not None and len(_up[0]):
     _ux = GX0 + (_uii + 0.5) * RES; _uz = GZ0 + (_uj + 0.5) * RES
     _di = np.floor((_ux - DX0) / DG).astype(np.int64); _dj = np.floor((_uz - DZ0) / DG).astype(np.int64)
     _ok = (_di >= 0) & (_dj >= 0) & (_di < dnx) & (_dj < dnz)
-    # 走行格子の升目の中心が指す 0.5m の升目だけ（DH_ と同じ取り方）
-    _si = ((DX0 + (_di + 0.5) * DG - GX0) / RES).astype(np.int64); _sj = ((DZ0 + (_dj + 0.5) * DG - GZ0) / RES).astype(np.int64)
-    _ok &= (_si == _uii) & (_sj == _uj)
-    _cid = (_dj * dnx + _di)[_ok].astype(np.int32); _ch = np.round(np.asarray(_up[1])[_ok] * 100).astype(np.int16); _ck = np.asarray(_up[2])[_ok].astype(np.uint8)
-    _o = np.argsort(_cid); _cid, _ch, _ck = _cid[_o], _ch[_o], _ck[_o]
+    # v41.20: 走行格子の升目（2m）の中に「上の段」の升目（0.5m）が 2 つ以上あれば、その升目に上の段を持たせる（高さは平均）。
+    #   以前は升目の中心の 1 つの 0.5m 升だけを見ていたので、橋の面の 0.5〜1m の隙間・縁の欠けが、2m 升の欠け（高架の面に開いた穴＝
+    #   下の道路の高さへ落ちる）になっていた
+    _gid = (_dj * dnx + _di)[_ok]; _gh = np.asarray(_up[1], np.float64)[_ok]; _gk = np.asarray(_up[2])[_ok].astype(np.int64)
+    _cid, _inv, _cnt = np.unique(_gid, return_inverse=True, return_counts=True)
+    _hs = np.bincount(_inv, weights=_gh); _kmin = np.full(len(_cid), 9, np.int64); np.minimum.at(_kmin, _inv, _gk)
+    _keep = _cnt >= 2
+    _cid = _cid[_keep].astype(np.int32); _ch = np.round((_hs[_keep] / _cnt[_keep]) * 100).astype(np.int16); _ck = _kmin[_keep].astype(np.uint8)
     _UPD = _cid.tobytes() + _ch.tobytes() + _ck.tobytes(); _nup = len(_cid)
 print("  drive upper cells (bridge over road)", _nup, flush=True)
 bins["drive"] = bytearray(gres_encode(_DHi, Hc) + DC_.tobytes() + _bbits.tobytes() + _UPD)

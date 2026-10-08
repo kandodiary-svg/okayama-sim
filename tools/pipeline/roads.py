@@ -244,6 +244,8 @@ import road_profile as RPF
 _rails = [w["xy"] for w in ways if w["tags"].get("railway") in ("rail", "light_rail", "narrow_gauge") and not RPF._yes(w["tags"].get("bridge"))
           and not RPF._yes(w["tags"].get("tunnel")) and len(w["xy"]) >= 2]
 PROF = RPF.Profiles(ways, dem_at, _rails)
+# v41.20: トンネルの床の縦断を tunnels.py（トンネルの路面・壁・天井）に渡す
+pickle.dump(PROF.tunnel_export(), open("/home/claude/wx/tunnels_prof.pkl", "wb"))
 PROFILE_ON = not os.environ.get("NO_PROFILE")
 _OWN = [None]   # v32: 今の面の中を通る道（隣の別の高さの道を拾わないように）
 def _prof_ground(x, z):

@@ -6,6 +6,7 @@
 ## フォルダ
 - `pipeline/`: 作成スクリプト（Python）。範囲は `bounds.json` で決める（x=東, z=南, m。原点は岡山駅前電停）
   - v30 の範囲: x −4048〜7312, z −4692〜4436（PLATEAU の地形データ 4 ファイルの範囲いっぱい。`parse_dem.py` が範囲の外なら止める）
+  - v41.20（高架・橋・トンネル）: `road_profile.py`（道路の縦断。橋の端だけを固定し、交差する道の上をくぐる床の高さを障害物の制約として解く・坑口の盛り上がりをならす・トンネルの床の縦断を出す）、`roads.py`（`tunnels_prof.pkl` を出す）、`merge_roads.py`（v28 の高架の面を新しい面に置き換える `core_replace.pkl`）、`patch_bridges.py`（橋の面の欠けを埋める。中心線に沿った補修と、閉じた領域の差による補修の 2 段）、`tunnels.py`（道路のトンネル 3 本の路面・壁・天井・走行格子の床。`run_s2.sh` の `tunnels` 段）、`build_v5.py`（トンネルの地形・走行格子・坑口の隙間、走行格子の「上の段」を 2m 升の中の 0.5m 升 2 つ以上で持たせる）、`traffic.py`（トンネルの中の車線）、`markings.py`（置き換えた高架の古い白線を除く）
 - `work/run_s2.sh`: 全体の手順（段ごとに `logs/s2/名前.DONE` を作り、止まっても続きから。`STOP_AFTER=段の名前` でそこまで、`LOGDIR` で印の場所を変える）
 - `work/core/`: v28 の範囲（中心部）で手作業で合わせた途中のデータ。範囲を広げても中心部を同じにするために使う
   - `roads_final_core.pkl.xz` は `xz -d` で戻す
@@ -24,6 +25,7 @@
   - v41.17: `handling_feel_test.js`（キーボードの押しっぱなしで、ハンドルの横加速度・ブレーキ・アクセル・Space の感触を車種ごとに測る。`window.__feelShift=true` で Shift（スポーツ）を押した状態＝従来の値。`repl.js` の命令ファイル）
   - v41.18: `corner_turn_test.js`（街なかの経路の交差点・カーブを、速度ごとに「←→ だけで曲がれるか」を測る。旧版・現行版の比較表が冒頭のコメント。`repl.js` の命令ファイル）
   - v41.19: `bike_feel_test.js`（バイクの長押し・ちょん押しの傾き、加速・シフト・制動・傾いたままのブレーキ/転倒を測る）と `bike_corner_test.js`（バイクで交差点・カーブを速度ごとに通れるか。先に `__Car.setProfile('bike')` と `window.__cornerCfg` を設定。結果は冒頭のコメント）。どちらも車モードを始めた `repl.js` に流す
+  - v41.20: `lane_rough_test.js`（全車線を車の高さの追い方でたどり、急勾配・こぶ・瞬間移動〔4m 超の段〕を数える。`window.__roughMode='old'|'new'` で v41.19 までの追い方と比べる）と `viaduct_test.js`（高架・高架の下をくぐる道の試験。国道250号の高架・駅西の高架の車線をたどり、段・こぶ・瞬間移動と、高架の下の道の 2 段の格子を調べる。`window.__vdBox=[x0,z0,x1,z1]` で範囲を変える）と `underpass_test.js`（高架の下をくぐる道を地面の層のまま通り抜けられるか。3 か所×横 13 通り）。いずれも車モードを始めた `repl.js` に流す
 - `app/`: `index.html` の元（`head.html`・`vehicles.js`・`app.js` をつなげる。`work/mkx.sh`）
   - `vehicles.js`: 車・トラック・バス・バイクの形を作るコード（v41.9、バイクは v41.19）。`vehicles_src/veh_base.js`（周りの車の形・車体の作り方・材質）と `vehicles_src/veh_hi.js`（自分の車・運転席・バスの車体）と `vehicles_src/veh_bike.js`（自分のバイクとライダー）から `bash app/vehicles_src/mkveh.sh` で作る（直接は編集しない）
   - 形の確認用ページ: `tests/lab/lab.html`（街なしで車だけを表示）と `tests/vehicle_lab.js`（撮影）
