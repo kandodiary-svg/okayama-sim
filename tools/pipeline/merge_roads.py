@@ -67,6 +67,64 @@ _co = (_c[:, 0] > _nx1) | (_c[:, 2] > _nz1) | (_c[:, 0] < _nx0) | (_c[:, 2] < _n
 if _co.any():
     _c[_co, 1] += _dem(_dN, _c[_co, 0], _c[_co, 2]) - _dem(_dO, _c[_co, 0], _c[_co, 2]); OLD["curb"] = _c
     print("  edge fix curb vertices", int(_co.sum()), flush=True)
+# ---- v41.20: 中心部（v28）の古い高架を、新しい縦断の高架に差し替える領域 R ----
+# v28 の道路は、高架・橋の路面が地面に貼り付いている（鉄道や道路をまたぐ所で谷底を走る・高架の下をくぐれない）。
+# 新しい道路（roads.py）の高さが、地形より 2.5m 以上高く、v28 の路面が地面に貼り付いている（または無い）所を種にして、
+# 新旧の高さがちがう（0.35m 超）つながった範囲を R とし、R の中は新しい道路（三角形・縁石・格子・橋の面・上の段）に差し替える
+from scipy import ndimage as _ndi
+def _core_replace():
+    ogx0, ogz0, ores = OLD["grid"]; gx0, gz0, res = NEW["grid"]
+    oi_ = int(round((ogx0 - gx0) / res)); oj_ = int(round((ogz0 - gz0) / res))
+    onz_, onx_ = OLD["HR"].shape; NH = NEW["HR"]; OH = OLD["HR"]; S = 4
+    A = np.array(NH[oj_:oj_ + onz_:S, oi_:oi_ + onx_:S], np.float64); B = np.array(OH[::S, ::S], np.float64)
+    xs = ogx0 + (np.arange(0, onx_, S) + 0.5) * res; zs = ogz0 + (np.arange(0, onz_, S) + 0.5) * res
+    XX, ZZ = np.meshgrid(xs, zs); D = _dem(_dN, XX, ZZ); Dmax = _ndi.maximum_filter(D, size=9); del XX, ZZ
+    fa = np.isfinite(A); fb = np.isfinite(B)
+    with np.errstate(invalid="ignore"):
+        cand = fa & (A - Dmax >= 2.5) & (~fb | ((B - D < 1.5) & (np.abs(A - B) > 0.5)))
+    lab, n = _ndi.label(_ndi.binary_dilation(cand, iterations=8))
+    rects = []; info = []
+    for k in range(1, n + 1):
+        m = (lab == k) & cand
+        if int(m.sum()) < 10: continue
+        ys, xs_ = np.nonzero(m)
+        j0 = max(0, (int(ys.min()) - 20)) * S; j1 = min(onz_, (int(ys.max()) + 20) * S)
+        i0 = max(0, (int(xs_.min()) - 20)) * S; i1 = min(onx_, (int(xs_.max()) + 20) * S)
+        a = np.array(NH[oj_ + j0:oj_ + j1, oi_ + i0:oi_ + i1], np.float64); b = np.array(OH[j0:j1, i0:i1], np.float64)
+        fa2 = np.isfinite(a); fb2 = np.isfinite(b)
+        Dm = np.kron(Dmax[j0 // S:(j1 + S - 1) // S, i0 // S:(i1 + S - 1) // S], np.ones((S, S)))[:j1 - j0, :i1 - i0]
+        with np.errstate(invalid="ignore"):
+            mask = (fa2 & fb2 & (np.abs(a - b) > 0.35)) | (fa2 & ~fb2)
+        mask = _ndi.binary_closing(mask, iterations=3)
+        lb, nn = _ndi.label(mask)
+        with np.errstate(invalid="ignore"):
+            seed = fa2 & (a - Dm >= 2.5) & (~fb2 | (a - b > 2.0))
+        ids = np.unique(lb[seed & (lb > 0)])
+        reg = np.isin(lb, ids) & (lb > 0) & fa2
+        if not reg.any(): continue
+        x0 = ogx0 + i0 * res; z0 = ogz0 + j0 * res
+        for r_ in np.nonzero(reg.any(1))[0]:
+            d_ = np.diff(np.concatenate([[0], reg[r_].astype(np.int8), [0]]))
+            for s_, e_ in zip(np.nonzero(d_ == 1)[0], np.nonzero(d_ == -1)[0]):
+                rects.append(shapely.box(x0 + s_ * res, z0 + r_ * res, x0 + e_ * res, z0 + (r_ + 1) * res))
+        info.append((oj_ + j0, oi_ + i0, reg))      # 最終の格子の番号での窓と、R の升目
+        print("  core replace region: cells", int(reg.sum()), "area m2", round(reg.sum() * res * res), "centre x", round(x0 + float(np.nonzero(reg.any(0))[0].mean()) * res), "z", round(z0 + float(np.nonzero(reg.any(1))[0].mean()) * res), flush=True)
+    if not rects: return shapely.Polygon(), info
+    return unary_union(rects).buffer(0.3).buffer(-0.3), info
+RCORE, RCORE_INFO = _core_replace()
+print("  core replace area m2", round(RCORE.area), "regions", len(RCORE_INFO), flush=True)
+if not RCORE.is_empty:
+    pickle.dump(shapely.to_wkb(RCORE), open(f"{W}/core_replace.pkl", "wb"))
+    COVo = COVo.difference(RCORE); COVi = COVi.difference(RCORE.buffer(0.1)); shapely.prepare(COVo); shapely.prepare(COVi)
+    for cat in list(OLD["tris"]):
+        t = np.asarray(OLD["tris"][cat], np.float64)
+        if not len(t): continue
+        c = t.reshape(-1, 3, 3).mean(1); inR = shapely.contains_xy(RCORE, c[:, 0], c[:, 2])
+        if inR.any(): OLD["tris"][cat] = t.reshape(-1, 3, 3)[~inR].reshape(-1, 3); print("  core replace: v28 tris dropped", cat, int(inR.sum()), flush=True)
+    _c = np.asarray(OLD["curb"], np.float64).reshape(-1, 12, 3); _m = _c.mean(1); _inR = shapely.contains_xy(RCORE, _m[:, 0], _m[:, 2])
+    OLD["curb"] = _c[~_inR].reshape(-1, 3); print("  core replace: v28 curb segments dropped", int(_inR.sum()), flush=True)
+else:
+    if os.path.exists(f"{W}/core_replace.pkl"): os.remove(f"{W}/core_replace.pkl")
 tris = {}; NEWT = {}
 for cat in sorted(set(OLD["tris"]) | set(NEW["tris"])):
     o = OLD["tris"].get(cat, np.zeros((0, 3))); n = NEW["tris"].get(cat, np.zeros((0, 3)))
@@ -74,10 +132,12 @@ for cat in sorted(set(OLD["tris"]) | set(NEW["tris"])):
         c = n.reshape(-1, 3, 3).mean(1)
         keep = ~shapely.contains_xy(COVo, c[:, 0], c[:, 2])
         # v28 の範囲（core）で軌道から 395m 以内は、v28 の道路（parse_tran の範囲＝軌道から 400m）がすべて。ここに新しい面は足さない
-        # （作り方の細かな違いで出る切れ端を入れない）
-        inc = (CORE[0] < c[:, 0]) & (c[:, 0] < CORE[2]) & (CORE[1] < c[:, 2]) & (c[:, 2] < CORE[3])
+        # （作り方の細かな違いで出る切れ端を入れない）。v41.20: 差し替える領域 R の中は新しい面を使う
+        inc = (CORE[0] < c[:, 0]) & (c[:, 0] < CORE[2]) & (CORE[1] < c[:, 2]) & (CORE[3] > c[:, 2])
         if inc.any():
-            keep &= ~(inc & shapely.dwithin(TRK, shapely.points(c[:, 0], c[:, 2]), 395.0))
+            _drop = inc & shapely.dwithin(TRK, shapely.points(c[:, 0], c[:, 2]), 395.0)
+            if not RCORE.is_empty: _drop &= ~shapely.contains_xy(RCORE, c[:, 0], c[:, 2])
+            keep &= ~_drop
         n = n.reshape(-1, 3, 3)[keep].reshape(-1, 3)
     NEWT[cat] = n
     tris[cat] = np.concatenate([np.asarray(o, np.float64), np.asarray(n, np.float64)]) if len(n) else np.asarray(o, np.float64)
@@ -104,7 +164,15 @@ def _tu_tiles(cats):
     return out_
 new_l = _tu_tiles(("lane", "xing", "rail")); new_r = _tu_tiles(("walk", "island", "green", "tramstop"))
 from common import road_parts
-lanes_parts = road_parts(OLD, "lanes") + new_l; raised_parts = road_parts(OLD, "raised") + new_r
+def _cut_R(parts):
+    if RCORE.is_empty: return parts
+    arr = np.array(parts, dtype=object); hit = shapely.intersects(arr, RCORE); out_ = []
+    for p, h in zip(parts, hit):
+        if not h: out_.append(p); continue
+        q = p.difference(RCORE)
+        out_ += [g for g in (q.geoms if hasattr(q, "geoms") else [q]) if not g.is_empty]
+    return out_
+lanes_parts = _cut_R(road_parts(OLD, "lanes")) + new_l; raised_parts = _cut_R(road_parts(OLD, "raised")) + new_r
 _NT = shapely.STRtree(new_l + new_r) if (new_l or new_r) else None
 print("  lanes/raised parts: new", len(new_l), len(new_r), "area m2", round(sum(q.area for q in new_l + new_r)), "time", round(time.time() - t0), flush=True)
 # ---- 縁石 ----
@@ -184,6 +252,13 @@ for cat in ("lane", "xing", "rail"):
     if cat in EDGE_FIX: raster(EDGE_FIX[cat], 1)
 for cat in ("walk", "island", "green", "tramstop"):
     if cat in EDGE_FIX: raster(EDGE_FIX[cat], 2)
+# v41.20: 差し替える領域 R の升目は、新しい道路の格子の値（高架の路面・下の段の道路）
+for _j0, _i0, _reg in RCORE_INFO:
+    _h, _w = _reg.shape
+    _nh = np.asarray(_NHR[_j0:_j0 + _h, _i0:_i0 + _w]); _nk = np.asarray(_NKD[_j0:_j0 + _h, _i0:_i0 + _w])
+    _sh = HR[_j0:_j0 + _h, _i0:_i0 + _w]; _sk = KIND[_j0:_j0 + _h, _i0:_i0 + _w]
+    _sh[_reg] = _nh[_reg]; _sk[_reg] = _nk[_reg]
+    print("  core replace raster cells", int(_reg.sum()), flush=True)
 print("  raster: v28 cells", int(fo.sum()), "total finite", int(np.isfinite(HR).sum()), flush=True)
 # v32: 橋・高架の面（2D）と、橋が道路の上を通る所の「上の段」（v28 の道路の範囲の外の分だけ）
 _bp = []

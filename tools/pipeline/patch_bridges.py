@@ -103,5 +103,165 @@ for e in d["elements"]:
     if cf: R["curb"] = np.concatenate([R["curb"], np.array(cf)])
     R["lanes_parts"] = R.get("lanes_parts", []) + [lane]; R["raised_parts"] = R.get("raised_parts", []) + ([walk] if not walk.is_empty else [])
     added.append((t.get("name"), round(L), round(W), round(hA, 2), round(hB, 2), round(float(cov), 2)))
+# ---- v41.20: 高架・橋の面の欠け（下を横切る道路の所）をつなぐ ----
+# PLATEAU は、高架が別の道路の上を通る所の面を、下の道路の方に割り当てていて、高架の面に幅 5〜35m の穴が開く
+# （穴の所で、車は下の道路の高さへ落ちる・高架の下をくぐる道が高架にふさがれずに見える・高架の下面や橋脚が途切れる）。
+# OSM の車道の橋の中心線に沿って、橋の面に覆われていない区間（両側は橋の面）を見つけ、その前後の橋の面の幅を断面でとって、
+# 間をつなぐ四角形（前の端の高さから後の端の高さへ直線）を橋の面として足す。下に道路がある升目は「上の段」（R["upper"]）に入れる。
+import mapbox_earcut as _ec
+GAP_MIN = 3; GAP_MAX = 45
+_bparts = [q for q in (R.get("bridge_parts") or []) if q is not None and not q.is_empty]
+_BU = unary_union(_bparts).buffer(0.05) if _bparts else Polygon()
+shapely.prepare(_BU)
+_NXh = HR.shape[1]; _NZh = HR.shape[0]
+_UPd = {}
+if R.get("upper") is not None and len(R["upper"][0]):
+    for _k, _y, _kd in zip(np.asarray(R["upper"][0]).tolist(), np.asarray(R["upper"][1]).tolist(), np.asarray(R["upper"][2]).tolist()): _UPd[_k] = (_y, _kd)
+def _deck_h(x, z):
+    i = int((x - GX0) / RES); j = int((z - GZ0) / RES)
+    if not (0 <= i < _NXh and 0 <= j < _NZh): return None
+    v = HR[j, i]; u = _UPd.get(j * _NXh + i)
+    c = [float(v)] if np.isfinite(v) else []
+    if u is not None: c.append(float(u[0]))
+    return max(c) if c else None
+def _chord(p, nrm):
+    """点 p（橋の面の中）を通り nrm 方向の直線で橋の面を切った線分のうち、p を含む 1 本の両端"""
+    seg = LineString([p - nrm * 30.0, p + nrm * 30.0]); g = _BU.intersection(seg)
+    parts = [q for q in (g.geoms if hasattr(g, "geoms") else [g]) if q.geom_type == "LineString" and not q.is_empty]
+    best = None; bd = 1e9
+    for q in parts:
+        d = q.distance(Point(*p))
+        if d < bd: bd = d; best = q
+    if best is None or bd > 0.8: return None
+    c = np.array(best.coords); a_, b_ = c[0], c[-1]
+    if np.dot(b_ - a_, nrm) < 0: a_, b_ = b_, a_      # nrm の向きに並べる（前後の断面で左右をそろえる）
+    return a_, b_
+n_gap = 0; gap_info = []; gap_new_tris = []; gap_new_polys = []; gap_up = {}
+for w in _osm_load()[0]:
+    t_ = w["tags"]
+    if t_.get("highway") not in _CARW or t_.get("bridge") not in ("yes", "viaduct") or len(w["xy"]) < 2: continue
+    ln = LineString(w["xy"]); Lw = ln.length
+    if Lw < GAP_MIN + 2: continue
+    ss = np.arange(0.5, Lw, 1.0); pts = shapely.line_interpolate_point(ln, ss)
+    cov = shapely.contains(_BU, pts)
+    k = 0; nS = len(ss)
+    while k < nS:
+        if cov[k]: k += 1; continue
+        e = k
+        while e < nS and not cov[e]: e += 1
+        if k >= 2 and e < nS - 1 and GAP_MIN <= e - k <= GAP_MAX:
+            sb = ss[k - 2] if k >= 2 else None; sa = ss[min(e + 1, nS - 1)]
+            pb = np.array(ln.interpolate(sb).coords[0]); pa = np.array(ln.interpolate(sa).coords[0])
+            dB = np.array(ln.interpolate(sb + 1.0).coords[0]) - np.array(ln.interpolate(max(0.0, sb - 1.0)).coords[0]); dA = np.array(ln.interpolate(min(Lw, sa + 1.0)).coords[0]) - np.array(ln.interpolate(sa - 1.0).coords[0])
+            if np.linalg.norm(dB) < 1e-6 or np.linalg.norm(dA) < 1e-6: k = e; continue
+            nB = np.array([-dB[1], dB[0]]) / np.linalg.norm(dB); nA = np.array([-dA[1], dA[0]]) / np.linalg.norm(dA)
+            cB = _chord(pb, nB); cA = _chord(pa, nA); hB = _deck_h(*pb); hA = _deck_h(*pa)
+            if cB is None or cA is None or hB is None or hA is None: k = e; continue
+            quad = Polygon([cB[0], cB[1], cA[1], cA[0]]).buffer(0)
+            if quad.is_empty or quad.area < 3.0: k = e; continue
+            patch = quad.difference(_BU)
+            patch = unary_union([q for q in (patch.geoms if hasattr(patch, "geoms") else [patch]) if q.geom_type == "Polygon" and q.area > 1.0])
+            if patch.is_empty: k = e; continue
+            if abs(hA - hB) > 0.12 * max(5.0, e - k + 4.0) + 1.0: print("  deck gap skipped (height step too large):", t_.get("name"), round(pb[0]), round(pb[1]), round(hB, 1), round(hA, 1)); k = e; continue
+            ax = pa - pb; Ls = float(np.dot(ax, ax))
+            def Hq(x, z, _pb=pb, _ax=ax, _Ls=Ls, _hB=hB, _hA=hA):
+                s_ = np.clip(((np.stack([x, z], 1) - _pb) @ _ax) / max(_Ls, 1e-6), 0.0, 1.0); return _hB + (_hA - _hB) * s_
+            # 三角形
+            tri_ = []
+            for q in (patch.geoms if hasattr(patch, "geoms") else [patch]):
+                if q.geom_type != "Polygon": continue
+                rings = [np.array(q.exterior.coords)[:-1]] + [np.array(r.coords)[:-1] for r in q.interiors]
+                rings = [r for r in rings if len(r) >= 3]
+                if not rings: continue
+                v = np.concatenate(rings); ends = np.cumsum([len(r) for r in rings]).astype(np.uint32)
+                idx = np.asarray(_ec.triangulate_float64(v, ends)).reshape(-1, 3)
+                for a_, b_, c_ in idx:
+                    pa_, pb_, pc_ = v[a_], v[b_], v[c_]
+                    cr = (pb_[0] - pa_[0]) * (pc_[1] - pa_[1]) - (pb_[1] - pa_[1]) * (pc_[0] - pa_[0])
+                    if cr > 0: pb_, pc_ = pc_, pb_
+                    for p_ in (pa_, pb_, pc_): tri_.append([p_[0], float(Hq(np.array([p_[0]]), np.array([p_[1]]))[0]), p_[1]])
+            if not tri_: k = e; continue
+            gap_new_tris.append(np.array(tri_)); gap_new_polys.append(patch)
+            # 升目（0.5m）: 下に道路（2.5m 以上低い）があれば上の段へ、無ければその升目の高さに
+            x0_, z0_, x1_, z1_ = patch.bounds
+            i0 = max(0, int((x0_ - GX0) / RES)); i1 = min(_NXh, int((x1_ - GX0) / RES) + 1); j0 = max(0, int((z0_ - GZ0) / RES)); j1 = min(_NZh, int((z1_ - GZ0) / RES) + 1)
+            jj, ii = np.mgrid[j0:j1, i0:i1]; cx = GX0 + (ii + 0.5) * RES; cz = GZ0 + (jj + 0.5) * RES
+            ins = shapely.contains_xy(patch, cx, cz)
+            yy = Hq(cx[ins], cz[ins]) + 0.0; sub = HR[j0:j1, i0:i1]; ks = KIND[j0:j1, i0:i1]
+            cur = sub[ins]; low = np.isfinite(cur) & (cur < yy - 2.5)
+            ji = np.nonzero(ins)
+            for q_, (jq, iq) in enumerate(zip(ji[0].tolist(), ji[1].tolist())):
+                if low[q_]: gap_up[(j0 + jq) * _NXh + (i0 + iq)] = (float(yy[q_]), 1)
+                else: sub[jq, iq] = yy[q_]; ks[jq, iq] = 1
+            n_gap += 1; gap_info.append((t_.get("name"), round(float(pb[0])), round(float(pb[1])), e - k, round(hB, 1), round(hA, 1), round(patch.area), int(low.sum())))
+            _BU = unary_union([_BU, patch.buffer(0.05)]); shapely.prepare(_BU)
+        k = e
+print("deck gaps filled:", n_gap, gap_info, flush=True)
+# ---- v41.20 その 2: 斜めに交差する道の穴など、中心線に沿った補修で埋め残した所 ----
+# 橋の面の和集合を閉じる（半径 20m の膨張→収縮）と、幅 40m 以下の隙間が埋まる。その差（元の面に覆われていない所）の
+# うち、(1) 面積 3〜1500 m²、(2) 縁の橋の面の高さが 1 つの平面（二乗平均の残差 0.6m 以下・高低差 6m 以下）に載る、
+# (3) 面の 45% 以上の下に道路がある（面より 2.5m 以上低い）ものだけを、橋の面として足す（高さは縁の高さの平面）
+from shapely.geometry.polygon import orient as _orient
+def _phase2():
+    global _BU
+    n2 = 0; info2 = []
+    _BUc = _BU.buffer(20.0, quad_segs=2).buffer(-20.0, quad_segs=2)
+    _res = _BUc.difference(_BU)
+    for q in (_res.geoms if hasattr(_res, "geoms") else [_res]):
+        if q.geom_type != "Polygon" or q.area < 3.0 or q.area > 1500: continue
+        q = _orient(q, 1.0); ring = np.array(q.exterior.coords); S = []
+        for a_, b_ in zip(ring[:-1], ring[1:]):
+            d_ = b_ - a_; L_ = float(np.hypot(*d_))
+            if L_ < 1e-6: continue
+            nn = np.array([d_[1], -d_[0]]) / L_
+            for s_ in np.arange(0.25, L_, 1.0):
+                po = a_ + d_ * (s_ / L_) + nn * 0.4
+                if shapely.contains_xy(_BU, po[0], po[1]):
+                    h_ = _deck_h(po[0], po[1])
+                    if h_ is not None: S.append((po[0], po[1], h_))
+        if len(S) < 12: continue
+        S = np.array(S); mx_, mz_ = S[:, 0].mean(), S[:, 1].mean(); A_ = np.c_[np.ones(len(S)), S[:, 0] - mx_, S[:, 1] - mz_]
+        co, _, _, _ = np.linalg.lstsq(A_, S[:, 2], rcond=None); r_ = S[:, 2] - A_ @ co
+        if float(np.sqrt((r_ ** 2).mean())) > 0.6 or float(S[:, 2].max() - S[:, 2].min()) > 6.0 or float(np.abs(r_).max()) > 1.8: continue
+        hlo, hhi = float(S[:, 2].min()) - 0.3, float(S[:, 2].max()) + 0.3
+        def Hq2(x, z, _co=co, _mx=mx_, _mz=mz_, _lo=hlo, _hi=hhi): return np.clip(_co[0] + _co[1] * (np.asarray(x) - _mx) + _co[2] * (np.asarray(z) - _mz), _lo, _hi)
+        # 升目（0.5m）: 下に道路があるか
+        x0_, z0_, x1_, z1_ = q.bounds
+        i0 = max(0, int((x0_ - GX0) / RES)); i1 = min(_NXh, int((x1_ - GX0) / RES) + 1); j0 = max(0, int((z0_ - GZ0) / RES)); j1 = min(_NZh, int((z1_ - GZ0) / RES) + 1)
+        jj, ii = np.mgrid[j0:j1, i0:i1]; cx = GX0 + (ii + 0.5) * RES; cz = GZ0 + (jj + 0.5) * RES
+        ins = shapely.contains_xy(q, cx, cz)
+        if not ins.any(): continue
+        yy = Hq2(cx[ins], cz[ins]); sub = HR[j0:j1, i0:i1]; ks = KIND[j0:j1, i0:i1]
+        cur = sub[ins]; low = np.isfinite(cur) & (cur < yy - 2.5)
+        if float(low.mean()) < 0.45: continue
+        # 三角形
+        tri_ = []
+        rings = [np.array(q.exterior.coords)[:-1]] + [np.array(r.coords)[:-1] for r in q.interiors]
+        rings = [r for r in rings if len(r) >= 3]
+        v = np.concatenate(rings); ends = np.cumsum([len(r) for r in rings]).astype(np.uint32)
+        idx = np.asarray(_ec.triangulate_float64(v, ends)).reshape(-1, 3)
+        for a_, b_, c_ in idx:
+            pa_, pb_, pc_ = v[a_], v[b_], v[c_]
+            cr = (pb_[0] - pa_[0]) * (pc_[1] - pa_[1]) - (pb_[1] - pa_[1]) * (pc_[0] - pa_[0])
+            if cr > 0: pb_, pc_ = pc_, pb_
+            for p_ in (pa_, pb_, pc_): tri_.append([p_[0], float(Hq2(p_[0], p_[1])), p_[1]])
+        if not tri_: continue
+        gap_new_tris.append(np.array(tri_)); gap_new_polys.append(q)
+        ji = np.nonzero(ins)
+        for q_, (jq, iq) in enumerate(zip(ji[0].tolist(), ji[1].tolist())):
+            if low[q_]: gap_up[(j0 + jq) * _NXh + (i0 + iq)] = (float(yy[q_]), 1)
+            else: sub[jq, iq] = yy[q_]; ks[jq, iq] = 1
+        n2 += 1; info2.append((round(q.centroid.x), round(q.centroid.y), round(q.area), round(float(low.mean()), 2), round(hlo + 0.3, 1), round(hhi - 0.3, 1)))
+        _BU = unary_union([_BU, q.buffer(0.05)]); shapely.prepare(_BU)
+    return n2, info2
+_n2, _i2 = _phase2()
+print("deck gaps filled (phase 2):", _n2, _i2, flush=True)
+if gap_new_tris:
+    R["tris"]["lane"] = np.concatenate([R["tris"]["lane"]] + gap_new_tris)
+    R["bridge_parts"] = list(R.get("bridge_parts") or []) + gap_new_polys
+    R["lanes_parts"] = R.get("lanes_parts", []) + gap_new_polys
+    if gap_up:
+        _UPd.update(gap_up); _ks = np.array(sorted(_UPd.keys()), np.int64)
+        R["upper"] = (_ks, np.array([_UPd[q][0] for q in _ks.tolist()], np.float32), np.array([_UPd[q][1] for q in _ks.tolist()], np.uint8))
 print("bridge decks added:", added)
 save_roads(R, SRC)

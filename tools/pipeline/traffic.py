@@ -42,9 +42,18 @@ def h_at(x, z, up=False):
             if u is not None: return u
         return DH[jj, ii]
     return float((v(j, i) * (1 - tx) + v(j, i + 1) * tx) * (1 - tz) + (v(j + 1, i) * (1 - tx) + v(j + 1, i + 1) * tx) * tz)
+# v41.20: トンネルの床（tunnels.py）の升目（KIND の格子と同じ 0.5m）。車線がトンネルの中も通れるように、道路として扱う
+TUNC = set(); TUNIDS = set()
+if os.path.exists("/home/claude/wx/tunnels.pkl"):
+    import pickle, tunnels as TUN
+    for _t in pickle.load(open("/home/claude/wx/tunnels.pkl", "rb")):
+        TUNIDS.add(_t["id"])
+        _jj, _ii, _ = TUN.raster_cells(_t, _t["floor_poly"], GX0, GZ0, RES, KIND.shape[1], KIND.shape[0], 0)
+        TUNC.update((_jj * KIND.shape[1] + _ii).tolist())
+print("tunnel floor cells (0.5m)", len(TUNC))
 def road(x, z):
     i = int((x - GX0) / RES); j = int((z - GZ0) / RES)
-    if 0 <= i < KIND.shape[1] and 0 <= j < KIND.shape[0]: return KIND[j, i] == 1
+    if 0 <= i < KIND.shape[1] and 0 <= j < KIND.shape[0]: return KIND[j, i] == 1 or (j * KIND.shape[1] + i) in TUNC
     return False
 
 # 軌道（全路線の線路中心）
@@ -79,7 +88,8 @@ for w in rw:
         if not all(inside(p) for p in xy): continue
         if TRK.distance(Point(*mid)) > float(os.environ.get("TRAFFIC_BUF", "1e9")): continue
         t = w["tags"]; ow = t.get("oneway"); rb = t.get("junction") == "roundabout"
-        if t.get("tunnel") not in (None, "no", "building_passage"): continue   # v32: トンネルの中は走らせない（山の上を走っていた）
+        # v32: トンネルの中は走らせない（山の上を走っていた）。v41.20: 路面を作ったトンネル（tunnels.py）は走らせる
+        if t.get("tunnel") not in (None, "no", "building_passage") and w.get("id") not in TUNIDS: continue
         edges.append(dict(n0=ns[a], n1=ns[b], xy=xy, L=L, cls=cls_of(w), tags=t,
                           fwd=ow != "-1", bwd=not (ow in ("yes", "true", "1", "-1") or rb) or ow == "-1"))
 print("edges", len(edges))
@@ -379,8 +389,35 @@ def to3_follow(p, up=False):
     for i in range(n):
         prev = h_ref(pts[i, 0], pts[i, 1], prev); ys[i] = prev
     ds = np.hypot(*np.diff(pts, axis=0).T) if n > 1 else np.zeros(0)
+    if not up and n > 2 and len(ds): ys = _flat_hills(ys, ds)
     if n > 2 and len(ds) and (np.abs(np.diff(ys)) / np.maximum(ds, 0.5)).max() > 0.2: ys = _lip(ys, np.maximum(ds, 0.01))
     return [[round(float(pts[i, 0]), 2), round(float(ys[i]) + 0.02, 2), round(float(pts[i, 1]), 2)] for i in range(n)]
+def _flat_hills(ys, ds, win=35.0, thr=2.5, maxrun=45.0):
+    """v41.20: 橋でない道の車線が、高架の下をくぐる所で、下の道路の層が欠けて高架の面（上の段）へ乗り上げた山を平らにする。
+    各点の「前 win m の最低・後 win m の最低」の大きい方を土台とし、土台より thr m 以上高い連続区間（長さ maxrun m 以下）を、前後の点の間の直線にする。
+    坂の途中（片側が下がり続ける）は土台が自分の高さになるので触らない"""
+    n = len(ys); s = np.r_[0.0, np.cumsum(ds)]
+    L = np.empty(n); Rr = np.empty(n)
+    j0 = 0
+    for i in range(n):
+        while s[i] - s[j0] > win: j0 += 1
+        L[i] = ys[j0:i + 1].min()
+    j1 = n - 1
+    for i in range(n - 1, -1, -1):
+        while s[j1] - s[i] > win: j1 -= 1
+        Rr[i] = ys[i:j1 + 1].min()
+    hill = (ys - np.maximum(L, Rr)) > thr
+    if not hill.any(): return ys
+    out = ys.copy(); i = 0
+    while i < n:
+        if not hill[i]: i += 1; continue
+        k = i
+        while k < n and hill[k]: k += 1
+        a = i - 1; b = k          # a: 直前の山でない点、b: 直後
+        if a >= 0 and b < n and s[b] - s[a] <= maxrun + 10.0:
+            for m in range(i, k): out[m] = ys[a] + (ys[b] - ys[a]) * (s[m] - s[a]) / max(1e-6, s[b] - s[a])
+        i = k
+    return out
 def to3_between(p, ya, yb):
     """交差点の接続線: 両端の高さ（接続する車線の端）の間をなめらかにつなぐ"""
     pts = np.asarray(p, float).reshape(-1, 2); n = len(pts)

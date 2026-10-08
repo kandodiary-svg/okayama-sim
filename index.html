@@ -6719,8 +6719,12 @@ const Car = (() => {
     // v39: 橋・高架の際や段の違う路面で、車輪の下の高さを段ごとに別々に拾うと、車が沈み込んだり跳ねたりする。
     //      中心の路面高さ hc からの差を ±0.7m に抑え（急な坂でも車体の前後で 0.7m 以上は違わない）、上下の動きの速さにも上限を付ける
     const hc = hAt(C.x, C.z, C.h), clW = (v) => Math.max(hc - 0.7, Math.min(hc + 0.7, v));
-    const hf = clW(hAt(C.x + fx * hl, C.z + fz * hl, C.h)), hb = clW(hAt(C.x - fx * hl, C.z - fz * hl, C.h));
-    const grade = (hf - hb) / P.L;
+    // v41.20: 標高データの細かなノイズ（±0.2m 前後・十数 m 周期）で、車がカタカタ揺れたり坂のように加減速したりしないよう、
+    //         進む向きの前後 ±6m を 2m おきに拾い、高さは ±4m の平均、勾配は最小二乗の傾きで求める（普通の坂・橋のスロープはそのまま通る）
+    let hS = 0, nS = 0, sdh = 0, sdd = 0;
+    const wS = Math.max(6, Math.ceil(hl + 1.5));
+    for (let d = -wS; d <= wS; d += 2) { const hh = d === 0 ? hc : clW(hAt(C.x + fx * d, C.z + fz * d, C.h)); if (Math.abs(d) <= 4) { hS += hh; nS++; } sdh += d * hh; sdd += d * d; }
+    const hM = hS / nS, grade = Math.max(-0.35, Math.min(0.35, sdh / sdd));
     a -= 9.8 * grade;
     let v = C.v + a * dt;
     const dec = (brakeA + resist) * dt;
@@ -6763,7 +6767,7 @@ const Car = (() => {
     C.hitT = Math.max(0, C.hitT - dt);
     // 高さ・姿勢（ピッチ: 勾配＋加減速、ロール: 横加速度）
     const lz = clW(hAt(C.x + sx * P.wid * 0.45, C.z + sz * P.wid * 0.45, C.h)), rz = clW(hAt(C.x - sx * P.wid * 0.45, C.z - sz * P.wid * 0.45, C.h));
-    { const hn = (hf + hb + lz + rz) / 4, vmax = (3 + 0.2 * Math.abs(C.v)) * dt;   // 上下は秒速 3m + 速度×0.2 まで（段差でも瞬間移動しない）
+    { const hn = (hM + (lz + rz) / 2) / 2, vmax = (3 + 0.2 * Math.abs(C.v)) * dt;   // 上下は秒速 3m + 速度×0.2 まで（段差でも瞬間移動しない）
       C.h = Math.abs(hn - C.h) > 4 ? hn : C.h + Math.max(-vmax, Math.min(vmax, hn - C.h)); }
     const pitchT = Math.atan(grade) - (a - Math.sign(C.v) * brakeA) * (P.pitchK || (P === PROFILES.bus ? 0.006 : 0.004)), rollT = Math.atan((lz - rz) / (P.wid * 0.9)) + Math.sign(C.v) * yawRate * Math.abs(C.v) * (P.rollK || (P === PROFILES.bus ? 0.012 : 0.006));
     C.pitch += (pitchT - C.pitch) * Math.min(1, dt * 6); C.roll += (rollT - C.roll) * Math.min(1, dt * 6);
