@@ -1739,10 +1739,8 @@ print("  drive grid tunnel floor cells", _ntc, flush=True)
 #   1m ほどの盛り上がりになっていた。隙間の升目（道路が無く、地面の高さで埋まっている升目）だけ、端の床の高さで埋める
 _nte = 0
 for _t in TUNNELS:
-    _xy = _t["xy"]
-    for _pe, _dv, _ze in ((_xy[0], _xy[0] - _xy[1], _t["z"][0]), (_xy[-1], _xy[-1] - _xy[-2], _t["z"][-1])):
-        _dv = _dv / (np.linalg.norm(_dv) + 1e-9)
-        _q = LineString([tuple(_pe), tuple(_pe + _dv * 7.0)]).buffer(_t["hw"], cap_style=2, join_style=2).difference(_t["floor_poly"])
+    for _pe, _ze, _gq in _t["gaps"]:   # tunnels.py の gaps: （端の位置, 端の床の高さ, 端の床の縁を外向きに 7m 延ばした四角）
+        _q = _gq.difference(_t["floor_poly"])
         _jj, _ii, _vv = TUN.raster_cells(_t, _q, DX0, DZ0, DG, dnx, dnz, float(_ze) + TUN.FLOOR_LIFT)
         if not len(_jj): continue
         _sel = DC_[_jj, _ii] == 0
@@ -1821,9 +1819,13 @@ _nb_clr = 0; _nb_set = 0
 for _t in TUNNELS:
     _jj, _ii, _ = TUN.raster_cells(_t, _t["floor_poly"], DX0, DZ0, 1.0, _b1.shape[1], _b1.shape[0], 0)
     if len(_jj): _b1[_jj, _ii] = False; _nb_clr += len(_jj)
+_FPALL = unary_union([_t["floor_poly"] for _t in TUNNELS]) if TUNNELS else None
 for _t in TUNNELS:
     if _t["band_poly"] is None: continue
-    _jj, _ii, _ = TUN.raster_cells(_t, _t["band_poly"], DX0, DZ0, 1.0, _b1.shape[1], _b1.shape[0], 0)
+    # v41.21: 隣のトンネル（上り・下りが別々の箱）の床の上は「通れない」にしない（隣の壁の帯が、こちらの外側の車線に重なっていた）
+    _bp = _t["band_poly"].difference(_FPALL)
+    if _bp.is_empty: continue
+    _jj, _ii, _ = TUN.raster_cells(_t, _bp, DX0, DZ0, 1.0, _b1.shape[1], _b1.shape[0], 0)
     if len(_jj): _b1[_jj, _ii] = True; _nb_set += len(_jj)
 print("  tunnel building-mask bits cleared", _nb_clr, "wall bits set", _nb_set, flush=True)
 _FMB = np.concatenate(_fmL); del _fmL   # v30: 0.5m の建物マスク（アーケード・小物で使う）はビット列で持つ

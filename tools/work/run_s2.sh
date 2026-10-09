@@ -70,4 +70,16 @@ step peds $M peds.py
 step jr $M jr.py
 # v30: traffic.json の点列を別ファイル（バイナリ）に
 step compact $M compact_traffic.py
+# v41.21: 車線の位置合わせ。traffic.py の出力は車線が詰まって並ぶ（同じ向きの隣と 1.8m）ので、compact の後に必ず流す（traffic_align2.py は v41.8 の traffic_align.py の処理を含む）。
+#   v41.20 はこの段を流し忘れて公開した（大通りの同じ向きの隣の車線が 3.1m → 1.8m に戻り、白線の間を走らなくなった）。
+#   退避ファイル（traffic_pre_align.*）と白線の点のキャッシュは前の出力のものなので消してから流す。
+align_traffic(){ rm -f $W/traffic_pre_align.json $W/traffic_pts_pre_align.txt /tmp/markq.npy /tmp/markdirs.npz; python3 $W/memrun.py python3 traffic_align2.py; }
+step align align_traffic
+# v41.21: トンネルの床の幅を車線に合わせる（次に tunnels 段を流す時の入力 tunnel_fit.json。この回の値と違えば build をやり直す）
+step tunnelfit python3 tunnel_fit.py
+# v41.21: 車線の高さに合う層が走行格子に無い所（立体交差の下をくぐる道・堤防の下・高架の面の穴）へ層を足す（位置合わせの後＝最終の車線の点列がある）
+step underfill $M lane_underfill.py
+# 山陽道（mw.bin）の高さを走行格子にそろえる（走行格子を作り直したら毎回。元の mw.bin は mw.bin.v38.bak）
+restore_mw(){ cp /home/claude/okaden-x/mw.bin.v38.bak /home/claude/okaden-x/data/mw.bin && python3 mw_join.py --apply; }
+step mwjoin restore_mw
 echo "$(date +%T) ALL DONE"

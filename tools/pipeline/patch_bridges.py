@@ -202,27 +202,28 @@ print("deck gaps filled:", n_gap, gap_info, flush=True)
 # うち、(1) 面積 3〜1500 m²、(2) 縁の橋の面の高さが 1 つの平面（二乗平均の残差 0.6m 以下・高低差 6m 以下）に載る、
 # (3) 面の 45% 以上の下に道路がある（面より 2.5m 以上低い）ものだけを、橋の面として足す（高さは縁の高さの平面）
 from shapely.geometry.polygon import orient as _orient
-def _phase2():
+def _phase2(step=1.0, min_samp=12, rms_max=0.6, res_max=1.8, span_max=6.0, area_max=1500.0):
+    # v41.21: 境界の標本の間隔・最低数と、平面のあてはまりの許容を引数にした（小さな穴は境界が短く標本が 12 に届かず、残っていた）
     global _BU
     n2 = 0; info2 = []
     _BUc = _BU.buffer(20.0, quad_segs=2).buffer(-20.0, quad_segs=2)
     _res = _BUc.difference(_BU)
     for q in (_res.geoms if hasattr(_res, "geoms") else [_res]):
-        if q.geom_type != "Polygon" or q.area < 3.0 or q.area > 1500: continue
+        if q.geom_type != "Polygon" or q.area < 3.0 or q.area > area_max: continue
         q = _orient(q, 1.0); ring = np.array(q.exterior.coords); S = []
         for a_, b_ in zip(ring[:-1], ring[1:]):
             d_ = b_ - a_; L_ = float(np.hypot(*d_))
             if L_ < 1e-6: continue
             nn = np.array([d_[1], -d_[0]]) / L_
-            for s_ in np.arange(0.25, L_, 1.0):
+            for s_ in np.arange(0.25, L_, step):
                 po = a_ + d_ * (s_ / L_) + nn * 0.4
                 if shapely.contains_xy(_BU, po[0], po[1]):
                     h_ = _deck_h(po[0], po[1])
                     if h_ is not None: S.append((po[0], po[1], h_))
-        if len(S) < 12: continue
+        if len(S) < min_samp: continue
         S = np.array(S); mx_, mz_ = S[:, 0].mean(), S[:, 1].mean(); A_ = np.c_[np.ones(len(S)), S[:, 0] - mx_, S[:, 1] - mz_]
         co, _, _, _ = np.linalg.lstsq(A_, S[:, 2], rcond=None); r_ = S[:, 2] - A_ @ co
-        if float(np.sqrt((r_ ** 2).mean())) > 0.6 or float(S[:, 2].max() - S[:, 2].min()) > 6.0 or float(np.abs(r_).max()) > 1.8: continue
+        if float(np.sqrt((r_ ** 2).mean())) > rms_max or float(S[:, 2].max() - S[:, 2].min()) > span_max or float(np.abs(r_).max()) > res_max: continue
         hlo, hhi = float(S[:, 2].min()) - 0.3, float(S[:, 2].max()) + 0.3
         def Hq2(x, z, _co=co, _mx=mx_, _mz=mz_, _lo=hlo, _hi=hhi): return np.clip(_co[0] + _co[1] * (np.asarray(x) - _mx) + _co[2] * (np.asarray(z) - _mz), _lo, _hi)
         # 升目（0.5m）: 下に道路があるか
@@ -254,7 +255,14 @@ def _phase2():
         n2 += 1; info2.append((round(q.centroid.x), round(q.centroid.y), round(q.area), round(float(low.mean()), 2), round(hlo + 0.3, 1), round(hhi - 0.3, 1)))
         _BU = unary_union([_BU, q.buffer(0.05)]); shapely.prepare(_BU)
     return n2, info2
-_n2, _i2 = _phase2()
+# v41.21: 穴を埋めると、閉包の差の形が変わって新しい穴の候補が出る（20 個が前回の結果に残っていた）ので、増えなくなるまで繰り返す。
+#   ① 標本を 0.5m 間隔・8 点から（小さな穴）② 平面のあてはまりをやや緩める（面積 400m² 以下: rms 0.95・最大残差 2.2・高さの幅 6.5m）
+_n2 = 0; _i2 = []
+for _prm in ((0.5, 8, 0.6, 1.8, 6.0, 1500.0), (0.5, 8, 0.95, 2.2, 6.5, 400.0)):
+    for _it in range(5):
+        _a, _b = _phase2(*_prm)
+        if not _a: break
+        _n2 += _a; _i2 += _b
 print("deck gaps filled (phase 2):", _n2, _i2, flush=True)
 if gap_new_tris:
     R["tris"]["lane"] = np.concatenate([R["tris"]["lane"]] + gap_new_tris)

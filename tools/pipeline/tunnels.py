@@ -28,6 +28,14 @@ BOX_COVER = 4.4        # 地面 − 床 がこれより深い区間だけ箱（�
 MIN_CLEAR = 3.9        # 天井の最低の高さ（バス・トラックが通れる）
 SHALLOW = 3.0          # 屋根の上面から地面（DEM）までがこれ以下の所だけ、地面を屋根の高さへ下げる・屋根の上面を描く
 WALL_BAND = 1.6        # 壁の外側の「通れない」帯
+BAND_GAP = 0.3         # v41.21: 壁（床の縁）から「通れない」帯の始まりまでの隙間。1m 升は「中心が帯の中」なので、帯が壁にぴったりだと壁の手前 0.5m で車が止まる
+
+# v41.21: 車線に合わせた床の半幅（tunnel_fit.py が書く。無ければ OSM のタグどおり）
+FIT = {}   # v41.21: {道の id: {"s": [...], "lo": [...], "hi": [...]}}（tunnel_fit.py が書く。中心線に沿った距離 s ごとの、床の右・左の縁の横位置。左が +）。
+for _f in (f"{W}/tunnel_fit.json", os.path.join(os.path.dirname(os.path.abspath(__file__)), "tunnel_fit.json")):
+    if os.path.exists(_f):
+        import json as _json
+        FIT = {int(k): v for k, v in _json.load(open(_f)).items()}; break
 
 def width_of(t):
     try:
@@ -79,6 +87,13 @@ def build(prof, dem_at, bx=None):
 
 def _one(wid, tags, xy, z, L, dem_at):
     hw_t = tags.get("highway"); w = width_of(tags); hw = max(w / 2.0, 2.0)
+    cum0 = np.r_[0, np.cumsum(np.hypot(*np.diff(xy, axis=0).T))]
+    f_ = FIT.get(int(wid))
+    if f_ and "s" in f_:   # v41.21: 床の左右の縁を、車線（位置合わせ後）に沿った距離ごとの位置にする（坑口で車線が広がる・片側に偏る所に合わせる）
+        offL = np.interp(cum0, f_["s"], f_["hi"]); offR = np.interp(cum0, f_["s"], f_["lo"])
+    else:
+        offL = np.full(len(xy), hw); offR = np.full(len(xy), -hw)
+    w = float((offL - offR).mean()); hw = float(max(np.abs(offL).max(), np.abs(offR).max()))
     CL0 = 4.9 if hw_t in MAJ_T else 4.4
     # 上の地面（DEM。14m の幅でならす）。かぶり（地面 − 床）が深い区間だけ「箱」（壁・天井）を作る。
     # かぶりの浅い所（線路・道路の高架の下をくぐるだけで、DEM が床とほぼ同じ高さ）は、上の構造物（橋）が別にあるので、床（路面）だけ
@@ -107,10 +122,10 @@ def _one(wid, tags, xy, z, L, dem_at):
     up = np.array([0.0, 1.0, 0.0]); dn = -up
     n3 = lambda v: np.stack([v[:, 0], np.zeros(len(v)), v[:, 1]], 1)
     nvm = n3(nv)[:-1]
-    floorL, floorR = pts(+hw, yf), pts(-hw, yf)
+    floorL, floorR = pts(offL, yf), pts(offR, yf)
     floor = _strip(floorL, floorR, up)
-    wo = hw + 0.1
-    wbL, wtL = pts(+wo, z - 0.05), pts(+wo, z + CL); wbR, wtR = pts(-wo, z - 0.05), pts(-wo, z + CL)
+    woL, woR = offL + 0.1, offR - 0.1
+    wbL, wtL = pts(woL, z - 0.05), pts(woL, z + CL); wbR, wtR = pts(woR, z - 0.05), pts(woR, z + CL)
     def sel_strip(P, Q, want, mask):
         res = [_strip(P[i:i + 2], Q[i:i + 2], want[i:i + 1] if np.ndim(want) == 2 else want) for i in np.nonzero(mask)[0]]
         return np.concatenate(res) if res else np.zeros((0, 3))
@@ -121,7 +136,7 @@ def _one(wid, tags, xy, z, L, dem_at):
     mid = (xy[:-1] + xy[1:]) / 2; dem_mid = dem_at(mid[:, 0], mid[:, 1]); ymid = (ytop[:-1] + ytop[1:]) / 2
     exposed = (dem_mid < ymid + 0.4) & box_sec
     shallow = ((dem_mid - ymid) < SHALLOW) & box_sec
-    ttL, ttR = pts(+wo, ytop), pts(-wo, ytop)
+    ttL, ttR = pts(woL, ytop), pts(woR, ytop)
     roof = sel_strip(ttL, ttR, up, exposed)
     tf = n3(ts)
     caps = []
@@ -139,26 +154,34 @@ def _one(wid, tags, xy, z, L, dem_at):
             if ph < dash[0]: res.append(_strip(a[i:i + 2], b[i:i + 2], up))
         return np.concatenate(res) if res else np.zeros((0, 3))
     if w >= 4.2:
-        white.append(line_tris(+(hw - 0.4), yf, 0.075)); white.append(line_tris(-(hw - 0.4), yf, 0.075))
+        white.append(line_tris(offL - 0.4, yf, 0.075)); white.append(line_tris(offR + 0.4, yf, 0.075))
     oneway = tags.get("oneway") in ("yes", "1", "true")
-    if w >= 5.6 and not oneway and hw_t in MAJ_T: yellow.append(line_tris(0.0, yf, 0.075))
-    elif w >= 5.6: white.append(line_tris(0.0, yf, 0.075, (3.0, 5.0)))
+    offC = (offL + offR) / 2
+    if w >= 5.6 and not oneway and hw_t in MAJ_T: yellow.append(line_tris(offC, yf, 0.075))
+    elif w >= 5.6: white.append(line_tris(offC, yf, 0.075, (3.0, 5.0)))
     ln = LineString(xy)
-    floor_poly = ln.buffer(hw, cap_style=2, join_style=2)
     def sec_poly(L_, R_, mask, grow=0.0):
         qs = []
         for i in np.nonzero(mask)[0]:
             q = Polygon([L_[i][[0, 2]], L_[i + 1][[0, 2]], R_[i + 1][[0, 2]], R_[i][[0, 2]]]).buffer(0)
             if not q.is_empty: qs.append(q)
         return unary_union(qs).buffer(grow) if qs else None
+    allm = np.ones(len(xy) - 1, bool)
+    floor_poly = sec_poly(floorL, floorR, allm, 0.0)
     band_poly = None
-    bp_ = sec_poly(pts(+(hw + WALL_BAND), z), pts(-(hw + WALL_BAND), z), box_sec, 0.05)
-    if bp_ is not None: band_poly = bp_.difference(sec_poly(floorL, floorR, box_sec, 0.05) or Polygon())
+    bp_ = sec_poly(pts(offL + WALL_BAND, z), pts(offR - WALL_BAND, z), box_sec, 0.05)
+    if bp_ is not None: band_poly = bp_.difference(sec_poly(pts(offL + BAND_GAP, z), pts(offR - BAND_GAP, z), box_sec, 0.05) or Polygon())
     roof_poly = sec_poly(ttL, ttR, shallow, 0.05)                      # 地面を屋根の高さへ下げる範囲（かぶりの浅い箱の区間）
     floor_only_poly = sec_poly(floorL, floorR, ~box_sec, 0.05)         # 箱でない区間: 地面を床の高さへ下げる範囲
     p0 = xy[0] - ts[0] * 8.0; p1 = xy[-1] + ts[-1] * 8.0
     zone = LineString(np.vstack([p0[None], xy, p1[None]])).buffer(hw + 1.5, cap_style=2, join_style=2)
-    return dict(id=wid, name=tags.get("name", ""), hw=hw, L=L, xy=xy, z=z, cum=cum, line=ln, floor_poly=floor_poly, band_poly=band_poly,
+    # 両端の外側 7m の隙間用の四角（端の床の左右の縁を、端の向きに 7m 延ばす。build_v5.py が使う）
+    gaps = []
+    for e, dv in ((0, -ts[0]), (len(xy) - 1, ts[-1])):
+        PL_, PR_ = floorL[e][[0, 2]], floorR[e][[0, 2]]
+        gq = Polygon([PL_, PR_, PR_ + dv * 7.0, PL_ + dv * 7.0]).buffer(0)
+        gaps.append((xy[e].copy(), float(z[e]), gq))
+    return dict(id=wid, name=tags.get("name", ""), hw=hw, offL=offL, offR=offR, gaps=gaps, L=L, xy=xy, z=z, cum=cum, line=ln, floor_poly=floor_poly, band_poly=band_poly,
                 roof_poly=roof_poly, floor_only_poly=floor_only_poly, zone=zone, ytop=ytop, box_frac=float(box_sec.mean()),
                 exposed_frac=float(exposed.mean()), shallow_frac=float(shallow.mean()), cov_max=float(cov.max()),
                 tris=dict(floor=floor, wall=np.concatenate([wallL, wallR]), ceil=ceil, roof=roof, cap=cap,
