@@ -29,6 +29,7 @@
   - v41.19: `bike_feel_test.js`（バイクの長押し・ちょん押しの傾き、加速・シフト・制動・傾いたままのブレーキ/転倒を測る）と `bike_corner_test.js`（バイクで交差点・カーブを速度ごとに通れるか。先に `__Car.setProfile('bike')` と `window.__cornerCfg` を設定。結果は冒頭のコメント）。どちらも車モードを始めた `repl.js` に流す
   - v41.20: `lane_rough_test.js`（全車線を車の高さの追い方でたどり、急勾配・こぶ・瞬間移動〔4m 超の段〕を数える。`window.__roughMode='old'|'new'` で v41.19 までの追い方と比べる）と `viaduct_test.js`（高架・高架の下をくぐる道の試験。国道250号の高架・駅西の高架の車線をたどり、段・こぶ・瞬間移動と、高架の下の道の 2 段の格子を調べる。`window.__vdBox=[x0,z0,x1,z1]` で範囲を変える）と `underpass_test.js`（高架の下をくぐる道を地面の層のまま通り抜けられるか。3 か所×横 13 通り）。いずれも車モードを始めた `repl.js` に流す
   - v41.21: `lane_gap_test.js`（車線の高さと走行格子の層の差を全車線で測る。差 1.5m 超の点の数・場所）、`lane_drive_test.js`（車線に沿って実際の車の物理 `Car.tick` で走り、高さの追い方・段・勾配・衝突・車線からのずれを測る。`window.__ldCfg={v,probes:[{name,box,min,max}|{name,ids}]}`。既定の対象は高架・下の道・斜めの道・堤防の下・トンネル 3 本・駅西のランプ）、`lane_rough_test.js`（瞬間移動の一覧つきに）。いずれも車モードを始めた `repl.js` に流す
+  - v41.22: `bike_hold_test.js`（← を押し続けたとき、向きが何度変わるかを車とバイクで並べて測る。バイクの「曲がらない」の確認用。車モードを始めた `repl.js` に流す）。`bike_feel_test.js`・`bike_corner_test.js` の冒頭に変更後の数値
 - `app/`: `index.html` の元（`head.html`・`vehicles.js`・`app.js` をつなげる。`work/mkx.sh`）
   - `vehicles.js`: 車・トラック・バス・バイクの形を作るコード（v41.9、バイクは v41.19）。`vehicles_src/veh_base.js`（周りの車の形・車体の作り方・材質）と `vehicles_src/veh_hi.js`（自分の車・運転席・バスの車体）と `vehicles_src/veh_bike.js`（自分のバイクとライダー）から `bash app/vehicles_src/mkveh.sh` で作る（直接は編集しない）
   - 形の確認用ページ: `tests/lab/lab.html`（街なしで車だけを表示）と `tests/vehicle_lab.js`（撮影）

@@ -4259,7 +4259,7 @@ const Car = (() => {
   const sm01 = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   const clampN = (x, a, b) => Math.max(a, Math.min(b, x));
   /* 入力（キー・パッド・画面）→「曲がりたい強さ」d（-1〜1、左が正）。
-     キーは長押しするほど深く傾く: 押し始めは控えめ（細かい修正・車線変更向き）で、約 0.75 秒かけて最大へ。離して 0.4 秒以内に押し直すと続きから。
+     キーは長押しするほど深く傾く: 押し始めは最大の 7 割（高速。低速は 9 割弱）から始め、約 0.4 秒かけて最大へ（v41.22: 以前は 3 割から 0.75 秒で、街なかの速度で車より曲がりが遅く「曲がらない」と感じた）。ちょん押し（0.1〜0.2 秒）は車線変更・微修正にちょうどよい小ささのまま。離して 0.4 秒以内に押し直すと続きから。
      低速（自転車ぐらいの速さまで）はハンドルで曲がるので最初から大きく、速度が上がるほど最初は控えめ。Shift（スポーツ）は立ち上がりが速く、傾きの上限も大きい（滑りやすい） */
   function bikeDemand(dt, vv, AP, PI_, sport, kSteer) {
     let dT = 0, ramp = false;
@@ -4270,7 +4270,7 @@ const Car = (() => {
     else if (kSteer) {
       if (kSteer !== C.kSd) { C.kSd = kSteer; C.kS = 0; }
       C.kS = (C.kS || 0) + dt;
-      const a0 = sport ? 0.6 : 0.82 - 0.52 * sm01(3, 9, vv), Th = sport ? 0.35 : 0.75, u = Math.min(1, C.kS / Th);
+      const a0 = sport ? 0.75 : 0.88 - 0.18 * sm01(3, 9, vv), Th = sport ? 0.3 : 0.4, u = Math.min(1, C.kS / Th);
       dT = kSteer * (a0 + (1 - a0) * u * u * (3 - 2 * u)); ramp = true;
     }
     if (!ramp) C.kS = Math.max(0, Math.min(C.kS || 0, 0.5) - dt * 2.5);
@@ -4280,20 +4280,20 @@ const Car = (() => {
   }
   /* 旋回: 速度が上がるほど「車体を傾ける」で曲がる（定常旋回では yawRate = g·tan(傾き)/速度）。低速はハンドルを切って曲がる（自転車モデル）。この 2 つを速度でなめらかにつなぐ（2.5〜6.5 m/s）。
      傾きの上限は「滑る寸前」に対する割合: 50km/h 以下で 86%、100km/h で 52%、150km/h で 44%（高速ほど浅く＝高速で倒し込みすぎない）。Shift は 97%。
-     傾きは目標へ 2 次遅れで追いかける（約 0.15 秒・最大 約 70°/秒、高速ほどゆっくり） */
+     傾きは目標へ 2 次遅れで追いかける（約 0.12 秒・最大 約 100°/秒、高速ほどゆっくり）。旋回の速さには、傾きの目標との差の 4 割を先に足す（倒し込みの途中でも向きが変わり始める＝ハンドルを切った瞬間の曲がり。見た目の傾きは遅れたまま） */
   function bikeStep(dt, wet, sport) {
     const vv = Math.abs(C.v), g = 9.8, mu = P.grip * (wet ? 0.78 : 1);
     const capG = sport ? 0.97 : 0.86 - 0.34 * sm01(13.9, 27.8, vv) - 0.08 * sm01(27.8, 41, vv), phiMax = Math.atan(capG * mu);
     C.phiMax = phiMax;
     const phiT = C.fall ? C.fallSide * 1.43 : (C.dCur || 0) * phiMax * sm01(1.2, 4.5, vv);
-    const w0 = C.fall ? 5 : 10, zeta = C.fall ? 0.7 : 0.95, vLmax = C.fall ? 3 : 1.25 - 0.5 * sm01(15, 40, vv);
+    const w0 = C.fall ? 5 : 12, zeta = C.fall ? 0.7 : 0.95, vLmax = C.fall ? 3 : 1.8 - 0.7 * sm01(15, 40, vv);
     C.leanV = clampN((C.leanV || 0) + (w0 * w0 * (phiT - (C.lean || 0)) - 2 * zeta * w0 * (C.leanV || 0)) * dt, -vLmax, vLmax);
     C.lean = (C.lean || 0) + C.leanV * dt;
     let yawRate;
     if (C.fall) { C.fallYaw = (C.fallYaw || 0) * Math.exp(-dt * 1.5); yawRate = C.fallYaw; }
     else {
       const wL = sm01(2.5, 6.5, vv), dm = 0.52 * (1 - 0.75 * sm01(2, 9, vv));
-      const yawH = C.v * Math.tan((C.dCur || 0) * dm) / P.L, yawL = C.v >= 0 ? g * Math.tan(C.lean) / Math.max(vv, 1.5) : 0;
+      const yawH = C.v * Math.tan((C.dCur || 0) * dm) / P.L, yawL = C.v >= 0 ? g * Math.tan(C.lean + 0.4 * (phiT - C.lean)) / Math.max(vv, 1.5) : 0;
       yawRate = yawH * (1 - wL) + yawL * wL;
     }
     // ハンドルの角（見た目）: 実際に必要な角（高速ほど小さい）＋ 倒し込みの瞬間だけ逆に切る（カウンターステア）
