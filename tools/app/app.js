@@ -292,12 +292,11 @@ const DETAIL_TEX = (() => {
   for(let i = 0; i < N * N; i++) R[i] = 0.47 + (rnd() - 0.5) * 0.16;
   for(let k = 0; k < 5200; k++) dot(R, rnd() * N | 0, rnd() * N | 0, 1 + (rnd() * 2.2 | 0), rnd() < 0.55 ? 0.66 + rnd() * 0.2 : 0.3 + rnd() * 0.12, true);
   for(let k = 0; k < 3; k++){ let x = rnd() * N, y = rnd() * N, a = rnd() * 6.28; for(let t = 0; t < 60; t++){ a += (rnd() - 0.5) * 0.7; x += Math.cos(a) * 2; y += Math.sin(a) * 2; const i = ((y | 0) % N + N) % N * N + ((x | 0) % N + N) % N; R[i] = R[i] * 0.5 + 0.17; } }
-  // コンクリート平板: 1.5m 角（256 画素）の 4 枚。目地は暗く、板ごとに明るさを少し変え、細かい粒とシミ
-  for(let y = 0; y < N; y++) for(let x = 0; x < N; x++){ const sx = x >> 8, sy = y >> 8, sv = [0.53, 0.49, 0.47, 0.55][sy * 2 + sx]; G[y * N + x] = sv + (rnd() - 0.5) * 0.09; }
-  for(let k = 0; k < 2600; k++) dot(G, rnd() * N | 0, rnd() * N | 0, 1 + (rnd() * 1.5 | 0), 0.38 + rnd() * 0.22, true);
-  for(let k = 0; k < 30; k++) dot(G, rnd() * N | 0, rnd() * N | 0, 6 + (rnd() * 16 | 0), 0.42 + rnd() * 0.06, true);
-  for(let y = 0; y < N; y++) for(let x = 0; x < N; x++){ const jx = Math.min(x % 256, 256 - x % 256), jy = Math.min(y % 256, 256 - y % 256), j = Math.min(jx, jy);
-    if(j < 3) G[y * N + x] = 0.2 + j * 0.08; else if(j < 5) G[y * N + x] *= 1.06; }
+  // コンクリート: 打ちっぱなしの面（細かい粒・シミ・こて跡のむら）と、3m ごとの細い伸縮目地（繰り返しの縁だけ）
+  for(let y = 0; y < N; y++) for(let x = 0; x < N; x++) G[y * N + x] = 0.5 + (rnd() - 0.5) * 0.08;
+  for(let k = 0; k < 3000; k++) dot(G, rnd() * N | 0, rnd() * N | 0, 1 + (rnd() * 1.5 | 0), 0.40 + rnd() * 0.2, true);
+  for(let k = 0; k < 40; k++) dot(G, rnd() * N | 0, rnd() * N | 0, 8 + (rnd() * 22 | 0), 0.44 + rnd() * 0.08, true);
+  for(let y = 0; y < N; y++) for(let x = 0; x < N; x++){ const j = Math.min(x, N - 1 - x, y, N - 1 - y); if(j < 1) G[y * N + x] = 0.3; else if(j < 2) G[y * N + x] = 0.42; }
   // 草: 細い葉の筋（明暗）をたくさん＋株のかたまり
   for(let i = 0; i < N * N; i++) B[i] = 0.40 + (rnd() - 0.5) * 0.12;
   for(let k = 0; k < 160; k++) dot(B, rnd() * N | 0, rnd() * N | 0, 8 + (rnd() * 22 | 0), 0.30 + rnd() * 0.3, true);
@@ -335,7 +334,11 @@ function groundDetail(m){
                     + wC * (0.5 + (D.g - 0.5) * 1.0)
                     + wG * (0.5 + (D.b - 0.42) * 1.05 + (D2.b - 0.42) * 0.45)
                     + wS * soil;
-          vec3 tone = mix(mac, photo, 0.28);                                // 写真の細かな模様は少しだけ残す
+          vec3 tone = mix(mac, photo, 0.28 * (1.0 - 0.7 * wC));                 // 写真の細かな模様は少しだけ残す（明るい舗装は車の影などのにじみを消す）
+          tone = mix(tone, texture2D(map, vUv, 5.0).rgb, 0.5 * wC);
+          // 航空写真に写り込んだ建物の影・車の列などの大きなむら（10〜30m）を 8 割ならす（明るさだけ。色合いはそのまま）
+          { vec3 big = texture2D(map, vUv, 6.5).rgb; float lt = dot(tone, vec3(0.299, 0.587, 0.114)), lb = dot(big, vec3(0.299, 0.587, 0.114));
+            tone *= clamp(pow(max(lb, 0.02) / max(lt, 0.02), 0.8), 0.5, 2.0); }
           vec3 nearC = tone * (0.08 + 1.84 * det);
           diffuseColor.rgb = mix(photo, nearC, fade * 0.92);
         } }
