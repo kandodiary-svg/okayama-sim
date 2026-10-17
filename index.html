@@ -10201,6 +10201,11 @@ const NaviMap = (() => {
           const ux = (x1 - x0) / L, uy = (y1 - y0) / L; let t = acc2; while(t < L){ const cx = x0 + ux * t, cy = y0 + uy * t; g.beginPath(); g.moveTo(cx - ux * sz2 * 1.4 - uy * sz2, cy - uy * sz2 * 1.4 + ux * sz2); g.lineTo(cx + ux * sz2 * 0.5, cy + uy * sz2 * 0.5); g.lineTo(cx - ux * sz2 * 1.4 + uy * sz2, cy - uy * sz2 * 1.4 - ux * sz2); g.stroke(); t += gap; } acc2 = t - L; }
         const np = Nav.nextPoint(); if(np && np.type !== "arrive"){ g.beginPath(); g.arc((np.x - p.x) / mpp, (np.z - p.z) / mpp, 7.5 / k, 0, 7); g.fillStyle = "#fff"; g.fill(); g.lineWidth = 3 / k; g.strokeStyle = "#e8532b"; g.stroke(); } } }
     g.restore();
+    // v42: まだ押していないスタンプ（岡山めぐり）の場所。地図の円の中にあるものだけ、小さな赤い丸（寄り道の目安）
+    try { const ca = Math.cos(a), sa = Math.sin(a);
+      for(const q of Stamps.uncollected()){ const sx = (q.x - p.x) / mpp * k, sz = (q.z - p.z) / mpp * k, X = sx * ca - sz * sa, Y = sx * sa + sz * ca; if(Math.hypot(X, Y) > R - 16) continue;
+        g.save(); g.translate(R + X, R + Y); g.beginPath(); g.arc(0, 0, 12, 0, 7); g.fillStyle = "rgba(255,255,255,.95)"; g.fill(); g.lineWidth = 3; g.strokeStyle = "#e0634c"; g.stroke();
+        g.fillStyle = "#e0634c"; g.font = "bold 15px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("岡", 0, 1); g.restore(); } } catch(e){}
     // v41.7: ミッションの目的地（円の外ならふちに三角で方向を示す）
     const nt = S.mode === "car" && Nav.target && Nav.src === "user" ? [{ x: Nav.target.x, z: Nav.target.z, kind: "nav" }] : [];
     for(const q of Quest.mapPts().concat(nt, Taxi.mapPts())){
@@ -10434,6 +10439,21 @@ const Quest = (() => {
   const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
   function boxM(w, h, d, x, y, z, c, parent){ const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lam(c)); m.position.set(x, y, z); parent.add(m); return m; }
   function planeM(w, d, x, y, z, c, parent){ const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshLambertMaterial({ color: c, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); parent.add(m); return m; }
+  // v42: 駐車場・配送センターの舗装は、色だけの板でなくアスファルトの質感（4m で繰り返し）。夜は街灯の光だまりも拾う
+  function paveM(w, d, x, y, z, c, parent){ const t = TEX.asphalt.clone(); t.needsUpdate = true; t.repeat.set(w / 4, d / 4);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), NightL.patch(new THREE.MeshLambertMaterial({ color: c, map: t, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }))); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; parent.add(m); return m; }
+  // v42: 停まっている車は、走っている車と同じ形（vehicles.js）。以前は箱を 3 つ重ねた形だった
+  const PARK_T = ["sedan", "sedan", "kei", "kei2", "minivan", "suv", "van"], PARK_C = ["#f2f2f0", "#e9e7e1", "#c9ccd0", "#1c1d20", "#6b6f75", "#8a1d1d", "#1f3f78", "#dfd6c0", "#9fb7c9"];
+  let parkMat = null;
+  function parkedCars(list, parent){
+    if(!list.length) return; if(!parkMat) parkMat = Veh.makeMat();
+    const byT = {}; for(const c of list) (byT[c.t] = byT[c.t] || []).push(c);
+    const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), pv = new THREE.Vector3(), col = new THREE.Color();
+    for(const t in byT){ const L = byT[t], g = Veh.ai(t, 1); g.setAttribute("aBrake", new THREE.InstancedBufferAttribute(new Float32Array(L.length), 1));
+      const im = new THREE.InstancedMesh(g, parkMat, L.length); im.castShadow = true;
+      L.forEach((c, i) => { q.setFromAxisAngle(up, c.yaw); pv.set(c.x, 0, c.z); m4.compose(pv, q, one); im.setMatrixAt(i, m4); im.setColorAt(i, col.set(c.c)); });
+      parent.add(im); }
+  }
   function blockRect(cx, cz, ux, uz, hw, hd){   // 長方形（中心・奥行き方向・半幅・半奥行き）の範囲を、自分の車が通れない壁にする
     const vx = -uz, vz = ux;
     for(let a = -hw; a <= hw + 0.01; a += 1.8) for(let b = -hd; b <= hd + 0.01; b += 1.8){ const x = cx + vx * a + ux * b, z = cz + vz * a + uz * b; Car.addBlock(x, z, 1); fac.blocks.push([x, z]); }
@@ -10451,7 +10471,7 @@ const Quest = (() => {
     const g = new THREE.Group(), y = dep.y + 0.03, yaw = Math.atan2(dep.ux, dep.uz);
     g.position.set(dep.bx, y, dep.bz); g.rotation.y = yaw;
     // 路面（アスファルト）と積み込み場所の枠
-    planeM(22, 15, 0, 0.02, -11.5, 0x5a5e63, g); planeM(9, 0.25, 0, 0.04, -7.2, 0xf1d54a, g); planeM(9, 0.25, 0, 0.04, -15.8, 0xf1d54a, g);
+    paveM(22, 15, 0, 0.02, -11.5, 0x8c9096, g); planeM(9, 0.25, 0, 0.04, -7.2, 0xf1d54a, g); planeM(9, 0.25, 0, 0.04, -15.8, 0xf1d54a, g);
     planeM(0.25, 8.6, -4.5, 0.04, -11.5, 0xf1d54a, g); planeM(0.25, 8.6, 4.5, 0.04, -11.5, 0xf1d54a, g);
     // 倉庫（幅 16m・奥行き 8m・高さ 6m。手前の面に出入口 3 つ・看板）
     boxM(16, 6, 8, 0, 3, 0, 0xdfe3e6, g); boxM(16.6, 0.4, 8.6, 0, 6.2, 0, 0x7d858c, g); boxM(16.05, 1.1, 8.05, 0, 0.55, 0, 0x4a5560, g);
@@ -10471,18 +10491,21 @@ const Quest = (() => {
     // 駐車場: 路面・P の標識・（広ければ）左右に駐車枠と停まっている車。中央 6.4m は出ていく通路として空ける。+z が門（道路）の方向
     const g = new THREE.Group(), y = p.y + 0.03, yaw = p.yaw * Math.PI / 180, W = Math.min(2 * p.r * 0.95, 24), D = Math.min(2 * p.r * 0.95, 16);
     g.position.set(p.x, y, p.z); g.rotation.y = yaw;
-    planeM(W, D, 0, 0.02, 0, 0x585c61, g);
+    paveM(W, D, 0, 0.02, 0, 0x8a8e94, g);
     const Ls = W / 2 - 3.2, nSl = Math.floor((D - 1) / 2.9), z0 = -((nSl - 1) * 2.9) / 2;
     if(Ls >= 4.6 && nSl >= 2){
-      const cols = [0xe8e8e6, 0x2a2e36, 0x9aa3ad, 0xb23a3a, 0x31527a, 0xd9d3c4, 0x6d7f5a];
-      const cy = Math.cos(yaw), sy = Math.sin(yaw);
+      const cy = Math.cos(yaw), sy = Math.sin(yaw), park = [];
       for(const sx of [-1, 1]){
-        for(let k = 0; k <= nSl; k++) planeM(Ls, 0.1, sx * (3.2 + Ls / 2), 0.045, z0 + (k - 0.5) * 2.9, 0xffffff, g);     // 区切りの白線（横）
-        for(let k = 0; k < nSl; k++){ if(Math.random() < 0.4) continue;
-          const lx = sx * (3.2 + Ls / 2), lz = z0 + k * 2.9, cg = new THREE.Group(), c = cols[Math.floor(Math.random() * cols.length)];
-          boxM(4.2, 0.7, 1.7, 0, 0.62, 0, c, cg); boxM(2.3, 0.55, 1.55, -0.2 * sx, 1.2, 0, 0x1d2630, cg); boxM(2.0, 0.12, 1.5, -0.2 * sx, 1.52, 0, c, cg);
-          cg.position.set(lx, 0, lz); g.add(cg);
+        for(let k = 0; k <= nSl; k++) planeM(Ls, 0.12, sx * (3.2 + Ls / 2), 0.045, z0 + (k - 0.5) * 2.9, 0xf4f4f0, g);     // 区切りの白線（横）
+        planeM(0.12, nSl * 2.9, sx * 3.2, 0.045, 0, 0xf4f4f0, g);                 // 通路側の白線（縦）
+        for(let k = 0; k < nSl; k++){
+          const lz = z0 + k * 2.9;
+          boxM(0.16, 0.12, 1.5, sx * (3.2 + Ls - 0.75), 0.06, lz, 0xb9b6ae, g);                                              // 車止め
+          if(Math.random() < 0.4) continue;
+          const lx = sx * (3.2 + Ls / 2 + 0.2);
+          park.push({ t: PARK_T[Math.floor(Math.random() * PARK_T.length)], x: lx, z: lz, yaw: -sx * Math.PI / 2 + (Math.random() - 0.5) * 0.06, c: PARK_C[Math.floor(Math.random() * PARK_C.length)] });
           const wx = p.x + cy * lx + sy * lz, wz = p.z - sy * lx + cy * lz; Car.addBlock(wx, wz, 1); fac.blocks.push([wx, wz]); } }
+      parkedCars(park, g);
     }
     boxM(0.1, 2.6, 0.1, W / 2 - 0.4, 1.3, D / 2 - 0.4, 0x6d7076, g);
     const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.9), new THREE.MeshBasicMaterial({ map: signTex("P", "#1858b8", "#ffffff", 128, 128), side: THREE.DoubleSide })); pl.position.set(W / 2 - 0.4, 2.6, D / 2 - 0.4); g.add(pl);
