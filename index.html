@@ -2383,11 +2383,35 @@ scene.background = SKY_L.clone();
 scene.fog = new THREE.Fog(0xd6dfe2, 280, 1700);
 const FOG_BASE = { near:280, far:1700 };   // v17: ヘリで高く上がると霧を遠ざける
 const camera = new THREE.PerspectiveCamera(56, innerWidth/innerHeight, 0.3, 3500);
+/* v42: 空に太陽（夜は月）の光と、ゆっくり流れる雲。雲の量は天気（雨は一面の雲）、色は時間帯で変える */
+const SKY_U = { uSun: { value: new THREE.Vector3(-0.45, 0.82, 0.38).normalize() }, uSunC: { value: new THREE.Color(0xfff0d8) }, uCloud: { value: 0.4 }, uCloudC: { value: new THREE.Color(0xf6f7f8) }, uCloudS: { value: new THREE.Color(0xb4bcc8) }, uT: { value: 0 }, uStar: { value: 0 } };
 (function(){
-  const g = new THREE.SphereGeometry(3000, 24, 12), cols=[], p=g.attributes.position;
+  const g = new THREE.SphereGeometry(3000, 48, 24), cols=[], p=g.attributes.position;
   for(let i=0;i<p.count;i++){ const t=Math.max(0,p.getY(i)/3000); const c=SKY_L.clone().lerp(SKY_H,Math.pow(t,0.55)); cols.push(c.r,c.g,c.b); }
   g.setAttribute("color", new THREE.Float32BufferAttribute(cols,3));
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({vertexColors:true, side:THREE.BackSide, fog:false, depthWrite:false}));
+  const mt = new THREE.MeshBasicMaterial({vertexColors:true, side:THREE.BackSide, fog:false, depthWrite:false});
+  mt.customProgramCacheKey = () => "sky42";
+  mt.onBeforeCompile = (sh) => {
+    for(const k in SKY_U) sh.uniforms[k] = SKY_U[k];
+    sh.vertexShader = "varying vec3 vSD;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n vSD = position;");
+    sh.fragmentShader = `uniform vec3 uSun; uniform vec3 uSunC; uniform float uCloud; uniform vec3 uCloudC; uniform vec3 uCloudS; uniform float uT; uniform float uStar; varying vec3 vSD;
+      float skH(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+      float skN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(skH(i), skH(i + vec2(1,0)), f.x), mix(skH(i + vec2(0,1)), skH(i + vec2(1,1)), f.x), f.y); }
+      float skF(vec2 p){ float a = 0.5, s = 0.0; for(int i = 0; i < 5; i++){ s += a * skN(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return s; }
+      ` + sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
+      { vec3 d = normalize(vSD); float sd = max(dot(d, normalize(uSun)), 0.0);
+        if(d.y > -0.02){
+          vec2 cp = d.xz / (d.y + 0.10) * 1.35 + vec2(uT * 0.0045, uT * 0.0017);
+          float n = skF(cp), nl = skF(cp + normalize(uSun).xz * 0.18);
+          float cov = smoothstep(1.0 - uCloud, 1.0 - uCloud + 0.30, n) * smoothstep(-0.02, 0.16, d.y);
+          vec3 cc = mix(uCloudS, uCloudC, clamp(0.55 + (n - nl) * 3.0, 0.0, 1.0)) + uSunC * pow(sd, 6.0) * 0.25;
+          diffuseColor.rgb = mix(diffuseColor.rgb, cc, cov * 0.93);
+          // 夜の星（雲のない所）
+          if(uStar > 0.01){ vec2 sg = floor(d.xz / (d.y + 0.25) * 260.0); float h = skH(sg); diffuseColor.rgb += vec3(0.85, 0.9, 1.0) * step(0.9965, h) * uStar * (1.0 - cov) * smoothstep(0.05, 0.3, d.y); }
+          diffuseColor.rgb += uSunC * (smoothstep(0.9993, 0.9997, sd) * 1.4 * (1.0 - cov * 0.85) + pow(sd, 14.0) * 0.16 * (1.0 - cov * 0.6));
+        } }`);
+  };
+  const m = new THREE.Mesh(g, mt);
   m.name="sky"; m.renderOrder=-1; scene.add(m);
 })();
 const hemi = new THREE.HemisphereLight(0xeef2f5, 0x5d574b, 0.80); scene.add(hemi);
@@ -2686,14 +2710,14 @@ const OrthoPages = (() => {
     m.customProgramCacheKey = () => "ovT_" + kind;
     m.onBeforeCompile = (sh) => { sh.uniforms.uOvT = { value:T };
       sh.vertexShader = "uniform vec4 uOvT;\n" + sh.vertexShader.replace("#include <uv_vertex>", "#ifdef USE_UV\n vUv = uv * uOvT.xy + uOvT.zw;\n#endif"); };
-    if(kind === "roof") Env.patch(m, "ortho"); else groundDetail(m);
+    if(kind === "roof") Env.patch(m, "ortho"); else NightL.patch(groundDetail(m));
     omats.set(key, m); return m;
   }
   function pageMat(p, kind){
     const key = kind + p; if(pmats.has(key)) return pmats.get(key);
     const t = tex[p];
     const m = kind === "roof" ? new THREE.MeshLambertMaterial({ map:t, emissive:0x1c1c1c, emissiveMap:t }) : new THREE.MeshLambertMaterial({ map:t });
-    if(kind === "roof") Env.patch(m, "ortho"); else groundDetail(m);
+    if(kind === "roof") Env.patch(m, "ortho"); else NightL.patch(groundDetail(m));
     pmats.set(key, m); return m;
   }
   function mat(p, kind){ return tex[p] ? pageMat(p, kind) : ovMat(p, kind); }
@@ -2869,6 +2893,49 @@ function loadTex(fn){
 /* ---------------- 時間帯・天気（v16） ----------------
    朝（7時・東から低い日差し）/ 昼 / 夕方（17時半・西日）/ 夜（街灯・窓明かり・前照灯）。天気は 晴れ / 雨（雨筋・路面が濡れて暗く・霧が近い）。
    建物の窓明かりは、写真の外壁でも壁面を 2.6m×3.2m の格子に分けて乱数で一部を灯す（窓の位置は実際とは一致しない）。 */
+/* ---------------- v42: 夜の路面の明かり ----------------
+   街灯は光の粒（点）だけで、路面は真っ暗だった。カメラの周り 1.6km 四方の「光だまりの地図」（街灯ごとに半径約 16m のにじみ、
+   LED の白と水銀・ナトリウム灯の橙）を描き、路面・歩道・地面の材質が夜だけそれを拾って明るくなる（地図は 250m 動くごとに描き直す）。
+   自分の車の前照灯も、頂点ごとの照明（Lambert）ではまだらになるので、画素ごとに円すいの光として足す */
+const NightL = (() => {
+  const N = 1024, SPAN = 1600, cv = document.createElement("canvas"); cv.width = cv.height = N; const g = cv.getContext("2d");
+  g.fillStyle = "#000"; g.fillRect(0, 0, N, N);
+  const tex = new THREE.CanvasTexture(cv); tex.flipY = false; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  const U = { uNL: { value: tex }, uNLR: { value: new THREE.Vector3(-1e6, -1e6, SPAN) }, uNK: { value: 0 }, uHP: { value: new THREE.Vector3() }, uHD: { value: new THREE.Vector3(0, 0, 1) }, uHK: { value: 0 } };
+  const sprite = (r, gg, b) => { const c = document.createElement("canvas"); c.width = c.height = 64; const x = c.getContext("2d"), gr = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${r},${gg},${b},0.46)`); gr.addColorStop(0.35, `rgba(${r},${gg},${b},0.25)`); gr.addColorStop(0.7, `rgba(${r},${gg},${b},0.07)`); gr.addColorStop(1, `rgba(${r},${gg},${b},0)`); x.fillStyle = gr; x.fillRect(0, 0, 64, 64); return c; };
+  const SPR = [sprite(250, 246, 236), sprite(255, 206, 150)];
+  let pts = null, warm = null, cx = 1e9, cz = 1e9;
+  function setLamps(p, c){ pts = p; warm = new Uint8Array(p.length / 3); for(let i = 0; i < warm.length; i++) warm[i] = c[i * 3 + 2] < 0.7 ? 1 : 0; cx = 1e9; }
+  function redraw(x, z){
+    cx = Math.round(x / 200) * 200; cz = Math.round(z / 200) * 200; const x0 = cx - SPAN / 2, z0 = cz - SPAN / 2, k = N / SPAN, r = 17 * k;
+    U.uNLR.value.set(x0, z0, SPAN);
+    g.globalCompositeOperation = "source-over"; g.fillStyle = "#000"; g.fillRect(0, 0, N, N); g.globalCompositeOperation = "lighter";
+    for(let i = 0, n = pts.length / 3; i < n; i++){ const px = (pts[i * 3] - x0) * k, pz = (pts[i * 3 + 2] - z0) * k; if(px < -r || pz < -r || px > N + r || pz > N + r) continue; g.drawImage(SPR[warm[i]], px - r, pz - r, 2 * r, 2 * r); }
+    g.globalCompositeOperation = "source-over"; tex.needsUpdate = true;
+  }
+  function tick(night){ U.uNK.value = night; if(night < 0.05 || !pts) return; const c = camera.position; if(Math.abs(c.x - cx) > 250 || Math.abs(c.z - cz) > 250) redraw(c.x, c.z); }
+  function head(on, px, py, pz, tx, ty, tz){ U.uHK.value = on; if(!on) return; U.uHP.value.set(px, py, pz); U.uHD.value.set(tx - px, ty - py, tz - pz).normalize(); }
+  function patch(m){
+    const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
+    m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|nl42";
+    m.onBeforeCompile = (sh, r) => {
+      if(prev) prev(sh, r);
+      for(const k in U) sh.uniforms[k] = U[k];
+      sh.vertexShader = "varying vec3 vNW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vNW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+      sh.fragmentShader = "uniform sampler2D uNL; uniform vec3 uNLR; uniform float uNK; uniform vec3 uHP; uniform vec3 uHD; uniform float uHK; varying vec3 vNW;\n" + sh.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+        if(uNK > 0.01 || uHK > 0.01){
+          vec2 q = (vNW.xz - uNLR.xy) / uNLR.z; vec3 nl = vec3(0.0);
+          if(uNK > 0.01 && q.x > 0.0 && q.x < 1.0 && q.y > 0.0 && q.y < 1.0) nl = min(texture2D(uNL, q).rgb * 1.25, vec3(0.85)) * uNK;
+          vec3 Lh = vNW - uHP; float dh = length(Lh);
+          float sp = uHK * smoothstep(0.80, 0.95, dot(Lh / max(dh, 0.01), uHD)) * smoothstep(1.5, 6.0, dh) / (1.0 + 0.0014 * dh * dh);
+          totalEmissiveRadiance += diffuseColor.rgb * (nl + vec3(1.0, 0.95, 0.84) * sp * 2.4);
+        }`);
+    };
+    m.needsUpdate = true; return m;
+  }
+  return { setLamps, tick, head, patch, U };
+})();
 const Env = (() => {
   const P = {
     morning: { sun:[0.78,0.32,0.30], sunC:0xffd9a8, sunI:0.78, hemi:[0xf4ead8,0x5b5448,0.72], skyL:0xf1e3cf, skyH:0x9dbad6, fog:0xe6ddd0, near:260, far:1600, exp:1.0, night:0 },
@@ -2981,6 +3048,7 @@ const Env = (() => {
     }
     const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(cols, 3));
     const tex = canvasTex(64,64,(c,w,h)=>{ const gr=c.createRadialGradient(32,32,0,32,32,32); gr.addColorStop(0,"rgba(255,255,255,1)"); gr.addColorStop(0.07,"rgba(255,255,255,0.95)"); gr.addColorStop(0.16,"rgba(255,255,255,0.32)"); gr.addColorStop(0.4,"rgba(255,255,255,0.07)"); gr.addColorStop(1,"rgba(255,255,255,0)"); c.fillStyle=gr; c.fillRect(0,0,w,h); });
+    NightL.setLamps(pts, cols);   // v42: 路面の光だまり
     lamps = new THREE.Points(g, new THREE.PointsMaterial({ map:tex, size:4.6, sizeAttenuation:true, vertexColors:true, transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, fog:true }));
     lamps.name="streetlamps"; scene.add(lamps);
   }
@@ -3003,6 +3071,10 @@ const Env = (() => {
     scene.fog.color.copy(fogC); scene.fog.near = wet ? p.near*0.45 : p.near; scene.fog.far = wet ? p.far*0.55 : p.far; scene.background.copy(fogC);
     FOG_BASE.near = scene.fog.near; FOG_BASE.far = scene.fog.far;
     FACADE_UNIFORMS.uSkyTop.value.copy(H); FACADE_UNIFORMS.uSkyHor.value.copy(L);
+    { const CL = { morning: [0xfbeee2, 0xa9a9b6], noon: [0xf7f8fa, 0xb3bcc9], evening: [0xffc89a, 0x6e5a66], night: [0x2a3242, 0x0d1118] }[st.time] || [0xf7f8fa, 0xb3bcc9];   // v42: 雲
+      SKY_U.uSun.value.copy(SUN_DIR); SKY_U.uSunC.value.setHex(p.sunC); if(p.night > 0.5) SKY_U.uSunC.value.multiplyScalar(0.55);
+      SKY_U.uCloudC.value.setHex(CL[0]); SKY_U.uCloudS.value.setHex(CL[1]); SKY_U.uCloud.value = wet ? 0.95 : (st.time === "evening" ? 0.5 : 0.46); SKY_U.uStar.value = wet ? 0 : (p.night > 0.5 ? 1 : 0);
+      if(wet){ SKY_U.uCloudC.value.lerp(new THREE.Color(p.night > 0.5 ? 0x161a22 : 0xa4abb3), 0.6); SKY_U.uCloudS.value.lerp(new THREE.Color(p.night > 0.5 ? 0x0b0d12 : 0x7c838c), 0.6); } }
     NIGHT_U.value = p.night; Veh.setNight(p.night); Veh.setRain(wet);   // v41.14: 雨の日は車の窓に水滴・ワイパー
     for(const [k, m] of Object.entries(MATS)){ const kind = k.replace(/_\d+$/,""); apply1(m, kind); }
     buildLamps(); if(lamps){ lamps.visible = p.night > 0.3; lamps.material.opacity = p.night; }
@@ -3015,6 +3087,9 @@ const Env = (() => {
   }
   const _v = new THREE.Vector3(), _f = new THREE.Vector3();
   function tick(dt){
+    SKY_U.uT.value = performance.now() / 1000;
+    NightL.tick(P[st.time].night);
+    if(head && head.intensity > 0) NightL.head(1, head.position.x, head.position.y, head.position.z, head.target.position.x, head.target.position.y, head.target.position.z); else NightL.head(0);
     if(rain && rain.visible){ rain.position.copy(camera.position); rain.position.y = camera.position.y - 20 - ((performance.now()/1000*22) % 20); }
     if(head && head.intensity > 0){
       // 前照灯: 車・バスは車体の前、電車は運転台の前
@@ -4003,10 +4078,10 @@ function mat(c, atlas, ortho){
   switch(c.mat){
     case "tex": m = new THREE.MeshLambertMaterial({map:atlas[c.page], emissive:0x161616, emissiveMap:atlas[c.page]}); sharpFacade(m, true); break;
     case "texhi": m = new THREE.MeshLambertMaterial({map:atlas[c.page], emissive:0x161616, emissiveMap:atlas[c.page]}); sharpFacade(m, false); break;
-    case "ortho": m = new THREE.MeshLambertMaterial({map:ortho[c.page], emissive:0x1c1c1c, emissiveMap:ortho[c.page]}); groundDetail(m); break;
+    case "ortho": m = new THREE.MeshLambertMaterial({map:ortho[c.page], emissive:0x1c1c1c, emissiveMap:ortho[c.page]}); groundDetail(m); NightL.patch(m); break;
     case "asphalt": case "paving": case "island": case "grass": case "trackbed":
-      m = new THREE.MeshLambertMaterial({map:TEX[c.mat], vertexColors:true}); break;
-    case "paint": m = new THREE.MeshLambertMaterial({vertexColors:true, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-8}); break;
+      m = NightL.patch(new THREE.MeshLambertMaterial({map:TEX[c.mat], vertexColors:true})); break;
+    case "paint": m = NightL.patch(new THREE.MeshLambertMaterial({vertexColors:true, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-8})); break;
     case "rail": m = new THREE.MeshPhongMaterial({vertexColors:true, shininess:60, specular:0x666666, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-6}); break;
     case "fence": m = new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}); break;
     case "leaf": m = leafShader(new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide})); break;
