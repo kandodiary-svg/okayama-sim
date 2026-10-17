@@ -119,13 +119,18 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 #car-gr.on{ background:#4a1d16; color:#ffb4a4; border-color:#d6543f; }
 .gearlbl{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:3px; background:#3a2f18; color:var(--amber); font-weight:700; }
 .gearlbl.rev{ background:#4a1d16; color:#ffb4a4; }
-.car-msg{ position:absolute; left:50%; transform:translateX(-50%); top:80px; color:#ffd9a0; font-size:13px; text-shadow:0 1px 3px #000; pointer-events:none; }
+.car-msg{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(104px + env(safe-area-inset-bottom,0px)); max-width:min(560px, calc(100% - 32px)); color:#ffe2b0; font-size:13.5px; line-height:1.55; text-align:center; pointer-events:none;
+  background:rgba(20,17,12,.78); border:1px solid rgba(255,214,150,.18); border-radius:8px; padding:6px 14px; }
+.car-msg:empty{ display:none; }   /* v42: 文字だけだと景色に溶けて読めない・上の場所の表示やナビと重なっていたので、帯にして速度計の上へ */
 /* ヘリ（v17） */
 .hmeter{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:flex; gap:14px; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:8px 14px; }
 .hmeter > div{ display:flex; flex-direction:column; align-items:center; min-width:52px; }
 .hmeter b{ font-size:24px; line-height:1.05; font-variant-numeric:tabular-nums; color:var(--cream); } .hmeter b.sm{ font-size:15px; line-height:1.6; }
 .hmeter small{ font-size:10.5px; color:#a99f88; }
 .hpad{ position:absolute; bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:grid; gap:6px; }
+/* v42: 画面のハンドル・ペダル・ギア・ヘリの操作ボタンはタッチ用。マウスとキーボードの PC では隠す（画面に触れたら出す）。表示設定で「常に出す／出さない」 */
+body.ctl-auto:not(.touchui) #car-wheel, body.ctl-auto:not(.touchui) .pedals, body.ctl-auto:not(.touchui) .hpad,
+body.ctl-hide #car-wheel, body.ctl-hide .pedals, body.ctl-hide .hpad{ display:none !important; }
 .hpad button{ border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.88); color:var(--cream); font-family:inherit; font-size:16px; touch-action:none; user-select:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; }
 .hpad button small{ font-size:9.5px; color:#a99f88; }
 .hpad button.on{ background:#3a2f18; border-color:var(--amber); color:var(--amber); }
@@ -133,7 +138,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .hpad.left .up{ grid-column:2; grid-row:1; } .hpad.left .lf{ grid-column:1; grid-row:2; } .hpad.left .dn{ grid-column:2; grid-row:2; } .hpad.left .rt{ grid-column:3; grid-row:2; }
 .hpad.right{ right:18px; grid-template-columns:64px; grid-template-rows:52px 34px 52px; font-weight:700; }
 .hpad.right .fast{ font-size:12px; }
-#heli-msg{ top:104px; }
+#heli-msg{ top:auto; }   /* v42: 速度・高度の表示の上（車と同じ位置） */
 #heli-auto{ width:auto; padding:0 10px; white-space:nowrap; }
 #heli-auto.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
 @media (max-width:640px){ .hmeter{ gap:8px; padding:6px 8px; bottom:calc(142px + env(safe-area-inset-bottom,0px)); } .hmeter b{ font-size:18px; } .hmeter > div{ min-width:40px; } }
@@ -345,9 +350,10 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .qtoast.on{ opacity:1; transform:translate(-50%,0); } .qtoast.good{ border-color:#7dff9a; color:#c9ffd6; } .qtoast.bad{ border-color:#ff8a5c; color:#ffd0bd; } .qtoast.load{ border-color:#35d0ff; color:#c9f2ff; }
 /* v41.15: 岡山めぐり（スタンプ）・お客さんの会話 */
 .iconbtn.stbtn{ width:auto; padding:0 11px; font-size:12.5px; white-space:nowrap; } .iconbtn.stbtn small{ opacity:.55; margin-left:5px; font-size:10.5px; }
-.stpop{ position:fixed; z-index:14; left:50%; top:36%; transform:translate(-50%,-14px) scale(.96); width:min(440px, calc(100% - 24px)); display:flex; gap:16px; align-items:center; padding:14px 20px 14px 16px; border-radius:10px;
+.stpop{ position:fixed; z-index:14; left:50%; top:calc(96px + env(safe-area-inset-top,0px)); transform:translate(-50%,-14px) scale(.96); width:min(400px, calc(100% - 24px)); display:flex; gap:16px; align-items:center; padding:14px 20px 14px 16px; border-radius:10px;
   background:rgba(20,17,12,.95); border:1px solid var(--brass); box-shadow:0 18px 50px rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .3s, transform .3s; }
 .stpop.on{ opacity:1; transform:translate(-50%,0) scale(1); }
+body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 道の真ん中（画面の中央）をふさがないよう上へ。ナビの案内が出ている時はその下 */
 .stpop-mark{ flex:0 0 auto; width:66px; height:66px; border-radius:50%; display:grid; place-items:center; color:#e0634c; font-size:32px; font-weight:900; font-family:'Zen Kaku Gothic New','Hiragino Sans',sans-serif;
   border:3px solid #e0634c; box-shadow:inset 0 0 0 3px rgba(20,17,12,.95), inset 0 0 0 5px #e0634c; transform:rotate(-9deg); }
 .stpop.on .stpop-mark{ animation:stpIn .5s cubic-bezier(.2,1.5,.4,1) both; }
@@ -522,6 +528,15 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .mn-links{ display:flex; gap:18px; }
 #menu .mdet{ font-size:13px; } #menu .mdet summary{ padding:4px 0; cursor:pointer; list-style:none; color:var(--navy-sub); text-decoration:underline; text-decoration-style:dotted; text-underline-offset:4px; }
 #menu .mdet summary::-webkit-details-marker{ display:none; } #menu .mdet[open] summary, #menu .mdet summary:hover{ color:var(--navy-ink); }
+/* v42: 運転手帳（経験値・レベル・今日の挑戦・記録） */
+.cr-lv{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; } .cr-lv b{ font-size:22px; } .cr-lv span{ font-weight:700; color:#b5541f; }
+.cr-bar{ height:8px; background:rgba(128,128,128,.25); border-radius:4px; overflow:hidden; margin:6px 0 4px; } .cr-bar i{ display:block; height:100%; background:linear-gradient(90deg,#d9822b,#e8b04a); border-radius:4px; }
+.cr-daily{ margin:10px 0; padding:10px 12px; border:1.5px dashed #c98a3a; border-radius:10px; } .cr-daily.done{ border-style:solid; border-color:#4f8a4a; }
+.cr-daily b{ display:block; } .cr-daily small{ display:block; opacity:.8; line-height:1.6; }
+.cr-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:6px 14px; margin:8px 0; } .cr-grid div{ font-size:12.5px; } .cr-grid b{ display:block; font-size:17px; }
+.cr-rec{ width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px; } .cr-rec td{ padding:4px 6px; border-bottom:1px solid rgba(128,128,128,.22); } .cr-rec td:nth-child(n+2){ text-align:right; white-space:nowrap; }
+.qf-xp{ margin:8px 0 2px; font-size:13px; line-height:1.6; } .qf-xp b{ color:var(--amber); font-size:15px; } .qf-xp .cr-bar{ margin:5px 0 0; } .qf-xp.up b.lvup{ color:#7fd17a; }
+.quest-opt .qdaily{ position:absolute; top:-9px; right:10px; font-size:10.5px; font-weight:800; padding:1px 8px; border-radius:999px; background:#d9822b; color:#fff; }
 #menu .mdet-body{ position:absolute; left:0; bottom:calc(100% + 16px); width:min(780px,92vw); max-height:52vh; overflow:auto; padding:16px 20px; border-radius:12px; background:var(--paper); color:var(--ink); font-size:13px; line-height:1.85; box-shadow:0 18px 50px rgba(0,0,0,.5); z-index:5; }
 #menu #records{ flex:1 1 260px; margin:0; font-size:12.5px; line-height:1.5; color:var(--navy-sub); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 #menu .mn-foot .loadbar{ position:absolute; left:0; right:0; top:0; height:3px; margin:0; border-radius:0; background:rgba(255,255,255,.08); }
@@ -721,9 +736,11 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
             <button type="button" class="rain-opt">天気: 晴れ</button>
           </div></div>
           <details class="dset"><summary>表示設定</summary><div class="dset-pop"><span class="ml">PC の性能に合わせて切り替えられます</span>
-            <button type="button" class="look-opt on" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写</button>
-            <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁で描く簡略表示（軽い）。色は写真から推定">建物: 簡略（軽い）</button>
+            <button type="button" class="look-opt on" data-look="auto" title="地上では窓割りのくっきりした外壁、ヘリで高く上がると実際の外壁写真に自動で切り替えます">建物: 自動（おすすめ）</button>
+            <button type="button" class="look-opt" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写</button>
+            <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁（色は写真から推定）。軽い">建物: 窓割り</button>
             <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
+            <button type="button" class="ctl-opt" data-ctl="auto" title="画面のハンドル・ペダル・操作ボタン。自動 = タッチ画面のときだけ出す">操作ボタン: 自動</button>
           </div></details>
           <button type="button" class="dia-opt on" hidden tabindex="-1" aria-hidden="true">ダイヤ運行: あり</button>
         </div>
@@ -736,6 +753,7 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
           <details class="mdet"><summary>操作方法</summary><div class="mdet-body">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動　J スタンプ帳（岡山めぐり）<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます</div></details>
           <details class="mdet"><summary>データについて</summary><div class="mdet-body">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。開始画面の行先表示器のドット文字は DotGothic16（© The DotGothic16 Project Authors、SIL Open Font License 1.1）。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</div></details>
           <details class="mdet"><summary id="stp-sum">岡山めぐり</summary><div class="mdet-body" id="stp-menu"></div></details>
+          <details class="mdet"><summary id="cr-sum">運転手帳</summary><div class="mdet-body" id="cr-menu"></div></details>
         </div>
         <p class="foot" id="records"></p>
         <div class="loadbar"><i id="loadbar"></i></div>
@@ -2321,7 +2339,7 @@ const S = {
   scene:null, routes:null, key:"higashi", route:null,
   track:null, arc:null, total:0, stops:[], cum:[], signals:[], speedLim:null,
   topH:90, pos:0, speed:0, acc:0, emergency:false, notch:0, doorOpen:true, running:false, view:"cab",
-  mode:"tram", mc:0, bv:0, look:"photo", play:"mission", cveh:"sedan", playBy:{ tram:"mission", bus:"mission", car:"mission", heli:"mission" },
+  mode:"tram", mc:0, bv:0, look:"auto", play:"mission", cveh:"sedan", playBy:{ tram:"mission", bus:"mission", car:"mission", heli:"mission" },
   score:1000, comfortHits:0, stopIndex:1, sigIndex:0, clock:9*3600, announced:new Set(), t:0
 };
 
@@ -2561,6 +2579,100 @@ function dataIn(x, z, m){ const d = S.scene && S.scene.drive; if(!d) return fals
 /* ---------------- v29: 航空写真のページ（1024m 四方・0.5m/画素）を近くだけ読み込む ----------------
    範囲を広げたので、全部のページを最初に読むと重い（GPU のメモリ）。範囲全体の縮小写真（2m/画素, ortho_ov）を先に読み、
    近くのページだけ元の解像度で読む。ページを使う面（近くの地面・屋根）は、ページが無い間は縮小写真を同じ位置に貼る */
+/* v42: 地面の航空写真（0.5m/画素）は、地上の目の高さでは「ぼやけた写真」にしか見えない（駐車場・空き地・庭など道路以外の所）。
+   近く（〜150m）は、写真をぼかした色（その場所の色合い）から路面の種類を見分けて、くっきりした質感で描き直す:
+   緑っぽい＝草地、茶色っぽい＝土、明るい灰色＝コンクリート（目地のある平板）、それ以外＝アスファルト。
+   質感の明るさの平均は 1 なので、場所ごとの色合い（写真）はそのまま。遠く・空から見るときは元の写真のまま（ヘリでは写真の方が自然）。
+   質感の絵: R = アスファルト（骨材の粒・ひび）、G = コンクリート平板（1.5m 目地）、B = 草（葉の筋・株）。3m 四方で繰り返す */
+const DETAIL_TEX = (() => {
+  const N = 512, c = document.createElement("canvas"); c.width = c.height = N; const g = c.getContext("2d");
+  let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const R = new Float32Array(N * N).fill(0.5), G = new Float32Array(N * N).fill(0.5), B = new Float32Array(N * N).fill(0.42);
+  const dot = (A, x, y, r, v, soft) => { for(let dy = -r; dy <= r; dy++) for(let dx = -r; dx <= r; dx++){ const d = Math.hypot(dx, dy); if(d > r) continue; const k = soft ? 1 - d / (r + 0.5) : 1; const i = ((y + dy + N) % N) * N + ((x + dx + N) % N); A[i] = A[i] * (1 - k) + v * k; } };
+  // アスファルト: 粗い骨材（明暗の粒）＋細かい粒＋ひび数本
+  for(let i = 0; i < N * N; i++) R[i] = 0.47 + (rnd() - 0.5) * 0.16;
+  for(let k = 0; k < 5200; k++) dot(R, rnd() * N | 0, rnd() * N | 0, 1 + (rnd() * 2.2 | 0), rnd() < 0.55 ? 0.66 + rnd() * 0.2 : 0.3 + rnd() * 0.12, true);
+  for(let k = 0; k < 3; k++){ let x = rnd() * N, y = rnd() * N, a = rnd() * 6.28; for(let t = 0; t < 60; t++){ a += (rnd() - 0.5) * 0.7; x += Math.cos(a) * 2; y += Math.sin(a) * 2; const i = ((y | 0) % N + N) % N * N + ((x | 0) % N + N) % N; R[i] = R[i] * 0.5 + 0.17; } }
+  // コンクリート平板: 1.5m 角（256 画素）の 4 枚。目地は暗く、板ごとに明るさを少し変え、細かい粒とシミ
+  for(let y = 0; y < N; y++) for(let x = 0; x < N; x++){ const sx = x >> 8, sy = y >> 8, sv = [0.53, 0.49, 0.47, 0.55][sy * 2 + sx]; G[y * N + x] = sv + (rnd() - 0.5) * 0.09; }
+  for(let k = 0; k < 2600; k++) dot(G, rnd() * N | 0, rnd() * N | 0, 1 + (rnd() * 1.5 | 0), 0.38 + rnd() * 0.22, true);
+  for(let k = 0; k < 30; k++) dot(G, rnd() * N | 0, rnd() * N | 0, 6 + (rnd() * 16 | 0), 0.42 + rnd() * 0.06, true);
+  for(let y = 0; y < N; y++) for(let x = 0; x < N; x++){ const jx = Math.min(x % 256, 256 - x % 256), jy = Math.min(y % 256, 256 - y % 256), j = Math.min(jx, jy);
+    if(j < 3) G[y * N + x] = 0.2 + j * 0.08; else if(j < 5) G[y * N + x] *= 1.06; }
+  // 草: 細い葉の筋（明暗）をたくさん＋株のかたまり
+  for(let i = 0; i < N * N; i++) B[i] = 0.40 + (rnd() - 0.5) * 0.12;
+  for(let k = 0; k < 160; k++) dot(B, rnd() * N | 0, rnd() * N | 0, 8 + (rnd() * 22 | 0), 0.30 + rnd() * 0.3, true);
+  for(let k = 0; k < 16000; k++){ let x = rnd() * N, y = rnd() * N; const a = -1.57 + (rnd() - 0.5) * 1.4, L = 3 + rnd() * 7, v = rnd() < 0.5 ? 0.68 + rnd() * 0.22 : 0.18 + rnd() * 0.12;
+    for(let t = 0; t < L; t++){ x += Math.cos(a) * 0.9; y += Math.sin(a) * 0.9; const i = ((y | 0) % N + N) % N * N + ((x | 0) % N + N) % N; B[i] = B[i] * 0.4 + v * 0.6; } }
+  const im = g.createImageData(N, N);
+  for(let i = 0; i < N * N; i++){ const o = i * 4; im.data[o] = Math.max(0, Math.min(255, R[i] * 255)); im.data[o + 1] = Math.max(0, Math.min(255, G[i] * 255)); im.data[o + 2] = Math.max(0, Math.min(255, B[i] * 255)); im.data[o + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy()); return t;
+})();
+const DETAIL_U = { uDetail: { value: DETAIL_TEX }, uDetailOn: { value: 1 }, uCamP: { value: camera.position } };   // r128 の Lambert には cameraPosition が送られないので自前で渡す
+function groundDetail(m){
+  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
+  m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|gdet2";
+  m.onBeforeCompile = (sh, r) => {
+    if(prev) prev(sh, r);
+    sh.uniforms.uDetail = DETAIL_U.uDetail; sh.uniforms.uDetailOn = DETAIL_U.uDetailOn; sh.uniforms.uCamP = DETAIL_U.uCamP;
+    sh.vertexShader = "varying vec3 vGW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+    sh.fragmentShader = "uniform sampler2D uDetail; uniform float uDetailOn; uniform vec3 uCamP; varying vec3 vGW;\n" + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+      #ifdef USE_MAP
+      { float dd = distance(vGW, uCamP), up = uCamP.y - vGW.y;
+        float fade = uDetailOn * (1.0 - smoothstep(60.0, 170.0, dd)) * (1.0 - smoothstep(60.0, 140.0, up));
+        if(fade > 0.001){
+          vec3 photo = diffuseColor.rgb;
+          vec3 mac = texture2D(map, vUv, 3.6).rgb;                         // その場所の色合い（ぼかした写真）
+          float lum = dot(mac, vec3(0.299, 0.587, 0.114)), mx = max(mac.r, max(mac.g, mac.b)), mn = min(mac.r, min(mac.g, mac.b));
+          float wG = smoothstep(0.012, 0.05, mac.g - 0.5 * (mac.r + mac.b));
+          float wS = (1.0 - wG) * smoothstep(0.035, 0.09, mac.r - mac.b) * (1.0 - smoothstep(0.55, 0.7, lum));
+          float wC = (1.0 - wG) * (1.0 - wS) * smoothstep(0.40, 0.56, lum) * (1.0 - smoothstep(0.08, 0.16, mx - mn));
+          float wA = max(0.0, 1.0 - wG - wS - wC);
+          vec2 tp = vGW.xz / 3.0;
+          vec3 D = texture2D(uDetail, tp).rgb, D2 = texture2D(uDetail, tp * 0.37 + vec2(0.13, 0.71)).rgb;
+          float soil = 0.5 + (D.r - 0.47) * 0.7 + (D2.b - 0.42) * 0.5;
+          float det = wA * (0.5 + (D.r - 0.47) * 1.15 + (D2.r - 0.47) * 0.35)
+                    + wC * (0.5 + (D.g - 0.5) * 1.0)
+                    + wG * (0.5 + (D.b - 0.42) * 1.05 + (D2.b - 0.42) * 0.45)
+                    + wS * soil;
+          vec3 tone = mix(mac, photo, 0.28);                                // 写真の細かな模様は少しだけ残す
+          vec3 nearC = tone * (0.08 + 1.84 * det);
+          diffuseColor.rgb = mix(photo, nearC, fade * 0.92);
+        } }
+      #endif`);
+  };
+  m.needsUpdate = true; return m;
+}
+/* v42: 樹冠・植え込み（leaf）は、多面体の塊（データ）のままだと「のっぺりした緑の岩」に見える。
+   面の上に、世界の位置で決まる葉の塊の模様（約 30cm と 10cm の 2 段）を描き、明るい葉・暗いすき間・色むらを付ける。
+   輪郭の近く（面が視線と平行に近い所）は、葉のすき間を抜いて（discard）ギザギザの葉の縁にする。影の形はデータのまま */
+function leafShader(m){
+  m.customProgramCacheKey = () => "leaf42";
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uCamP = DETAIL_U.uCamP;
+    sh.vertexShader = "varying vec3 vLW; varying vec3 vLN;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vLW = (modelMatrix * vec4(transformed, 1.0)).xyz; vLN = normalize(mat3(modelMatrix) * objectNormal);");
+    sh.fragmentShader = `uniform vec3 uCamP; varying vec3 vLW; varying vec3 vLN;
+      float lfH(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      float lfN(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(lfH(i), lfH(i + vec3(1,0,0)), f.x), mix(lfH(i + vec3(0,1,0)), lfH(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(lfH(i + vec3(0,0,1)), lfH(i + vec3(1,0,1)), f.x), mix(lfH(i + vec3(0,1,1)), lfH(i + vec3(1,1,1)), f.x), f.y), f.z); }
+      ` + sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
+      { vec3 vd = uCamP - vLW; float dist = length(vd); vd /= max(dist, 1e-3);
+        float near = 1.0 - smoothstep(60.0, 220.0, dist);
+        float n1 = lfN(vLW * 3.3), n2 = lfN(vLW * 9.7 + 13.1), n0 = lfN(vLW * 0.45 + 7.7);
+        float leaf = n1 * 0.62 + n2 * 0.38;
+        // 輪郭の近くは葉のすき間を抜く（近くだけ。遠くはちらつくので抜かない）
+        float edge = 1.0 - abs(dot(normalize(vLN), vd));
+        if(near > 0.0 && leaf < (edge * edge * 1.15 - 0.12) * near) discard;
+        float shade = mix(1.0, 0.62 + 0.62 * smoothstep(0.25, 0.85, leaf), 0.35 + 0.65 * near);
+        diffuseColor.rgb *= shade;
+        diffuseColor.rgb *= mix(vec3(1.0), vec3(1.10, 1.04, 0.86), smoothstep(0.55, 0.9, n0) * 0.6);   // 日の当たる若葉の黄み
+        diffuseColor.rgb *= mix(vec3(1.0), vec3(0.88, 0.97, 1.05), smoothstep(0.55, 0.9, 1.0 - n0) * 0.5); // 濃い葉の青み
+      }`);
+  };
+  m.needsUpdate = true; return m;
+}
 const OrthoPages = (() => {
   let ovTex = null, OV = null, active = false;
   const tex = [], loading = new Set(), regs = new Map(), pmats = new Map(), omats = new Map();
@@ -2574,14 +2686,14 @@ const OrthoPages = (() => {
     m.customProgramCacheKey = () => "ovT_" + kind;
     m.onBeforeCompile = (sh) => { sh.uniforms.uOvT = { value:T };
       sh.vertexShader = "uniform vec4 uOvT;\n" + sh.vertexShader.replace("#include <uv_vertex>", "#ifdef USE_UV\n vUv = uv * uOvT.xy + uOvT.zw;\n#endif"); };
-    if(kind === "roof") Env.patch(m, "ortho");
+    if(kind === "roof") Env.patch(m, "ortho"); else groundDetail(m);
     omats.set(key, m); return m;
   }
   function pageMat(p, kind){
     const key = kind + p; if(pmats.has(key)) return pmats.get(key);
     const t = tex[p];
     const m = kind === "roof" ? new THREE.MeshLambertMaterial({ map:t, emissive:0x1c1c1c, emissiveMap:t }) : new THREE.MeshLambertMaterial({ map:t });
-    if(kind === "roof") Env.patch(m, "ortho");
+    if(kind === "roof") Env.patch(m, "ortho"); else groundDetail(m);
     pmats.set(key, m); return m;
   }
   function mat(p, kind){ return tex[p] ? pageMat(p, kind) : ovMat(p, kind); }
@@ -3010,6 +3122,17 @@ async function loadAll(){
    800m 四方のタイルごとに、建物（写真の外壁 bldg_tex / 簡略の外壁 bldg_proc / その他の建物 bldg_plain）と植生（veg）。
    近く（NEAR 以内）: 写真表示なら bldg_tex＋そのタイルのアトラス、植生も。遠く（FAR 以内）: 軽い bldg_proc と bldg_plain だけ。
    さらに離れたら解放（ジオメトリ・テクスチャを捨てる）。 */
+/* v42: 建物の外観を「自動」で切り替える。PLATEAU の外壁写真は 1 画素が数十 cm で、地上の目の高さではにじんで見える（窓も壁も溶ける）。
+   地上（車・電車・バス・JR・低く飛ぶヘリ）は窓割りの外壁（crisp、色は写真から推定）、空（ヘリの対地 60m 超）からは写真の外壁（上から見ると屋上の写真の方が本物らしい）。
+   行き来でタイルを読み直し続けないよう、写真へは 60m 超、窓割りへは 35m 未満で切り替える。「実写」「窓割り」を選べば常にそれ */
+let _photoAir = false;
+function photoNow(){
+  if(S.look === "photo") return true;
+  if(S.look !== "auto") return false;
+  let heli = false, agl = 0; try { heli = S.mode === "heli" && Heli.H.active; agl = heli ? Math.max(0, Heli.H.agl) : 0; } catch(e){}
+  if(_photoAir){ if(!heli || agl < 35) _photoAir = false; } else if(heli && agl > 60) _photoAir = true;
+  return _photoAir;
+}
 const Stream = (() => {
   const NEAR = 650, FAR = 1600, HYST = 250;
   const loaded = new Map();    // fileKey -> {meshes:[], tile}
@@ -3021,7 +3144,7 @@ const Stream = (() => {
   const R = { near:0, far:0, veg:0, detail:0 };
   const PRI = fk => fk.startsWith("road") ? 0 : fk.startsWith("bldg_tex") ? 1 : 2;   // v29
   function wanted(x, z, slack){
-    const w = new Set(), photo = S.look==="photo";
+    const w = new Set(), photo = photoNow();
     for(const t of Object.keys(S.scene.tiles||{})){
       const d = tileDist(t, x, z);
       const near = d < NEAR + R.near + slack, far = d < FAR + R.far + slack;
@@ -3863,7 +3986,7 @@ const HiStream = (() => {
   function tick(){
     if(!S.scene || !S.scene.hicells) return;
     const now = performance.now(); if(now - lastT < 400) return; lastT = now;
-    const cam = camera.position, heli = S.mode === "heli" && Heli.H.active, photo = S.look === "photo";
+    const cam = camera.position, heli = S.mode === "heli" && Heli.H.active, photo = photoNow();
     const high = (heli && Heli.H.agl > 90) || !enabled;
     for(const key of [...loaded.keys()]) if(!photo || high || dist(S.scene.hicells[key], cam.x, cam.z) > R_OUT) unload(key);
     if(!photo || high) return;
@@ -3880,13 +4003,13 @@ function mat(c, atlas, ortho){
   switch(c.mat){
     case "tex": m = new THREE.MeshLambertMaterial({map:atlas[c.page], emissive:0x161616, emissiveMap:atlas[c.page]}); sharpFacade(m, true); break;
     case "texhi": m = new THREE.MeshLambertMaterial({map:atlas[c.page], emissive:0x161616, emissiveMap:atlas[c.page]}); sharpFacade(m, false); break;
-    case "ortho": m = new THREE.MeshLambertMaterial({map:ortho[c.page], emissive:0x1c1c1c, emissiveMap:ortho[c.page]}); break;
+    case "ortho": m = new THREE.MeshLambertMaterial({map:ortho[c.page], emissive:0x1c1c1c, emissiveMap:ortho[c.page]}); groundDetail(m); break;
     case "asphalt": case "paving": case "island": case "grass": case "trackbed":
       m = new THREE.MeshLambertMaterial({map:TEX[c.mat], vertexColors:true}); break;
     case "paint": m = new THREE.MeshLambertMaterial({vertexColors:true, polygonOffset:true, polygonOffsetFactor:-4, polygonOffsetUnits:-8}); break;
     case "rail": m = new THREE.MeshPhongMaterial({vertexColors:true, shininess:60, specular:0x666666, polygonOffset:true, polygonOffsetFactor:-3, polygonOffsetUnits:-6}); break;
     case "fence": m = new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}); break;
-    case "leaf": m = new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}); break;
+    case "leaf": m = leafShader(new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide})); break;
     case "vend": m = new THREE.MeshLambertMaterial({map:vendTex(), side:THREE.DoubleSide, emissive:0x555555, emissiveMap:vendTex()}); break;
     case "signs": m = new THREE.MeshLambertMaterial({map:signsTex(), side:THREE.DoubleSide, emissive:0x2a2a2a, emissiveMap:signsTex()}); break;
     case "arcroof": m = new THREE.MeshPhongMaterial({vertexColors:true, map:arcRoofTex(), side:THREE.DoubleSide, transparent:true, opacity:0.78, shininess:80, specular:0xb8c4cc, emissive:0x303234, depthWrite:false}); break;
@@ -5288,7 +5411,7 @@ const Bus = (() => {
     st.done=true;
     const s=Math.round(st.score);
     $("finish-score").textContent=s;
-    { const R=Prefs.record("bus", s); setTimeout(()=>{ if(R.newBest && R.n>1) $("finish-text").textContent+="　自己ベスト更新！"; }, 0); }
+    { const R=Prefs.record("bus", s); setTimeout(()=>{ if(R.newBest && R.n>1) $("finish-text").textContent+="　自己ベスト更新！"; if(R.xp) $("finish-text").textContent+="\n"+Career.text(R.xp); }, 0); }
     $("finish-text").textContent="両備バス 西大寺線 岡山駅 → 東山　ランク "+(s>=950?"S":s>=850?"A":s>=700?"B":"C")+"　乗り心地 "+Math.max(0,100-st.comfortHits*5)+"%";
     { const r=bdSummary(); if(r){ $("finish-text").textContent+="\nダイヤ運行: 定時点 "+r.dia+" / 1000（"+r.g+"）・定刻どおりの到着 "+r.ok+"/"+r.n+" 停留所・最大遅れ "+r.late+" 秒"+(r.passed?"・通過 "+r.passed+" 停留所":"")+(r.early?"・早発 "+r.early+" 回":"");
         const R2=Prefs.record("dia:bus", r.dia); setTimeout(()=>{ if(R2.newBest && R2.n>1) $("finish-text").textContent+="\nダイヤ自己ベスト更新！"; }, 0); } }
@@ -6816,15 +6939,24 @@ const Car = (() => {
       { const fv = Math.max(62, Math.min(88, 2 * Math.atan(Math.tan(50 * Math.PI / 180) / camera.aspect) * 180 / Math.PI)) + (P.bike ? 10 : 0); if (Math.abs(camera.fov - fv) > 0.05) { camera.fov = fv; camera.updateProjectionMatrix(); } }
     } else {
       if (C.onDriverView) C.onDriverView(false);
-      if (camera.near < 0.2 || camera.fov !== 56) { camera.near = 0.3; camera.fov = 56; camera.updateProjectionMatrix(); }
-      camera.up.set(0, 1, 0); hiU.setInside(false); if (extBody && extBody.userData.hiU) extBody.userData.hiU.setInside(false);
+      // v42: 速さが伝わる追従カメラ。速いほど画角を広げ（56°→最大 約 67°）、少し後ろ・低めから。曲がるときは曲がる先を少し見る。
+      //      バイクは車体の傾きの 3 割だけ画面も傾ける（傾いて曲がっている感じ）
+      const sp = Math.abs(C.v), tq = Math.min(1, sp / 30), ease = tq * tq * (3 - 2 * tq);
+      C._fov = (C._fov || 56) + ((56 + 11 * ease) - (C._fov || 56)) * Math.min(1, dt * 1.6);
+      if (camera.near < 0.2 || Math.abs(camera.fov - C._fov) > 0.05) { camera.near = 0.3; camera.fov = C._fov; camera.updateProjectionMatrix(); }
+      if (P.bike) { const r = (C.lean || 0) * 0.3; camera.up.set(Math.cos(C.yaw) * Math.sin(r), Math.cos(r), -Math.sin(C.yaw) * Math.sin(r)); } else camera.up.set(0, 1, 0);
+      hiU.setInside(false); if (extBody && extBody.userData.hiU) extBody.userData.hiU.setInside(false);
       const back = C.v < -0.5 ? -1 : 1;   // 後退時も車の後ろ（進行方向の反対側）から
-      const want = new THREE.Vector3(C.x - fx * P.cam.back, C.h + P.cam.up, C.z - fz * P.cam.back);
+      const cb = P.cam.back * (1 + 0.14 * ease), cu = P.cam.up * (1 - 0.1 * ease);
+      const want = new THREE.Vector3(C.x - fx * cb, C.h + cu, C.z - fz * cb);
       if (camPos.lengthSq() === 0 || camPos.distanceTo(want) > 40) camPos.copy(want);
-      camPos.lerp(want, Math.min(1, dt * 4));
+      camPos.lerp(want, Math.min(1, dt * (3.2 + 2.0 * ease)));
       const gh = hAt(camPos.x, camPos.z, camPos.y) + 0.6; if (camPos.y < gh) camPos.y = gh;
       if (C.camCeil) { const cy = C.camCeil(camPos.x, camPos.z); if (camPos.y > cy) camPos.y = Math.max(gh, cy); }
-      camLook.set(C.x + fx * P.cam.look, C.h + (P.cam.lookH || (isBus ? 2.0 : 1.0)), C.z + fz * P.cam.look);
+      const yr = Math.max(-0.6, Math.min(0.6, C.yawRateLast !== undefined && P.bike ? C.yawRateLast : (C.v * Math.tan(C.steer || 0) / P.L))), sxL = Math.cos(C.yaw), szL = -Math.sin(C.yaw);
+      C._camYr = (C._camYr || 0) + (yr - (C._camYr || 0)) * Math.min(1, dt * 3);
+      const side = C._camYr * P.cam.look * 0.9 * Math.min(1, sp / 6);
+      camLook.set(C.x + fx * P.cam.look + sxL * side, C.h + (P.cam.lookH || (isBus ? 2.0 : 1.0)), C.z + fz * P.cam.look + szL * side);
       camera.position.copy(camPos); camera.lookAt(camLook);
     }
   }
@@ -6987,7 +7119,7 @@ function doorAction(){
 function finishRide(){ S.running=false; const tn=S.routes.turn && S.routes.turn[S.baseKey||S.key];
   $("turnback").style.display = tn ? "" : "none";
   $("turnback-label").textContent = tn ? (tn.deadhead ? "折り返し運転（回送で乗り場を移って出発）" : (tn.pull.length ? "折り返し運転（引上線で運転台を交換）" : "折り返し運転（運転台を交換）")) : ""; $("finish-score").textContent=Math.round(S.score); const g=S.score>900?"S":S.score>750?"A":S.score>550?"B":"C";
-  { const R=Prefs.record("tram:"+(S.baseKey||S.key), Math.round(S.score)); setTimeout(()=>{ if(R.newBest && R.n>1) $("finish-text").textContent+="\n自己ベスト更新！"; }, 0); }
+  { const R=Prefs.record("tram:"+(S.baseKey||S.key), Math.round(S.score)); setTimeout(()=>{ if(R.newBest && R.n>1) $("finish-text").textContent+="\n自己ベスト更新！"; if(R.xp) $("finish-text").textContent+="\n"+Career.text(R.xp); }, 0); }
   $("finish-text").textContent=S.route.name+" "+S.stops[0].name.replace(/・.*$/,"")+" → "+S.stops[S.stops.length-1].name.replace(/・.*$/,"")+"（"+Math.round(S.endArc-S.cum[0])+" m）\n評価: "+g+"（快適スコア "+Math.round(S.score)+" / 1000）\n衝撃減点回数: "+S.comfortHits+"回"; { const dr=Dia.result(); if(dr){ $("finish-text").textContent+=Dia.summary(); const R2=Prefs.record("dia:"+(S.baseKey||S.key), dr.dia); if(R2.newBest && R2.n>1) $("finish-text").textContent+="（ダイヤ自己ベスト更新！）"; } }
   TT.fillFinish(Dia.model(true)); $("finish-overlay").classList.add("on"); }
 
@@ -8398,7 +8530,7 @@ const Mirrors = (() => {
       renderer.setRenderTarget(null); renderer.shadowMap.autoUpdate = sm; if (S.car) S.car.visible = vis;
     }
     ocam.left = 0; ocam.right = W; ocam.top = H; ocam.bottom = 0; ocam.updateProjectionMatrix();
-    const mw = Math.min(W * 0.18, 250), mh = mw * RT_H / RT_W, y = H * 0.5;
+    const mw = Math.min(W * 0.15, 210), mh = mw * RT_H / RT_W, y = H * 0.5;
     place(M.L.q, 18 + mw / 2, y, mw, mh); place(M.R.q, W - 18 - mw / 2, y, mw, mh);
     M.C.q.img.visible = M.C.q.frame.visible = false;
     renderer.autoClear = false; renderer.clearDepth(); renderer.render(ov, ocam); renderer.autoClear = true;
@@ -8423,7 +8555,7 @@ const Mirrors = (() => {
     }
     // 画面への配置（ピクセル）: 左右のミラーは画面の端・高さ中ほど、ルームミラーは上中央
     ocam.left = 0; ocam.right = W; ocam.top = H; ocam.bottom = 0; ocam.updateProjectionMatrix();
-    const mw = Math.min(W * 0.2, 280), mh = mw * RT_H / RT_W, y = H * 0.42;
+    const mw = Math.min(W * 0.15, 220), mh = mw * RT_H / RT_W, y = H * 0.44;   // v42: 少し小さく（景色をふさがない）
     place(M.L.q, 18 + mw / 2, y, mw, mh); place(M.R.q, W - 18 - mw / 2, y, mw, mh);
     const cw = Math.min(W * 0.26, 360), ch = cw * 0.28;
     place(M.C.q, W / 2, H - 92 - ch / 2, cw, ch);
@@ -8431,6 +8563,93 @@ const Mirrors = (() => {
     renderer.autoClear = false; renderer.clearDepth(); renderer.render(ov, ocam); renderer.autoClear = true;
   }
   return { render, renderTram };
+})();
+/* ---------------- v42: 運転手帳（どのモードで走っても経験値がたまる・レベルと称号・今日の挑戦） ----------------
+   経験値: 走り終えて点が付いたとき（電車・バス・ミッション・タクシー営業）に 10 + 点数/12（最大 約 93）。初めての路線・ミッションは +25、自己ベスト更新は +15。
+   ダイヤ運行の点はおまけ（点/25、最大 40）。スタンプ 1 つで +15。今日の挑戦（日付で決まるミッション 1 つで A 以上）は 1 日 1 回 +120。
+   レベル L から L+1 へは 80 + 40×L。称号は 見習い・新人・一人前・中堅・ベテラン・名人・岡山の達人。記録はこのブラウザだけに保存 */
+const Career = (() => {
+  const KEY = "career", TITLES = [[1, "見習い"], [3, "新人"], [5, "一人前"], [8, "中堅"], [11, "ベテラン"], [15, "名人"], [20, "岡山の達人"]];
+  let C = null;
+  const today = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  function load(){ if(!C){ const v = Prefs.getM(KEY, null); C = (v && typeof v === "object") ? v : { xp: 0, act: {}, daily: {} }; C.act = C.act || {}; C.daily = C.daily || {}; } return C; }
+  function save(){ Prefs.setM(KEY, C); }
+  function levelOf(xp){ let L = 1, base = 0; for(;;){ const step = 80 + 40 * L; if(xp < base + step) return { L, cur: xp - base, step }; base += step; L++; } }
+  function title(L){ let t = TITLES[0][1]; for(const [l, n] of TITLES) if(L >= l) t = n; return t; }
+  function cat(key){
+    if(key.startsWith("quest:")){ const d = Quest.def(key.slice(6)) || {}; return d.mode === "heli" ? "heli" : d.veh === "bike" ? "bike" : d.veh === "truck" ? "truck" : "car"; }
+    if(key === "bus" || key === "dia:bus") return "bus";
+    if(key.startsWith("tram:") || key.startsWith("dia:")){ try { if(VEH().jr) return "jr"; } catch(e){} return "tram"; } if(key.startsWith("taxi")) return "taxi"; if(key.startsWith("jr")) return "jr"; return "other";
+  }
+  const CAT = { tram: "路面電車", bus: "路線バス", car: "乗用車", truck: "トラック", bike: "バイク", heli: "ヘリ", taxi: "タクシー営業", jr: "JR", stamp: "スタンプ" };
+  /* 今日の挑戦: 日付で決まる 1 つのミッション（車・トラック・バイク・ヘリの、生成型でないものも含む・営業は除く） */
+  function dailyDef(){
+    let L = []; try { L = Quest.COURSES.filter(c => !c.shift); } catch(e){} if(!L.length) return null;
+    const d = today(); let hsh = 7; for(let i = 0; i < d.length; i++) hsh = (hsh * 31 + d.charCodeAt(i)) >>> 0;
+    return L[hsh % L.length];
+  }
+  // 点の付いた記録 1 回ぶんの経験値（Prefs.record から呼ばれる）
+  function gain(key, score, info){
+    load(); const before = levelOf(C.xp), lines = []; let xp = 0;
+    const sc = Math.max(0, Math.min(1000, Number(score) || 0));
+    if(key.startsWith("dia:")){ xp = Math.round(Math.min(40, sc / 25)); if(xp) lines.push("ダイヤ +" + xp); }
+    else {
+      xp = 10 + Math.round(sc / 12); lines.push("走行 +" + xp);
+      if(info && info.n === 1){ xp += 25; lines.push("初めて +25"); }
+      else if(info && info.newBest){ xp += 15; lines.push("自己ベスト +15"); }
+      const c = cat(key); C.act[c] = (C.act[c] || 0) + 1;
+      const dd = dailyDef();
+      if(dd && key === "quest:" + dd.id && sc >= 750 && C.daily.done !== today()){ xp += 120; C.daily.done = today(); lines.push("今日の挑戦 達成 +120"); }
+    }
+    C.xp += xp; save();
+    const after = levelOf(C.xp); last = { xp, lines, from: before.L, to: after.L, cur: after.cur, step: after.step }; render();
+    return last;
+  }
+  let last = null;
+  function gainRaw(xp, why, catKey){ load(); const before = levelOf(C.xp); C.xp += xp; if(catKey) C.act[catKey] = (C.act[catKey] || 0) + 1; save(); const a = levelOf(C.xp); last = { xp, lines: [why + " +" + xp], from: before.L, to: a.L, cur: a.cur, step: a.step }; render(); return last; }
+  // 結果画面に出す 1 行（HTML）。g = gain の返り値
+  function html(g){
+    if(!g || !g.xp) return "";
+    const up = g.to > g.from;
+    return '<div class="qf-xp' + (up ? " up" : "") + '"><b>+' + g.xp + ' 経験値</b>　' + g.lines.join("・") + (up ? '　<b class="lvup">レベルアップ！ Lv.' + g.to + '「' + title(g.to) + '」</b>' : '　Lv.' + g.to + '「' + title(g.to) + '」あと ' + (g.step - g.cur)) +
+      '<div class="cr-bar"><i style="width:' + Math.round(100 * g.cur / g.step) + '%"></i></div></div>';
+  }
+  function text(g){ if(!g || !g.xp) return ""; return "+" + g.xp + " 経験値（" + g.lines.join("・") + "）" + (g.to > g.from ? "　レベルアップ！ Lv." + g.to + "「" + title(g.to) + "」" : "　Lv." + g.to + "「" + title(g.to) + "」あと " + (g.step - g.cur)); }
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  function recName(k){
+    if(k.startsWith("quest:")) return "ミッション " + ((Quest.def(k.slice(6)) || {}).name || k.slice(6));
+    if(k === "bus") return "バス 西大寺線"; if(k === "dia:bus") return "ダイヤ運行 バス 西大寺線";
+    const rk = k.startsWith("dia:") ? k.slice(4) : k.slice(5), rn = (S.routes && S.routes[rk]) ? S.routes[rk].name + (k.endsWith("_r") ? "（逆方向）" : "") : rk;
+    return (k.startsWith("dia:") ? "ダイヤ運行 " : "路面電車 ") + rn;
+  }
+  function render(){
+    load(); const lv = levelOf(C.xp), sum = $("cr-sum"), host = $("cr-menu");
+    if(sum) sum.textContent = "運転手帳 Lv." + lv.L + "「" + title(lv.L) + "」";
+    if(!host) return;
+    const dd = dailyDef(), done = C.daily.done === today();
+    const acts = Object.keys(CAT).map(k => '<div>' + CAT[k] + '<b>' + (C.act[k] || 0) + ' 回</b></div>').join("");
+    let rec = ""; try { rec = Object.entries(Prefs.recs()).sort((a, b) => (b[1].at || "").localeCompare(a[1].at || "")).map(([k, r]) => '<tr><td>' + esc(recName(k)) + '</td><td>最高 ' + r.best + ' 点</td><td>' + r.n + ' 回</td></tr>').join(""); } catch(e){}
+    host.innerHTML = '<div class="cr-lv"><b>Lv.' + lv.L + '</b><span>「' + title(lv.L) + '」</span><small>経験値 ' + C.xp + '・次のレベルまで あと ' + (lv.step - lv.cur) + '</small></div>' +
+      '<div class="cr-bar"><i style="width:' + Math.round(100 * lv.cur / lv.step) + '%"></i></div>' +
+      (dd ? '<div class="cr-daily' + (done ? " done" : "") + '"><b>今日の挑戦' + (done ? '　達成！（+120 経験値）' : '') + '</b><small>「' + esc(dd.name) + '」（' + ({ heli: "ヘリ", car: "車" }[dd.mode] || "") + (dd.veh === "bike" ? "・バイク" : dd.veh === "truck" ? "・トラック" : "") + '）で評価 A 以上（750 点以上）。達成すると 1 日 1 回 +120 経験値。日付が変わると別のミッションになります</small></div>' : "") +
+      '<small>どのモードで走っても、走り終えて点が付くと経験値がたまります（電車・バス・ミッション・タクシー営業・スタンプ）。記録はこのブラウザに保存されます</small>' +
+      '<div class="cr-grid">' + acts + '</div>' + (rec ? '<table class="cr-rec">' + rec + '</table>' : "");
+    // 今日の挑戦のミッションにしるし
+    if(dd) document.querySelectorAll('.quest-opt').forEach(b => { const has = b.querySelector(".qdaily"); if(b.dataset.qid === dd.id){ if(!has){ const t = document.createElement("span"); t.className = "qdaily"; t.textContent = done ? "今日の挑戦 達成" : "今日の挑戦"; b.appendChild(t); } } else if(has) has.remove(); });
+  }
+  return { gain, gainRaw, html, text, render, levelOf, title, dailyDef, get last(){ return last; }, get xp(){ load(); return C.xp; } };
+})();
+/* ---------------- v42: 画面の操作ボタン（タッチ用）を出すか ----------------
+   自動: 指で触る画面（pointer:coarse）か、画面に指で触れたら出す。マウスとキーボードの PC では出さない（運転の景色をふさがない）。
+   設定の「操作ボタン」で 自動 → 常に出す → 出さない を切り替える（このブラウザに覚える） */
+const CtlUI = (() => {
+  const L = { auto: "操作ボタン: 自動", show: "操作ボタン: 常に出す", hide: "操作ボタン: 出さない" }, order = ["auto", "show", "hide"];
+  let mode = "auto";
+  function apply(){ const b = document.body; for(const k of order) b.classList.toggle("ctl-" + k, k === mode); const el = document.querySelector(".ctl-opt"); if(el){ el.textContent = L[mode]; el.classList.toggle("on", mode !== "auto"); } }
+  function set(m){ mode = order.includes(m) ? m : "auto"; apply(); }
+  try { if(matchMedia("(pointer:coarse)").matches) document.body.classList.add("touchui"); } catch(e){}
+  addEventListener("pointerdown", e => { if(e.pointerType === "touch") document.body.classList.add("touchui"); }, true);
+  return { set, apply, get mode(){ return mode; }, next(){ set(order[(order.indexOf(mode) + 1) % order.length]); return mode; } };
 })();
 /* ---------------- v25: 設定・記録の保存（このブラウザの中だけ）とゲームパッド ----------------
    保存: モード・路線・車両・建物の表示・影・時間帯・天気・ヘリの出発地・音、電車（路線ごと）とバスの最高点・評価・回数。
@@ -8444,7 +8663,7 @@ const Prefs = (() => {
     const q = (s) => document.querySelector(s);
     const m = q(".mode-opt.on"), l = q(".look-opt.on"), h = q(".hstart-opt.on"), sh = q(".shadow-opt"), dp = q(".dia-opt");
     st.set = { mode: m && m.dataset.mode, route: S.key, veh: S.vehicle, look: l && l.dataset.look, shadow: sh ? sh.classList.contains("on") : true, dia: dp ? dp.classList.contains("on") : true,
-               time: Env.st.time, rain: Env.st.rain, hstart: h && h.dataset.start, sound: st.set.sound !== false,
+               lookV: 2, time: Env.st.time, rain: Env.st.rain, hstart: h && h.dataset.start, sound: st.set.sound !== false,
                play: Object.assign({}, S.playBy), cveh: S.cveh, qsel: { heli: Quest.sel.heli, car: Quest.sel.car } };
     write();
   }
@@ -8453,13 +8672,15 @@ const Prefs = (() => {
   const getM = (k, d) => (st.misc && st.misc[k] !== undefined ? st.misc[k] : d);
   function setM(k, v){ if(!st.misc) st.misc = {}; st.misc[k] = v; write(); }
   function restore(){
+    CtlUI.set(getM("ctl", "auto"));
+    { const b = document.querySelector(".ctl-opt"); if(b && !b._ctl){ b._ctl = 1; b.addEventListener("click", () => setM("ctl", CtlUI.next())); } }
     const s = st.set; if(!s || !s.mode) { applyMenu(); render(); return; }
     restoring = true;
     try {
       const click = (sel) => { const e = document.querySelector(sel); if(e && !e.classList.contains("on")) e.click(); };
       if(s.route) click('.route-opt[data-key="' + s.route + '"]');
       if(s.veh) click('.veh-opt[data-veh="' + s.veh + '"]');
-      if(s.look) click('.look-opt[data-look="' + s.look + '"]');
+      if(s.look) click('.look-opt[data-look="' + (s.look === "photo" && !s.lookV ? "auto" : s.look) + '"]');   // v42: 以前の既定（実写）のままの人は「自動」に
       const sh = document.querySelector(".shadow-opt"); if(sh && s.shadow === false && sh.classList.contains("on")) sh.click();
       if(s.play && typeof s.play === "object"){ for(const k of ["tram", "bus", "car", "heli"]) if(s.play[k] === "mission" || s.play[k] === "free") S.playBy[k] = s.play[k]; }
       else if(s.dia === false){ S.playBy.tram = "free"; S.playBy.bus = "free"; }   // v41.6 までの「ダイヤ運行: なし」
@@ -8474,7 +8695,9 @@ const Prefs = (() => {
   const RANK = (k, s) => k === "bus" ? (s >= 950 ? "S" : s >= 850 ? "A" : s >= 700 ? "B" : "C") : (s > 900 ? "S" : s > 750 ? "A" : s > 550 ? "B" : "C");
   function record(key, score){
     const r = st.rec[key] || { best: 0, n: 0 }; r.n++; const newBest = score > r.best; if(newBest){ r.best = Math.round(score); r.at = new Date().toISOString().slice(0, 10); }
-    st.rec[key] = r; write(); render(); return { newBest, best: r.best, n: r.n };
+    st.rec[key] = r; write();
+    let xp = null; try { xp = Career.gain(key, score, { newBest, n: r.n }); } catch(e){ console.warn("career", e); }
+    render(); return { newBest, best: r.best, n: r.n, xp };
   }
   const best = (k) => (st.rec[k] ? st.rec[k].best : 0);
   function render(){
@@ -8484,11 +8707,13 @@ const Prefs = (() => {
       const name = k === "bus" ? "バス 西大寺線" : k === "dia:bus" ? "ダイヤ運行 バス 西大寺線" : k.startsWith("dia:") ? "ダイヤ運行 " + (S.routes && S.routes[k.slice(4)] ? S.routes[k.slice(4)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k.slice(4)) : (S.routes && S.routes[k.slice(5)] ? S.routes[k.slice(5)].name + (k.endsWith("_r") ? "（逆方向）" : "") : k);
       parts.push((k.startsWith("quest:") ? "ミッション " + ((Quest.def(k.slice(6)) || {}).name || k.slice(6)) : name) + " 最高 " + r.best + " 点（" + RANK(k, r.best) + "）・" + r.n + " 回");
     }
-    el.textContent = parts.length ? "これまでの記録（このブラウザ）: " + parts.join(" ／ ") : "";
+    el.textContent = "";   // v42: 記録は「運転手帳」の中に表で出す
+    try { Career.render(); } catch(e){}
   }
+  const recs = () => st.rec;
   document.addEventListener("click", (e) => { if(e.target.closest(".mode-opt,.route-opt,.veh-opt,.look-opt,.shadow-opt,.dia-opt,.time-opt,.rain-opt,.hstart-opt,.play-opt,.cveh-opt,.quest-opt")) setTimeout(save, 0); });
   document.addEventListener("keydown", (e) => { if(e.key === "n" || e.key === "N" || e.key === "m" || e.key === "M") setTimeout(save, 0); });
-  return { save, restore, record, render, setSound, best, getM, setM, get soundOn(){ return st.set.sound !== false; } };
+  return { save, restore, record, render, setSound, best, getM, setM, recs, get soundOn(){ return st.set.sound !== false; } };
 })();
 /* ゲームパッド（標準配置: Xbox / PlayStation 系）
    電車: RB・LB（または十字キー上下）= マスコン進め・戻し、RT・LT = ブレーキ強め・弱め、A = ドア、B = 非常ブレーキ、X = 警笛、Y = 視点
@@ -9364,6 +9589,7 @@ const Stamps = (() => {
   renderAll();
   return { LIST, tick, count, title, byId, nearTalk, on(f){ subs.push(f); }, uncollected(){ return LIST.filter((q) => !got[q.id]); }, setOpen, toggle, renderAll, where, collect, reset(){ got = {}; try { Prefs.setM(KEY, got); } catch(e){} renderAll(); }, get got(){ return got; }, get open(){ return open; } };
 })();
+Stamps.on(() => { try { Career.gainRaw(15, "スタンプ", "stamp"); } catch(e){} });   // v42: スタンプも経験値に
 
 const Taxi = (() => {
   const FARE = { base: 700, baseM: 1100, step: 100, stepM: 250, slowV: 10 / 3.6, slowEq: 250 / 90, night: 1.2, dispatch: 300, goal: 10000 };
@@ -9735,6 +9961,7 @@ body.nav-on .txcol{ top:calc(58px + env(safe-area-inset-top,0px)); }
       ["お客さんの評価（平均）", avg ? "★ " + avg.toFixed(2) : "—", ""], ["時給の目安", T.rides ? yen(hourly) + " /時" : "—", ""], ["見送り・取り消し", T.passed + " 件・" + T.cancels + " 件", ""]];
     f("qf-rows").innerHTML = rows.map((r) => '<div class="qr"><span>' + r[0] + "</span><span>" + r[1] + "</span><b>" + r[2] + "</b></div>").join("");
     f("qf-best").textContent = newBest ? "自己ベスト更新！（これまでの最高 " + yen(sv.best) + "）" : "これまでの最高 " + yen(sv.best || 0) + "・通算 " + sv.shifts + " 回営業・累計 " + yen(sv.total);
+    { let x = f("qf-xp"); if(!x){ x = document.createElement("div"); x.id = "qf-xp"; f("qf-best").after(x); } x.innerHTML = T.rides ? Career.html(Career.gainRaw(Math.min(160, 10 + Math.round(total / 120) + T.rides * 4), "営業", "taxi")) : ""; }   // v42: 経験値（売上と乗車回数から）
     const rt = f("qf-retry"), nw = f("qf-new"); if(rt) rt.firstElementChild.textContent = "もう一度営業する"; if(nw) nw.style.display = "none";
     f("qfin").classList.add("on"); Snd.blip("done");
   }
@@ -10412,6 +10639,7 @@ const Quest = (() => {
     if(Q.bonus.pin) rows.push(["ぴたり停止", "", "+" + Q.bonus.pin]);
     el("qf-rows").innerHTML = rows.map((r) => '<div class="qr"><span>' + r[0] + '</span><span>' + r[1] + '</span><b>' + r[2] + '</b></div>').join("");
     el("qf-best").textContent = R.newBest && R.n > 1 ? "自己ベスト更新！（これまでの最高 " + R.best + " 点）" : "最高 " + R.best + " 点・" + R.n + " 回目";
+    { let x = el("qf-xp"); if(!x){ x = document.createElement("div"); x.id = "qf-xp"; el("qf-best").after(x); } x.innerHTML = Career.html(R.xp); }   // v42: 経験値
     const rt = el("qf-retry"), nw = el("qf-new");
     if(rt) rt.firstElementChild.textContent = Q.gen ? "同じ内容でもう一度" : "もう一度";
     if(nw) nw.style.display = Q.gen ? "" : "none";
@@ -10431,6 +10659,7 @@ const Quest = (() => {
       b.addEventListener("click", () => { host.querySelectorAll(".quest-opt").forEach((x) => x.classList.toggle("on", x === b)); sel[mode] = c.id; if(onPick) onPick(c); });
       host.appendChild(b);
     }
+    try { Career.render(); } catch(e){}   // v42: 今日の挑戦のしるし
   }
   const inYard = (x, z) => fac.yards.some((y) => Math.hypot(x - y.x, z - y.z) < y.r);
   Rules.on((kind) => { if(!Q.on || Q.done || heliMode() || S.mode !== "car") return;   // v41.10: 信号無視・逆走の減点
