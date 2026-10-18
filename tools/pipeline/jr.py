@@ -53,6 +53,15 @@ def ground(x, z):
     fx = (x - fm["x0"]) / fm["step"]; fz = (z - fm["z0"]) / fm["step"]
     i = int(np.clip(np.floor(fx), 0, fm["nx"] - 2)); j = int(np.clip(np.floor(fz), 0, fm["nz"] - 2)); tx = np.clip(fx - i, 0, 1); tz = np.clip(fz - j, 0, 1)
     return float((FA[j, i] * (1 - tx) + FA[j, i + 1] * tx) * (1 - tz) + (FA[j + 1, i] * (1 - tx) + FA[j + 1, i + 1] * tx) * tz)
+# v44: 在来線（地上の線）の高さは、画面に出る地面の格子（scene の ground・4m）から取る。走行格子（drive）は立体交差の上の道路の
+#      高さも持つので、道路の高架の下をくぐる所で線路が高架の高さまで盛り上がっていた（岡山駅の西 (-350,210) など、最大 +6m）
+_g = sc["ground"]; _gn = _g["nx"] * _g["nz"]
+GV = np.frombuffer(geo_io.read_legacy("ground")[:_gn * 2], np.int16).reshape(_g["nz"], _g["nx"]) / 100.0
+def ground_vis(x, z):
+    if not inData(x, z): return ground(x, z)
+    fx = (x - _g["x0"]) / _g["step"]; fz = (z - _g["z0"]) / _g["step"]
+    i = int(np.clip(np.floor(fx), 0, _g["nx"] - 2)); j = int(np.clip(np.floor(fz), 0, _g["nz"] - 2)); tx = min(max(fx - i, 0), 1); tz = min(max(fz - j, 0), 1)
+    return float((GV[j, i] * (1 - tx) + GV[j, i + 1] * tx) * (1 - tz) + (GV[j + 1, i] * (1 - tx) + GV[j + 1, i + 1] * tx) * tz)
 def kind(x, z):
     if not inData(x, z): return 0
     i = int((x - d["x0"]) // d["step"]); j = int((z - d["z0"]) // d["step"])
@@ -139,7 +148,7 @@ for key, res in _CH.items():
         res = [(P[(P[:, 0] > -52500) & (P[:, 0] < 51800)], [t for t, p in zip(tags, P) if -52500 < p[0] < 51800], L) for P, tags, L in res]
     for ti, (P, tags, L) in enumerate(res[:2]):
         Q, ss, br, tn, ms = resample(P, tags, 2.0)
-        g_raw = np.array([ground(x, z) for x, z in Q])
+        g_raw = np.array([(ground if hs else ground_vis)(x, z) for x, z in Q])
         g = ndimage.gaussian_filter1d(g_raw, 5.0, mode="nearest")
         if hs:
             k_stn = int(np.argmin(np.hypot(*(Q - STN).T)))
@@ -244,6 +253,31 @@ for T in all_tracks:
                            lim=([[int(k), int(v)] for k, v in enumerate(T["ms"]) if k == 0 or v != T["ms"][k - 1]] if T["key"] == "shinkansen" else []),
                            el=T["el"].tolist(), tun=T["tun"].tolist(), inner=[round(float(v), 1) for v in T["inner"]], mate=[int(v) for v in T["mate_side"]]))
 J["piers"] = piers_all
+# v44: 在来線の駅のホーム（OSM の railway=platform の輪郭）。駅の停車位置から 400m 以内・線から 14m 以内の輪郭を、その駅のホームとして書き出す。
+#      高さ = 近い線のレール面 + 0.92m（JR 西日本の在来線の標準的なホームの高さ）。app がホームの床・縁の白線・点字ブロック・上屋・駅名標を作る
+_pl_out = []; _used = set()
+for T in all_tracks:
+    if T["key"] == "shinkansen": continue
+    for q in T["stops"]:
+        if q["name"] == "岡山": continue
+        k0 = int(q["s"] / 2.0); c0 = T["Q"][min(k0, len(T["Q"]) - 1)]
+        for wi, w in enumerate(_plat):
+            if wi in _used: continue
+            xy = np.asarray(w["xy"], float)
+            if len(xy) < 4 or w["nodes"][0] != w["nodes"][-1]: continue
+            if np.hypot(*(xy - c0).T).min() > 400: continue
+            # この輪郭に一番近い線（どの線のレール面に合わせるか）
+            best = None
+            for T2 in all_tracks:
+                if T2["key"] == "shinkansen": continue
+                dd = np.hypot(*(T2["Q"][None, :, :] - xy[:, None, :]).transpose(2, 0, 1)).min(1)
+                if best is None or dd.min() < best[0]: best = (float(dd.min()), T2)
+            if best is None or best[0] > 14.0: continue
+            T2 = best[1]; cen = xy.mean(0); kk = int(np.argmin(np.hypot(*(T2["Q"] - cen).T)))
+            _used.add(wi)
+            _pl_out.append(dict(st=q["name"], line=T["key"], y=round(float(T2["y"][kk]) + 0.92, 2), xy=[[round(float(a), 2), round(float(b), 2)] for a, b in xy[:-1]]))
+J["platforms"] = _pl_out
+print("platforms", len(_pl_out), sorted(set(p_["st"] for p_ in _pl_out)))
 s = json.dumps(J, ensure_ascii=False, separators=(",", ":"))
 open(f"{OUT}/jr.json", "w").write(s)
 for T in all_tracks:
