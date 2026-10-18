@@ -3482,7 +3482,7 @@ const MW = (() => {
       SA = await getJSON("data/mw_sa.json").catch(() => null);   // v44: PA・SA の中（無くても動く）
       for(const c of man.chains) chains.push(prep(c));
       gradeSep();
-      buildIndex(); ready = true; mergeBlend(); ready = false; findLots(); findFreeEnds(); mapIC(); ready = true;
+      buildIndex(); ready = true; mergeBlend(); conEnds(); findLots(); ready = false; findFreeEnds(); mapIC(); ready = true;
     }catch(e){ console.warn("mw", e); }
   }
   function runsToArr(n, runs){ const a = new Uint8Array(n); for(const [s, e] of runs) a.fill(1, s, Math.min(n, e + 1)); return a; }
@@ -3650,6 +3650,25 @@ const MW = (() => {
           for(const S of shapes){ if(S.rib) continue; const p = S.p, n = p.length; for(let i = 0; i < n; i++){ const k = i === 0 ? n - 1 : i - 1, ax = p[k][0], az = p[k][1], vx = p[i][0] - ax, vz = p[i][1] - az, l2 = vx * vx + vz * vz || 1, t = clamp(((q[0] - ax) * vx + (q[2] - az) * vz) / l2, 0, 1), px = ax + vx * t, pz = az + vz * t, d = Math.hypot(px - q[0], pz - q[2]); if(d < bd){ bd = d; best = [px, pz]; } } }
           if(best && bd > 0.5 && bd < 60){ const ex = best[0] + (best[0] - q[0]) / bd * 4, ez = best[1] + (best[1] - q[2]) / bd * 4, p = [[q[0] - ux * 4, q[2] - uz * 4], [q[0], q[2]], [ex, ez]]; shapes.push({ p, rib: true, hw: 4.6, bb: bbOf(p, 4.6), con: true }); } }
         c["lotEnd" + e] = true; }
+      // v45.1: 入口の角の舗装（エプロン）。ランプの最後の 40m の両側の縁（+0.6m）と、ランプの端から 24m 以内の駐車場・通路の縁の点を包む凸多角形。
+      //   ランプと駐車場の間の切れ込み（角を小さく回ると縁石に当たっていた所）を埋める。本線の路面の上の点は入れない
+      const hull = (P_) => { const a = P_.slice().sort((p_, q_) => p_[0] - q_[0] || p_[1] - q_[1]); if(a.length < 3) return null; const cr = (o, p_, q_) => (p_[0] - o[0]) * (q_[1] - o[1]) - (p_[1] - o[1]) * (q_[0] - o[0]);
+        const lo = [], up = []; for(const p_ of a){ while(lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p_) <= 0) lo.pop(); lo.push(p_); } for(let i = a.length - 1; i >= 0; i--){ const p_ = a[i]; while(up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p_) <= 0) up.pop(); up.push(p_); }
+        up.pop(); lo.pop(); return lo.concat(up); };
+      const onMain = (x, z) => { const r = roadAt(x, z, undefined, true); return r && r.c.kind === "main"; };
+      // 駐車場の縁を横切るランプ（中を通り抜ける・中から出ていく）の所にも同じ舗装を付ける
+      const tmp = { bb: [1e9, 1e9, -1e9, -1e9], shapes }; for(const S of shapes){ tmp.bb[0] = Math.min(tmp.bb[0], S.bb[0]); tmp.bb[1] = Math.min(tmp.bb[1], S.bb[1]); tmp.bb[2] = Math.max(tmp.bb[2], S.bb[2]); tmp.bb[3] = Math.max(tmp.bb[3], S.bb[3]); }
+      const apronAt = pts.map(q => [q[0], q[2], q[3], q[4], q[4] === 0 ? 1 : -1]);
+      for(const c of chains){ if(c.kind === "main") continue; let prev = null;
+        for(let i = 0; i < c.n; i++){ if(!inBB(tmp.bb, c.X[i], c.Z[i], 30)){ prev = null; continue; } const now = inLot(tmp, c.X[i], c.Z[i]);
+          if(prev !== null && now !== prev && !apronAt.some(a => Math.hypot(a[0] - c.X[i], a[1] - c.Z[i]) < 15)) apronAt.push([c.X[i], c.Z[i], c, i, 0]); prev = now; } }
+      for(const [qx, qz, c, e, dir] of apronAt){ const q = [qx, 0, qz], R = 24, P_ = [];
+        for(let k = dir ? 0 : -6; k <= (dir ? 8 : 6); k++){ const i = clamp(e + (dir || 1) * k, 0, c.n - 1); for(const u of [-c.hl - 0.6, c.hr + 0.6]){ const p_ = P(c, i, u, 0); P_.push([p_[0], p_[2]]); } }
+        for(const S of shapes){ if(S.apron || !inBB(S.bb, q[0], q[2], R + (S.hw || 0))) continue; const p = S.p, n = p.length;
+          const sides = S.rib ? [-S.hw, S.hw] : [0];
+          for(let i = S.rib ? 1 : 0; i < n; i++){ const k = i === 0 ? n - 1 : i - 1, ax = p[k][0], az = p[k][1], vx = p[i][0] - ax, vz = p[i][1] - az, l = Math.hypot(vx, vz) || 1, nx_ = -vz / l, nz_ = vx / l, m = Math.max(1, Math.ceil(l / 2));
+            for(let t = 0; t <= m; t++) for(const off of sides){ const x = ax + vx * t / m + nx_ * off, z = az + vz * t / m + nz_ * off; if(Math.hypot(x - q[0], z - q[2]) > R || onMain(x, z)) continue; P_.push([x, z]); } } }
+        const H = hull(P_); if(H && H.length >= 3) shapes.push({ p: H, bb: bbOf(H, 0), apron: true }); }
       let bb = [1e9, 1e9, -1e9, -1e9]; for(const S of shapes){ bb[0] = Math.min(bb[0], S.bb[0]); bb[1] = Math.min(bb[1], S.bb[1]); bb[2] = Math.max(bb[2], S.bb[2]); bb[3] = Math.max(bb[3], S.bb[3]); }
       const bld = (det.bld || []).map(b => ({ p: b.p, h: b.h, name: b.name, wc: b.wc, roof: b.roof, bb: bbOf(b.p, 0) }));
       lots.push({ name: (a.name || "").replace(/\s*[（(](上り|下り)[）)]/, ""), shapes, pts, bb, bld, H: null }); });
@@ -3663,15 +3682,42 @@ const MW = (() => {
       // なめらかに（3×3 平均を 2 回、ただし元より下げない）
       const raw = Float32Array.from(y); for(let it = 0; it < 2; it++){ const o = Float32Array.from(y); for(let j = 1; j < nz - 1; j++) for(let i = 1; i < nx - 1; i++){ let s_ = 0; for(let dj = -1; dj <= 1; dj++) for(let di = -1; di <= 1; di++) s_ += o[(j + dj) * nx + i + di]; y[j * nx + i] = Math.max(raw[j * nx + i], s_ / 9); } }
       L.H = { x0, z0, st, nx, nz, y };
-      const seen = new Set(); for(const q of L.pts){ const c = q[3]; if(seen.has(c)) continue; seen.add(c);
-        const d = new Float32Array(c.n), has = new Uint8Array(c.n); for(let i = 0; i < c.n; i++){ if(inLot(L, c.X[i], c.Z[i])){ d[i] = lotY(L, c.X[i], c.Z[i]) + 0.03 - c.Y[i]; has[i] = 1; } }
+      // v45.1: 駐車場全体を、つながるランプの端の高さ（本線に合わせた後の高さ）の平均に寄せる。地形（10m の標高）だけで決めると
+      //   本線より 5〜10m 低くなる所があり、短いランプでは坂で吸収できずに段差になっていた（地形が上に出る所は MWCUT で抜く）
+      //   ランプの端ごとの差に合わせて平面で傾ける（端が 2 つならその 2 点を結ぶ向き、3 つ以上なら最小二乗。傾きは 6% まで）
+      if(L.pts.length){ const R = L.pts.map(q => [q[0], q[2], q[3].Y[q[4]] - lotY(L, q[0], q[2])]), n = R.length, mx = R.reduce((a, r) => a + r[0], 0) / n, mz = R.reduce((a, r) => a + r[1], 0) / n, m0 = R.reduce((a, r) => a + r[2], 0) / n;
+        let gb = 0, gc = 0;
+        if(n >= 3){ let sxx = 0, sxz = 0, szz = 0, sxy = 0, szy = 0; for(const r of R){ const dx = r[0] - mx, dz = r[1] - mz, dy = r[2] - m0; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; sxy += dx * dy; szy += dz * dy; } const det = sxx * szz - sxz * sxz; if(Math.abs(det) > 1e-3){ gb = (sxy * szz - szy * sxz) / det; gc = (szy * sxx - sxy * sxz) / det; } }
+        else if(n === 2){ const dx = R[1][0] - R[0][0], dz = R[1][1] - R[0][1], l2 = dx * dx + dz * dz || 1, k = (R[1][2] - R[0][2]) / l2; gb = k * dx; gc = k * dz; }
+        const gm = Math.hypot(gb, gc); if(gm > 0.06){ gb *= 0.06 / gm; gc *= 0.06 / gm; }
+        for(let j = 0; j < nz; j++) for(let i = 0; i < nx; i++){ const x = x0 + i * st, z = z0 + j * st; y[j * nx + i] += m0 + gb * (x - mx) + gc * (z - mz); }
+        L.off = m0; }
+      // v45.1: 駐車場に入る・出るランプに加え、駐車場の中を通るランプ（端が別のランプにつながる場合）も駐車場の高さに合わせる（差が 2.5m を超える所＝立体交差はそのまま）
+      const cands = new Set(L.pts.map(q => q[3])); for(const c of chains){ if(c.kind === "main" || cands.has(c)) continue; for(let i = 0; i < c.n; i += 2){ if(inLot(L, c.X[i], c.Z[i]) && Math.abs(lotY(L, c.X[i], c.Z[i]) - c.Y[i]) < 2.5){ cands.add(c); break; } } }
+      const seen = new Set(); for(const c of cands){ if(seen.has(c)) continue; seen.add(c); const own = L.pts.some(q => q[3] === c);
+        const core = { bb: L.bb, shapes: L.shapes.filter(S => !S.con && !S.apron) };   // 入口の広がり・角の舗装はランプの高さに合わせて描くので、ここでは数えない（短いランプで坂の長さが足りなくなる）
+        const d = new Float32Array(c.n), has = new Uint8Array(c.n); for(let i = 0; i < c.n; i++){ if(inLot(core, c.X[i], c.Z[i])){ const dd = lotY(L, c.X[i], c.Z[i]) + 0.03 - c.Y[i]; if(!own && Math.abs(dd) > 2.5) continue; d[i] = dd; has[i] = 1; } }
         // 端の点（駐車場の縁の外でも）は必ず合わせる
         for(const q2 of L.pts) if(q2[3] === c && !has[q2[4]]){ d[q2[4]] = lotY(L, c.X[q2[4]], c.Z[q2[4]]) + 0.03 - c.Y[q2[4]]; has[q2[4]] = 1; }
-        const out = new Float32Array(c.n); for(let i = 0; i < c.n; i++){ if(has[i]){ out[i] = d[i]; continue; } let best = 0, bw = 0;
-          for(let k = 1; k < c.n; k++){ let found = false; for(const j of [i - k, i + k]){ if(j < 0 || j >= c.n || !has[j]) continue; found = true; const F = Math.max(30, 1.5 * Math.abs(d[j]) / 0.05) / c.ds; if(k < F){ const t = 1 - k / F, w = t * t * (3 - 2 * t); if(Math.abs(d[j] * w) > Math.abs(best * bw)){ best = d[j]; bw = w; } } } if(found) break; }
-          out[i] = best * bw; }
+        // 変える量: 駐車場の中は駐車場の高さ、本線と重なる所・ほかの鎖につながる端は 0。その間はなめらかにつなぎ、片側だけなら 5% 以下で 0 へ戻す
+        const pin = []; for(const [e, con] of [[0, c.cS], [c.n - 1, c.cE]]) if(con && !has[e]) pin.push(e);
+        for(let i = 0; i < c.n; i++){ if(has[i]) continue; for(const u of [-c.hl, c.hr]){ const p_ = P(c, i, u, 0), r = roadAt(p_[0], p_[2], p_[1], true, c.id); if(r && r.c.kind === "main" && Math.abs(r.y - p_[1]) < 0.6 && r.c.tx[r.i] * c.tx[i] + r.c.tz[r.i] * c.tz[i] > 0.9){ pin.push(i); break; } } }
+        const kv = new Map(); for(let i = 0; i < c.n; i++) if(has[i]) kv.set(i, d[i]); for(const e of pin) if(!kv.has(e)) kv.set(e, 0);
+        const ks = [...kv.keys()].sort((p_, q_) => p_ - q_), out = new Float32Array(c.n), sm = t => t * t * (3 - 2 * t);
+        for(let i = 0, q = 0; i < c.n; i++){ while(q < ks.length && ks[q] < i) q++; if(kv.has(i)){ out[i] = kv.get(i); continue; }
+          const kL = q > 0 ? ks[q - 1] : null, kR = q < ks.length ? ks[q] : null;
+          if(kL !== null && kR !== null){ const t = (i - kL) / (kR - kL); out[i] = kv.get(kL) * (1 - sm(t)) + kv.get(kR) * sm(t); }
+          else { const k = kL !== null ? kL : kR, v = kv.get(k), F = Math.max(30, 1.5 * Math.abs(v) / 0.05) / c.ds, dd = Math.abs(i - k); out[i] = dd < F ? v * sm(1 - dd / F) : 0; } }
         for(let i = 0; i < c.n; i++) c.Y[i] += out[i]; }
-      for(const q of L.pts) q[1] = q[3].Y[q[4]]; }
+      for(const q of L.pts) q[1] = q[3].Y[q[4]];
+      // v45.1: 入口の広がり・角の舗装の高さは、ランプの路面と駐車場の間をなめらかにつなぐ（ランプの中心からの距離と、駐車場の本体からの距離の比で混ぜる）
+      { const core = { bb: L.bb, shapes: L.shapes.filter(S => !S.con && !S.apron) }, H = L.H, rp = [];
+        for(const c of new Set(L.pts.map(q => q[3]))) for(let i = 0; i < c.n; i++){ if(inBB(L.bb, c.X[i], c.Z[i], 10)) rp.push([c.X[i], c.Z[i], c.Y[i]]); }
+        const y2 = Float32Array.from(H.y);
+        for(let j = 0; j < H.nz; j++) for(let i = 0; i < H.nx; i++){ const x = H.x0 + i * H.st, z = H.z0 + j * H.st; if(inLot(core, x, z)) continue; if(!L.shapes.some(S => (S.con || S.apron) && inBB(S.bb, x, z, 4) && (shapeIn(S, x, z) || shapeD(S, x, z) < 4))) continue;
+          let dR = 1e9, hR = 0; for(const r of rp){ const d = (r[0] - x) ** 2 + (r[1] - z) ** 2; if(d < dR){ dR = d; hR = r[2]; } } dR = Math.sqrt(dR); if(dR > 60) continue;
+          const dC = Math.max(0, lotEdgeDist(core, x, z)), w = dC / (dC + dR + 1e-3); y2[j * H.nx + i] = hR * w + H.y[j * H.nx + i] * (1 - w) + 0.03 * (1 - w); }
+        H.y = y2; } }
   }
   /* 駐車場の見た目（Outer の高さが要るので、地形の準備ができてから一度だけ作る） */
   let lotsBuilt = false;
@@ -3681,6 +3727,7 @@ const MW = (() => {
       // 1 枚 = 10m × 17m: 駐車ます 5m・5m（背中合わせ）＋車路 7m。ますの線は 2.5m ごと
       const pm = w / 10, pv = h / 17; for(let k = 0; k <= 4; k++) g.fillRect(k * 2.5 * pm - 0.08 * pm, 0, 0.16 * pm, 10 * pv); g.fillRect(0, 5 * pv - 0.08 * pv, w, 0.16 * pv); g.fillRect(0, 0, w, 0.16 * pv); g.fillRect(0, 10 * pv - 0.16 * pv, w, 0.16 * pv); }, true);
     const asph = canvasTex(256, 256, (g, w, h) => noise(g, w, h, "#4a4b4d", 0.10, 7000), true);
+    const matApron = new THREE.MeshLambertMaterial({ map: canvasTex(256, 256, (g, w, h) => noise(g, w, h, "#4a4b4d", 0.10, 7000), true), polygonOffset: true, polygonOffsetFactor: 1.5, polygonOffsetUnits: 3 });   // v45.1: 入口の角の舗装（駐車ますの線なし、駐車場より奥に描く）
     const matLot = new THREE.MeshLambertMaterial({ map: stall, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 2 }), matAisle = new THREE.MeshLambertMaterial({ map: asph, polygonOffset: true, polygonOffsetFactor: 0.5, polygonOffsetUnits: 1 });
     const matWall = new THREE.MeshLambertMaterial({ map: canvasTex(128, 128, (g, w, h) => noise(g, w, h, "#9a978f", 0.08, 2500), true), side: THREE.DoubleSide });
     const plain = new THREE.MeshLambertMaterial({ color: 0xe2ded4 }), roof = new THREE.MeshLambertMaterial({ color: 0x5b6066 }), roofL = new THREE.MeshLambertMaterial({ color: 0x8a9096, side: THREE.DoubleSide });
@@ -3695,7 +3742,7 @@ const MW = (() => {
         const sub = (a_, b_, c_, dep) => { const l = Math.max(Math.hypot(a_[0] - b_[0], a_[1] - b_[1]), Math.hypot(b_[0] - c_[0], b_[1] - c_[1]), Math.hypot(c_[0] - a_[0], c_[1] - a_[1])); if(l <= 8 || dep > 6){ put(a_[0], a_[1]); put(b_[0], b_[1]); put(c_[0], c_[1]); return; }
           const ab = [(a_[0] + b_[0]) / 2, (a_[1] + b_[1]) / 2], bc = [(b_[0] + c_[0]) / 2, (b_[1] + c_[1]) / 2], ca_ = [(c_[0] + a_[0]) / 2, (c_[1] + a_[1]) / 2]; sub(a_, ab, ca_, dep + 1); sub(ab, b_, bc, dep + 1); sub(ca_, bc, c_, dep + 1); sub(ab, bc, ca_, dep + 1); };
         for(const t of tri){ const A = p[t[0]], B_ = p[t[1]], C_ = p[t[2]]; const cr = (B_[0] - A[0]) * (C_[1] - A[1]) - (B_[1] - A[1]) * (C_[0] - A[0]); if(cr > 0) sub(A, C_, B_, 0); else sub(A, B_, C_, 0); }
-        const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); g.computeVertexNormals(); const lm = new THREE.Mesh(g, matLot); lm.receiveShadow = true; grp.add(lm); }
+        const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); g.computeVertexNormals(); const lm = new THREE.Mesh(g, S.apron ? matApron : matLot); lm.receiveShadow = true; grp.add(lm); }
       // 通路・連絡路: 4m ごとに折った帯
       const Ba = mkB();
       for(const S of L.shapes){ if(!S.rib) continue; const p = S.p, rows = []; for(let i = 0; i + 1 < p.length; i++){ const ax = p[i][0], az = p[i][1], bx = p[i + 1][0], bz = p[i + 1][1], l = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(l / 4)), nx_ = -(bz - az) / (l || 1), nz_ = (bx - ax) / (l || 1);
@@ -4246,6 +4293,12 @@ const MW = (() => {
           const t = clamp(((px - X) * c.tx[i] + (pz - Z) * c.tz[i]) / c.ds, 0, 1), y = Math.min(c.Y[i] + (c.Y[i + 1] - c.Y[i]) * t, A[1], B_[1]), k = (jz * CUT_W + jx) * 4;
           if(cutD[k + 2]){ const old = ((cutD[k] << 8) | cutD[k + 1]) / 10 - 1000; if(old <= y) continue; }   // 重なる所は低い方（その上の地形を抜く）
           const v = Math.max(0, Math.min(65535, Math.round((y + 1000) * 10))); cutD[k] = v >> 8; cutD[k + 1] = v & 255; cutD[k + 2] = 255; cutD[k + 3] = 255; } } }
+    // v45.1: PA・SA の駐車場の上に出る地形も抜く
+    for(const L of lots){ if(!L.H || L.bb[2] < x0 || L.bb[0] > x1 || L.bb[3] < z0 || L.bb[1] > z1) continue;
+      const ix0 = Math.max(0, Math.floor((L.bb[0] - x0) / CUT_ST)), ix1 = Math.min(CUT_W - 1, Math.ceil((L.bb[2] - x0) / CUT_ST)), iz0 = Math.max(0, Math.floor((L.bb[1] - z0) / CUT_ST)), iz1 = Math.min(CUT_W - 1, Math.ceil((L.bb[3] - z0) / CUT_ST));
+      for(let jz = iz0; jz <= iz1; jz++) for(let jx = ix0; jx <= ix1; jx++){ const px = x0 + (jx + 0.5) * CUT_ST, pz = z0 + (jz + 0.5) * CUT_ST; if(!inLot(L, px, pz) && lotEdgeDist(L, px, pz) > 0.8) continue;
+        const y = lotY(L, px, pz), k = (jz * CUT_W + jx) * 4; if(cutD[k + 2]){ const old = ((cutD[k] << 8) | cutD[k + 1]) / 10 - 1000; if(old <= y) continue; }
+        const v = Math.max(0, Math.min(65535, Math.round((y + 1000) * 10))); cutD[k] = v >> 8; cutD[k + 1] = v & 255; cutD[k + 2] = 255; cutD[k + 3] = 255; } }
     if(!MWCUT.tex){ MWCUT.tex = new THREE.DataTexture(cutD, CUT_W, CUT_W, THREE.RGBAFormat); MWCUT.tex.magFilter = MWCUT.tex.minFilter = THREE.NearestFilter; MWCUT.tex.generateMipmaps = false; MWCUT.tex.flipY = false; }
     MWCUT.tex.needsUpdate = true; MWCUT.b.set(x0, z0, 1 / (CUT_W * CUT_ST), 1 / (CUT_W * CUT_ST));
   }
