@@ -308,9 +308,9 @@ const DETAIL_TEX = (() => {
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy()); return t;
 })();
 const DETAIL_U = { uDetail: { value: DETAIL_TEX }, uDetailOn: { value: 1 }, uCamP: { value: camera.position } };   // r128 の Lambert には cameraPosition が送られないので自前で渡す
-function groundDetail(m){
-  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
-  m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|gdet2";
+function groundDetail(m, scale){
+  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null, SC = (scale || 3).toFixed(2);
+  m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|gdet2_" + SC;
   m.onBeforeCompile = (sh, r) => {
     if(prev) prev(sh, r);
     sh.uniforms.uDetail = DETAIL_U.uDetail; sh.uniforms.uDetailOn = DETAIL_U.uDetailOn; sh.uniforms.uCamP = DETAIL_U.uCamP;
@@ -327,7 +327,7 @@ function groundDetail(m){
           float wS = (1.0 - wG) * smoothstep(0.035, 0.09, mac.r - mac.b) * (1.0 - smoothstep(0.55, 0.7, lum));
           float wC = (1.0 - wG) * (1.0 - wS) * smoothstep(0.40, 0.56, lum) * (1.0 - smoothstep(0.08, 0.16, mx - mn));
           float wA = max(0.0, 1.0 - wG - wS - wC);
-          vec2 tp = vGW.xz / 3.0;
+          vec2 tp = vGW.xz / ${SC};
           vec3 D = texture2D(uDetail, tp).rgb, D2 = texture2D(uDetail, tp * 0.37 + vec2(0.13, 0.71)).rgb;
           float soil = 0.5 + (D.r - 0.47) * 0.7 + (D2.b - 0.42) * 0.5;
           float det = wA * (0.5 + (D.r - 0.47) * 1.15 + (D2.r - 0.47) * 0.35)
@@ -343,6 +343,64 @@ function groundDetail(m){
           diffuseColor.rgb = mix(photo, nearC, fade * 0.92);
         } }
       #endif`);
+  };
+  m.needsUpdate = true; return m;
+}
+/* v43: 市内の道路トンネル（箱）の坑口で、地面（高さの格子）が口をふさぐ斜面（道の真ん中の盛り土）になる所を描かない。
+   形は data/tunnels_v.json（pipeline/tunnel_export.py: 中心線 約 8m ごと [x, z, 床, 半幅, 上限]）。カメラの近く（400m）のトンネルの点だけ uniform に入れる */
+const CityTun = (() => {
+  const N = 64, U = { uCT: { value: Array.from({ length: N }, () => new THREE.Vector4(0, 0, 0, -1)) }, uCTN: { value: 0 }, uCTB: { value: new THREE.Vector4(0, 0, 0, 0) } };
+  let T = [];
+  fetch("data/tunnels_v.json").then(r => r.ok ? r.json() : []).then(a => { T = (a || []).map(t => { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for(const q of t.p){ x0 = Math.min(x0, q[0] - q[3]); x1 = Math.max(x1, q[0] + q[3]); z0 = Math.min(z0, q[1] - q[3]); z1 = Math.max(z1, q[1] + q[3]); } return { p: t.p, b: [x0, z0, x1, z1] }; }); }).catch(() => {});
+  function tick(c){
+    let n = 0; const B = [1e9, 1e9, -1e9, -1e9];
+    for(const t of T){
+      const dx = Math.max(t.b[0] - c.x, 0, c.x - t.b[2]), dz = Math.max(t.b[1] - c.z, 0, c.z - t.b[3]);
+      if(Math.hypot(dx, dz) > 400 || n + t.p.length + 1 > N) continue;
+      if(n) U.uCT.value[n++].set(0, 0, 0, -1);
+      for(const q of t.p) U.uCT.value[n++].set(q[0], q[1], q[2], q[3] + 100 * Math.round(Math.max(0, Math.min(99, q[4] - q[2])) * 10));
+      B[0] = Math.min(B[0], t.b[0]); B[1] = Math.min(B[1], t.b[1]); B[2] = Math.max(B[2], t.b[2]); B[3] = Math.max(B[3], t.b[3]);
+    }
+    U.uCTN.value = n; if(n) U.uCTB.value.set(B[0], B[1], B[2], B[3]);
+  }
+  function patch(m){
+    if(m.userData.ct43) return m; m.userData.ct43 = 1;
+    const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
+    m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|ct43";
+    m.onBeforeCompile = (sh, r) => {
+      if(prev) prev(sh, r);
+      for(const k in U) sh.uniforms[k] = U[k];
+      sh.vertexShader = "varying vec3 vCTW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vCTW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+      sh.fragmentShader = "uniform vec4 uCT[" + N + "]; uniform float uCTN; uniform vec4 uCTB; varying vec3 vCTW;\n" + sh.fragmentShader.replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
+        if(uCTN > 1.5 && vCTW.x > uCTB.x && vCTW.x < uCTB.z && vCTW.z > uCTB.y && vCTW.z < uCTB.w){
+          for(int i = 0; i < ${N - 1}; i++){
+            if(float(i) >= uCTN - 1.0) break;
+            vec4 a = uCT[i], b = uCT[i + 1]; if(a.w < 0.0 || b.w < 0.0) continue;
+            vec2 ab = b.xy - a.xy; float t = clamp(dot(vCTW.xz - a.xy, ab) / max(dot(ab, ab), 1e-4), 0.0, 1.0);
+            float d = length(vCTW.xz - (a.xy + ab * t));
+            float hw = mix(mod(a.w, 100.0), mod(b.w, 100.0), t), fl = mix(a.z, b.z, t), top = fl + mix(floor(a.w / 100.0), floor(b.w / 100.0), t) / 10.0;
+            if(d < hw && vCTW.y > fl + 0.3 && vCTW.y < top) discard;
+          }
+        }`);
+    };
+    m.needsUpdate = true; return m;
+  }
+  return { tick, patch, U };
+})();
+/* v43: 山の地形（遠景・山陽道沿いの地形）を、山陽道のトンネルの管の中だけ描かない（地形の山が管の中へ入り込んで「トンネルの中に緑の山」が見えていた）。
+   カメラに近いトンネルの中心線（最大 64 点。w = 管の半幅、w<0 は区切り）を毎フレーム渡し、その管の中（中心線から w 以内・路面の 1.5m 下〜9.5m 上）の地形の画素を捨てる */
+const TUN_U = { uTun: { value: Array.from({ length: 64 }, () => new THREE.Vector4(0, 0, 0, -1)) }, uTunN: { value: 0 } };
+function terrainFX(m){
+  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null;
+  m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|tfx43";
+  m.onBeforeCompile = (sh, r) => {
+    if(prev) prev(sh, r);
+    sh.uniforms.uTun = TUN_U.uTun; sh.uniforms.uTunN = TUN_U.uTunN;
+    sh.vertexShader = "varying vec3 vTW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vTW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+    sh.fragmentShader = "uniform vec4 uTun[64]; uniform float uTunN; varying vec3 vTW;\n" + sh.fragmentShader.replace("#include <clipping_planes_fragment>", `#include <clipping_planes_fragment>
+      for(int i = 0; i < 63; i++){ if(float(i) >= uTunN - 1.0) break; vec4 a = uTun[i], b = uTun[i + 1]; if(a.w < 0.0 || b.w < 0.0) continue;
+        vec2 ab = b.xz - a.xz; float t = clamp(dot(vTW.xz - a.xz, ab) / max(dot(ab, ab), 1e-3), 0.0, 1.0); float d = length(vTW.xz - (a.xz + ab * t)), y = mix(a.y, b.y, t);
+        if(d < a.w && vTW.y > y - 1.5 && vTW.y < y + 9.5) discard; }`);
   };
   m.needsUpdate = true; return m;
 }
@@ -388,14 +446,14 @@ const OrthoPages = (() => {
     m.customProgramCacheKey = () => "ovT_" + kind;
     m.onBeforeCompile = (sh) => { sh.uniforms.uOvT = { value:T };
       sh.vertexShader = "uniform vec4 uOvT;\n" + sh.vertexShader.replace("#include <uv_vertex>", "#ifdef USE_UV\n vUv = uv * uOvT.xy + uOvT.zw;\n#endif"); };
-    if(kind === "roof") Env.patch(m, "ortho"); else NightL.patch(groundDetail(m));
+    if(kind === "roof") Env.patch(m, "ortho"); else CityTun.patch(NightL.patch(groundDetail(m)));
     omats.set(key, m); return m;
   }
   function pageMat(p, kind){
     const key = kind + p; if(pmats.has(key)) return pmats.get(key);
     const t = tex[p];
     const m = kind === "roof" ? new THREE.MeshLambertMaterial({ map:t, emissive:0x1c1c1c, emissiveMap:t }) : new THREE.MeshLambertMaterial({ map:t });
-    if(kind === "roof") Env.patch(m, "ortho"); else NightL.patch(groundDetail(m));
+    if(kind === "roof") Env.patch(m, "ortho"); else CityTun.patch(NightL.patch(groundDetail(m)));
     pmats.set(key, m); return m;
   }
   function mat(p, kind){ return tex[p] ? pageMat(p, kind) : ovMat(p, kind); }
@@ -963,7 +1021,7 @@ const Stream = (() => {
     R.near = heli ? Math.min(250, agl*0.5) : 0; R.far = heli ? Math.min(3200, agl*4) : 0;
     R.veg = heli ? Math.min(350, agl*0.8) : 0; R.detail = heli ? -Math.min(400, agl*2) : 0;
     const p = heli ? Heli.focus(_fp) : c;
-    update(p.x, p.z, false); Outer.tick(c); MW.tick(c);
+    update(p.x, p.z, false); Outer.tick(c); MW.tick(c); CityTun.tick(c);
     const gy = heli ? Heli.H.ground : 0;
     if(OrthoPages.active){ OrthoPages.tick(c, heli ? (c.y-gy)*0.7 : 0, agl); groundTick(c, heli, gy, 1); }
     else for(const T of GROUND_TILES){ const dx=Math.max(T.x0-c.x,0,c.x-(T.x0+T.size)), dz=Math.max(T.z0-c.z,0,c.z-(T.z0+T.size)); const near=Math.hypot(dx,dz, heli ? (c.y-gy)*0.7 : 0)<700;
@@ -1001,7 +1059,7 @@ async function buildFarTerrain(meta, buf){
   }
   const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   g.setIndex(idx); g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex })); mesh.name = "farTerrain"; mesh.receiveShadow = false; mesh.renderOrder = -0.5;
+  const mesh = new THREE.Mesh(g, terrainFX(new THREE.MeshLambertMaterial({ map: tex }))); mesh.name = "farTerrain"; mesh.receiveShadow = false; mesh.renderOrder = -0.5;
   scene.add(mesh);
 }
 /* ---------------- v36: 外側の地形タイル（遠景の 20km 四方の外・山陽新幹線の線路沿い） ----------------
@@ -1047,7 +1105,7 @@ const Outer = (() => {
       const p = b * N + a; ix.push(p, p + N, p + 1, p + 1, p + N, p + N + 1); }
     if(!ix.length) return null;
     const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setAttribute("uv", new THREE.BufferAttribute(uv, 2)); g.setIndex(ix); g.computeVertexNormals();
-    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: tex })); m.name = "outer_" + t.key; m.renderOrder = -0.5; return m;
+    const m = new THREE.Mesh(g, terrainFX(groundDetail(new THREE.MeshLambertMaterial({ map: tex }), 8))); m.name = "outer_" + t.key; m.renderOrder = -0.5; return m;   // v43: 近くは質感（山の木々）・トンネルの管の中は描かない
   }
   function load(t){
     const key = t.key; loading.add(key); busy++;
@@ -1251,18 +1309,39 @@ const MW = (() => {
     const lam = (o) => new THREE.MeshLambertMaterial(o);
     M = {
       road: [null, road(1), road(2), road(3)].map(t => t ? lam({ map: t }) : null),
-      verge: lam({ map: noiseTex("#6a8a49", 0.22, 4500), side: THREE.DoubleSide }),
-      slope: lam({ map: noiseTex("#718a4d", 0.28, 5500), vertexColors: true, side: THREE.DoubleSide }),
+      verge: lam({ map: noiseTex("#6a8a49", 0.22, 4500), color: 0xa4ad94, side: THREE.DoubleSide }),   // v43: 色を少し落とす（周りの山肌の写真より鮮やかな緑で浮いていた）
+      slope: lam({ color: 0xa4ad94, map: tex(256, 256, (g, w, h) => { noise(g, w, h, "#6f8a4a", 0.26, 7000); for(let i = 0; i < 1800; i++){ g.strokeStyle = `rgba(${Math.random() < 0.5 ? "30,45,18" : "150,170,95"},${0.25 + Math.random() * 0.3})`; g.lineWidth = 1; const x = Math.random() * w, y = Math.random() * h; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 4, y - 3 - Math.random() * 6); g.stroke(); } }, true), vertexColors: true, side: THREE.DoubleSide }),
+      // v43: 法枠（切土の斜面）: 3m 四方にコンクリートの格子（幅 30cm）と、中は草
+      slopeCut: lam({ color: 0xa4ad94, map: tex(256, 256, (g, w, h) => { noise(g, w, h, "#6c8546", 0.26, 7000);
+        for(let i = 0; i < 1500; i++){ g.strokeStyle = `rgba(${Math.random() < 0.5 ? "30,45,18" : "150,170,95"},${0.25 + Math.random() * 0.3})`; g.beginPath(); const x = Math.random() * w, y = Math.random() * h; g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 4, y - 3 - Math.random() * 6); g.stroke(); }
+        const bw = w * 0.1; g.fillStyle = "#b9b6ad"; g.fillRect(0, 0, bw, h); g.fillRect(0, 0, w, bw); g.fillStyle = "rgba(0,0,0,0.18)"; g.fillRect(bw, bw, 3, h - bw); g.fillRect(bw, bw, w - bw, 3);
+        noise(g, bw, h, "rgba(0,0,0,0)", 0.08, 600); }, true), vertexColors: true, side: THREE.DoubleSide }),
       conc: lam({ color: 0xbdbbb4, side: THREE.DoubleSide }), concDark: lam({ color: 0xa5a39d, side: THREE.DoubleSide }),
       rail: lam({ color: 0xcfd3d6, side: THREE.DoubleSide }), post: lam({ color: 0xa9adb0 }), pole: lam({ color: 0x9aa0a4 }),
       refl: new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: false }), barrier: lam({ color: 0xd9d9d4 }), barrierRed: lam({ color: 0xc8302a }), reflO: new THREE.MeshBasicMaterial({ color: 0xff9a2a }),
-      tube: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+      // v43: トンネルの内面（高さ×長さの絵: 内装板の目地・覆工 10.5m ごとのつなぎ目・上の方の水の跡）。照明で明るい内面なので MeshBasic（昼夜とも同じ明るさ）
+      tube: new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, map: tex(64, 512, (g, w, h) => {
+        g.fillStyle = "#ffffff"; g.fillRect(0, 0, w, h); const X = (hm) => hm / 7.4 * w;
+        for(let i = 0; i < 2600; i++){ const v = Math.random(); g.fillStyle = `rgba(${v > 0.5 ? 255 : 0},${v > 0.5 ? 255 : 0},${v > 0.5 ? 255 : 0},${Math.random() * 0.025})`; g.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 3); }
+        g.fillStyle = "rgba(60,58,52,0.55)"; for(let k = 0; k < 5; k++) g.fillRect(X(0.25), k * h / 5, X(3.0) - X(0.25), 2);        // 内装板の縦の目地（2.1m おき）
+        g.fillRect(X(1.5) - 1, 0, 2, h); g.fillStyle = "rgba(40,40,40,0.7)"; g.fillRect(X(3.0) - 1, 0, 3, h);                          // 横の目地・内装板の上端
+        g.fillStyle = "rgba(30,30,30,0.45)"; g.fillRect(X(3.05), 0, w - X(3.05), 3);                                                     // 覆工のつなぎ目（10.5m ごと）
+        for(let i = 0; i < 9; i++){ const x0 = X(3.2 + Math.random() * 3.5), y0 = Math.random() * h; const gr = g.createLinearGradient(x0, 0, x0 - X(1.4), 0); gr.addColorStop(0, "rgba(70,62,50,0.16)"); gr.addColorStop(1, "rgba(70,62,50,0)"); g.fillStyle = gr; g.fillRect(x0 - X(1.4), y0, X(1.4), 6 + Math.random() * 14); }   // 水の跡
+      }, true) }),
+      // 坑口のコンクリート（型枠の目地・縦の汚れ）。uv は m/4
+      portal: lam({ vertexColors: true, side: THREE.DoubleSide, map: tex(256, 256, (g, w, h) => { noise(g, w, h, "#d8d6d0", 0.12, 9000);
+        g.fillStyle = "rgba(0,0,0,0.10)"; g.fillRect(0, h * 0.45, w, 2); g.fillRect(w * 0.5, 0, 2, h);
+        for(let i = 0; i < 24; i++){ const x = Math.random() * w, ln = 30 + Math.random() * 160, y0 = Math.random() * h * 0.5; const gr = g.createLinearGradient(0, y0, 0, y0 + ln); gr.addColorStop(0, "rgba(40,36,30,0.22)"); gr.addColorStop(1, "rgba(40,36,30,0)"); g.fillStyle = gr; g.fillRect(x, y0, 2 + Math.random() * 7, ln); } }, true) }),
+      fan: new THREE.MeshBasicMaterial({ color: 0x6d7378 }),
+      pierGeo: (() => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 22); g.translate(0, 0.5, 0); return g; })(), fireBox: new THREE.MeshBasicMaterial({ color: 0xc8302a }), exitSign: new THREE.MeshBasicMaterial({ color: 0x35d070 }),
+      fanGeo: (() => { const g = new THREE.CylinderGeometry(0.55, 0.55, 3.6, 16); g.rotateX(Math.PI / 2); return g; })(),
       lampStrip: new THREE.MeshBasicMaterial({ color: 0xfff0c8, side: THREE.DoubleSide }),
       lampHead: new THREE.MeshBasicMaterial({ color: 0xfff3d6 }),
       glow: new THREE.PointsMaterial({ map: canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.08, "rgba(255,255,255,0.9)"); gr.addColorStop(0.2, "rgba(255,255,255,0.28)"); gr.addColorStop(0.5, "rgba(255,255,255,0.06)"); gr.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = gr; c.fillRect(0, 0, w, h); }), size: 5.0, sizeAttenuation: true, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: true, opacity: 0 }),
     };
     M.road[1].userData.base = 1;
-    M.roadTn = {}; for(const n of [1, 2, 3]) M.roadTn[n] = new THREE.MeshBasicMaterial({ map: M.road[n].map, color: new THREE.Color(1.7, 1.7, 1.65), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });   // トンネル内は照明で昼夜とも明るい
+    M.bconc = lam({ map: M.portal.map, color: 0xd2d0c9, side: THREE.DoubleSide }); M.bconcDark = lam({ map: M.portal.map, color: 0xb0aea7, side: THREE.DoubleSide });
+    M.roadTn = {}; for(const n of [1, 2, 3]) M.roadTn[n] = new THREE.MeshBasicMaterial({ map: M.road[n].map, color: new THREE.Color(1.22, 1.2, 1.12), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });   // トンネル内は照明で昼夜とも明るい
     return M;
   }
   /* ---------- 地面（地形）の高さ ---------- */
@@ -1304,31 +1383,35 @@ const MW = (() => {
     { const B = mkB(); for(const [a, b] of runs(i => !c.skip[i] && c.tn[i])){ const rows = []; for(let i = a; i <= b; i++) rows.push([P(c, i, -c.hl, 0.004), P(c, i, c.hr, 0.004)]); strip(B, rows, (r, kk) => [kk, (a + r) * c.ds / 20]); }
       add(mesh(B, mt.roadTn[N])); }
     // --- 中央帯（上下線の間） ---
-    { const B = mkB(); for(const [a, b] of runs(i => !c.skip[i] && !c.br[i] && !c.tn[i] && pairAt(i))){ const rows = []; for(let i = a; i <= b; i++) rows.push([P(c, i, c.hr - 0.02, -0.03), P(c, i, c.gap[i] / 2, -0.03)]); strip(B, rows, (r, kk, v) => [v[0] / 5, v[2] / 5]); }
+    const vergeOk = (i) => { if(c.gap[i] / 2 - c.hr > 9) return false; const m = P(c, i, (c.hr + c.gap[i] / 2) / 2, 0); return Math.abs(ground(m[0], m[2]) - m[1]) < 2.5; };   // v43: 中央帯の芝は、地面が路面の近くにある所だけ（谷・坑口の近くで宙に浮いていた）
+    { const B = mkB(); for(const [a, b] of runs(i => !c.skip[i] && !c.br[i] && !c.tn[i] && pairAt(i) && vergeOk(i))){ const rows = []; for(let i = a; i <= b; i++) rows.push([P(c, i, c.hr - 0.02, -0.03), P(c, i, c.gap[i] / 2, -0.03)]); strip(B, rows, (r, kk, v) => [v[0] / 5, v[2] / 5]); }
       add(mesh(B, mt.verge, { shadow: true })); }
     // --- 斜面（盛土・切土）: 道路の端から、地形（山陽道沿いは道路に合わせて掘ってある）まで ---
-    { const B = mkB(); const sx = hash(c.id, k);
+    // v43: 切土（道路より高い斜面）は「法枠」（コンクリートの格子＋草）、盛土は草の斜面。uv は 斜面に沿った m/3
+    { const B = mkB(), BCt = mkB(); const sx = hash(c.id, k);
       for(const side of [-1, 1]){
-        const rr = []; const pend = () => { if(rr.length > 1) strip(B, rr.map(q => q.row), (r, kk, v) => [v[0] / 6, v[2] / 6], (r, kk) => { const q = rr[r]; const f = 0.9 + 0.2 * hash(Math.floor(rr[r].x / 9), Math.floor(rr[r].z / 9)); return q.cut ? (kk === 0 ? [0.80 * f, 0.76 * f, 0.66 * f] : [0.70 * f, 0.66 * f, 0.56 * f]) : [0.95 * f, 1.05 * f, 0.88 * f]; }); rr.length = 0; };
+        const rr = []; const pend = () => { if(rr.length > 1){ const cut = rr[0].cut; strip(cut ? BCt : B, rr.map(q => q.row), (r, kk) => [rr[r].i * c.ds / 3 * side, rr[r].len * kk / 3 / 3], (r, kk) => { const q = rr[r]; const f = 0.9 + 0.2 * hash(Math.floor(rr[r].x / 9), Math.floor(rr[r].z / 9)); return q.cut ? [0.95 * f, 0.97 * f, 0.92 * f] : [0.95 * f, 1.05 * f, 0.88 * f]; }); } rr.length = 0; };
         for(let i = i0; i <= i1; i++){
           const ok = !c.skip[i] && !c.br[i] && !c.tn[i] && !(side > 0 && pairAt(i));
           if(!ok){ pend(); continue; }
           const ue = side < 0 ? -c.hl - 0.2 : c.hr + 0.2, yE = c.Y[i] + (C0 - c.e[i]) * ue - 0.10;
           const gx = (t) => c.X[i] + c.rx[i] * (ue + side * t), gz = (t) => c.Z[i] + c.rz[i] * (ue + side * t);
           const cut = ground(gx(3), gz(3)) > yE + 0.4, sl = cut ? 0.714 : -0.5556; let ts = 3;
-          for(let t = 1.5; t <= 42; t += 1.5){ const ys = yE + sl * t, g_ = ground(gx(t), gz(t)); ts = t; if(cut ? ys >= g_ : ys <= g_) break; }
+          let reach = false; for(let t = 1.5; t <= (cut ? 36 : 18); t += 1.5){ const ys = yE + sl * t, g_ = ground(gx(t), gz(t)); ts = t; if(cut ? ys >= g_ : ys <= g_){ reach = true; break; } }
+          if(!reach){ pend(); continue; }   // v43: 地面へ届かない所（盛土 10m 超の谷・崖、切土 25m 超）は法面を作らない（宙に浮いた緑の三角になっていた）
           ts = Math.max(3, ts); const row = [];
           for(let q = 0; q < 4; q++){ const t = ts * q / 3, x = gx(t), z = gz(t); let y = yE + sl * t; if(q === 3){ const g_ = ground(x, z); y = cut ? Math.min(y, g_ + 0.05) : Math.max(y, g_ - 0.4); } row.push([x, y, z]); }
-          rr.push({ row, cut, x: c.X[i], z: c.Z[i] });
+          if(rr.length && rr[0].cut !== cut){ const keep = rr[rr.length - 1]; pend(); rr.push(Object.assign({}, keep, { cut })); }
+          rr.push({ row, cut, i, x: c.X[i], z: c.Z[i], len: Math.hypot(row[3][0] - row[0][0], row[3][1] - row[0][1], row[3][2] - row[0][2]) });
         }
         pend();
       }
-      add(mesh(B, mt.slope, { shadow: true })); }
+      add(mesh(B, mt.slope, { shadow: true })); add(mesh(BCt, mt.slopeCut, { shadow: true })); }
     // --- 防護柵（ガードレール）・中央分離帯のコンクリート壁 ---
     { const B = mkB(), BC = mkB();
       for(const side of [-1, 1]){
         const rr = [];
-        const okf = (i) => !c.skip[i] && !c.br[i] && !c.tn[i] && (side < 0 || !pairAt(i) || (c.gap[i] / 2 - c.hr >= 3.0));
+        const okf = (i) => !c.skip[i] && !c.br[i] && !(c.hang && (c.hang[i] & (side < 0 ? 2 : 4))) && !c.tn[i] && (side < 0 || !pairAt(i) || (c.gap[i] / 2 - c.hr >= 3.0));
         for(const [a, b] of runs(okf)){
           const uo = side < 0 ? -c.hl - 0.35 : (pairAt(a) ? c.hr + 0.35 : c.hr + 0.35), rows = [];
           for(let i = a; i <= b; i++){ const u = side < 0 ? -c.hl - 0.35 : c.hr + 0.35; rows.push([P(c, i, u, 0.46), P(c, i, u, 0.80)]); }
@@ -1346,43 +1429,68 @@ const MW = (() => {
       const ip = inst(BOX, mt.post, posts); add(ip); }
     // --- 橋: 高欄・桁・橋脚 ---
     { const BP = mkB(), BG = mkB();
-      for(const [a, b] of runs(i => !c.skip[i] && c.br[i] && !c.tn[i])){
-        for(const side of [-1, 1]){
+      const brOr = (i) => c.br[i] || (c.hang && c.hang[i]);
+      const parOk = (i, side) => c.br[i] || (c.hang && (c.hang[i] & (side < 0 ? 2 : 4)));
+      for(const [a0, b0] of runs(i => !c.skip[i] && brOr(i) && !c.tn[i])){
+        for(const side of [-1, 1]) for(const [a, b] of runs(i => i >= a0 && i <= b0 && parOk(i, side))){
           const rows = []; for(let i = a; i <= b; i++){ const eu = side < 0 ? -c.hl : c.hr, iu = eu - side * 0.38; rows.push([P(c, i, eu, 0), P(c, i, eu, 1.05), P(c, i, iu, 1.05), P(c, i, iu, 0)]); }
-          strip(BP, rows, null, null);
+          strip(BP, rows, (r, kk) => [(a + r) * c.ds / 4, [0, 0.26, 0.36, 0.62][kk]], null);
         }
+        const a = a0, b = b0;
         const rg = []; for(let i = a; i <= b; i++) rg.push([P(c, i, -c.hl, -0.05), P(c, i, -c.hl + 0.55, -1.9), P(c, i, c.hr - 0.55, -1.9), P(c, i, c.hr, -0.05)]);
-        strip(BG, rg, null, null);
+        strip(BG, rg, (r, kk) => [(a + r) * c.ds / 4, kk * 0.5], null);
         for(let i = a + 3; i <= b - 3; i += 8){ const gh = ground(c.X[i], c.Z[i]), yb = c.Y[i] - 1.9 - 0.05 + bankAt(c, i, 0);
-          if(gh + 0.5 < yb){ const h = yb - (gh - 0.5), rot = rotOf(c, i); pil.push([c.X[i], gh - 0.5, c.Z[i], rot, 2.4, h, 1.6]); pilCap.push([c.X[i], yb - 1.0, c.Z[i], rot, c.hl + c.hr - 0.9, 1.0, 2.0]); } }
+          if(gh + 0.5 < yb && !roadUnder(c, c.X[i], c.Z[i], yb)){ const h = yb - (gh - 0.5), rot = rotOf(c, i); pil.push([c.X[i], gh - 0.5, c.Z[i], rot, 2.4, h, 1.6]); pilCap.push([c.X[i], yb - 1.0, c.Z[i], rot, c.hl + c.hr - 0.9, 1.0, 2.0]); } }
       }
-      add(mesh(BP, mt.conc, { cast: false })); add(mesh(BG, mt.concDark));
-      add(inst(BOX, mt.concDark, pil)); add(inst(BOX, mt.concDark, pilCap)); }
-    // --- トンネル: 内面（アーチ）・照明・坑口 ---
-    { const TB = mkB(), LS = mkB(), PF = mkB(); const uc = (c.hr - c.hl) / 2, Wt = (c.hl + c.hr) / 2 + 0.6, Hw = 3.6, Hr = 3.8, J = 16;
-      const prof = []; prof.push([-Wt, 0]); for(let j = 0; j <= J; j++){ const th = Math.PI * j / J; prof.push([-Wt * Math.cos(th), Hw + Hr * Math.sin(th)]); } prof.push([Wt, 0]);
-      const colOf = (h, i) => { const f = 0.97 + 0.03 * ((i >> 1) & 1); return h < 2.3 ? [0.82 * f, 0.82 * f, 0.80 * f] : [0.74 * f, 0.73 * f, 0.69 * f]; };
+      add(mesh(BP, mt.bconc, { cast: false })); add(mesh(BG, mt.bconcDark, { cast: true }));
+      add(inst(mt.pierGeo, mt.bconcDark, pil)); add(inst(BOX, mt.bconcDark, pilCap)); }   // v43: 橋脚は小判形の柱、桁・壁高欄はコンクリートの質感
+    // --- トンネル（v43 作り直し）: 内面（監査歩廊・内装板・覆工のつなぎ目）・照明器具・ジェットファン・非常設備・坑口（面壁＋突き出したアーチ環＋袖壁） ---
+    { const TB = mkB(), PF = mkB(); const uc = (c.hr - c.hl) / 2, Wt = (c.hl + c.hr) / 2 + 0.6, Hw = 3.6, Hr = 3.8, J = 18, HT = Hw + Hr;
+      // 断面（左から右）: 歩廊の縁石 → 歩廊 → 側壁 → アーチ → 反対側。h = 路面からの高さ
+      const prof = [[-Wt + 0.7, 0], [-Wt + 0.7, 0.25], [-Wt, 0.25], [-Wt, 1.5], [-Wt, 3.0]];
+      for(let j = 0; j <= J; j++){ const th = Math.PI * j / J; prof.push([-Wt * Math.cos(th), Hw + Hr * Math.sin(th)]); }
+      prof.push([Wt, 3.0], [Wt, 1.5], [Wt, 0.25], [Wt - 0.7, 0.25], [Wt - 0.7, 0]);
+      const colOf = (h) => { if(h <= 0.26) return [0.60, 0.60, 0.58]; if(h <= 3.01) return [0.90, 0.89, 0.84];
+        const lit = 0.72 + 0.34 * Math.exp(-(((h - 5.0) / 1.5) ** 2)); return [0.64 * lit, 0.64 * lit, 0.61 * lit]; };
+      const fix = [], fans = [], redB = [], grnS = [];
       for(const [a, b] of runs(i => !c.skip[i] && c.tn[i])){
         const rows = []; for(let i = a; i <= b; i++) rows.push(prof.map(q => P(c, i, uc + q[0], q[1])));
-        strip(TB, rows, null, (r, kk) => colOf(prof[kk][1], a + r));
-        // 照明: 10m おきに 3m の帯を左右 2 列
-        for(let i = a; i + 1 <= b; i += 2) for(const sgn of [-1, 1]){ const u = uc + sgn * 2.8, h = Hw + Hr * Math.sqrt(Math.max(0, 1 - (2.8 / Wt) ** 2)) - 0.12, p0 = P(c, i, u - 0.18, h), p1 = P(c, i, u + 0.18, h), p2 = P(c, Math.min(c.n - 1, i + 1), u + 0.18, h), p3 = P(c, Math.min(c.n - 1, i + 1), u - 0.18, h);
-          const v0 = LS.p.length / 3; for(const p of [p0, p1, p2, p3]) LS.p.push(p[0], p[1], p[2]); LS.ix.push(v0, v0 + 1, v0 + 3, v0 + 1, v0 + 2, v0 + 3); }
-        // 坑口の枠
+        strip(TB, rows, (r, kk) => [prof[kk][1] / HT, (a + r) * c.ds / 10.5], (r, kk) => colOf(prof[kk][1]));
+        // 照明器具: 側壁の上（高さ 5.0m）に 6m おき、左右
+        const thL = Math.asin((5.0 - Hw) / Hr), uL = Wt * Math.cos(thL) - 0.12, rot0 = rotOf(c, a);
+        for(let s = 3; s <= (b - a) * c.ds; s += 6){ const q = fracPoint(c, a + s / c.ds), r = Math.atan2(-q.rz, q.rx);
+          for(const sg of [-1, 1]){ const u = uc + sg * uL, y = q.y + (C0 - q.e) * u + 4.95; fix.push([q.x + q.rx * u, y, q.z + q.rz * u, r, 0.32, 0.16, 1.5]); } }
+        // ジェットファン（長いトンネル）: 天井に 2 台ずつ、160m おき
+        const Lr = (b - a) * c.ds;
+        if(Lr > 450) for(let s = 120; s < Lr - 80; s += 160){ const q = fracPoint(c, a + s / c.ds), r = Math.atan2(-q.rz, q.rx); for(const sg of [-1, 1]){ const u = uc + sg * 1.7; fans.push([q.x + q.rx * u, q.y + HT - 1.05, q.z + q.rz * u, r, 1, 1, 1]); } }
+        // 消火栓の箱（左の歩廊、50m おき）・非常口の緑の表示灯（200m おき、左右）
+        for(let s = 25; s < Lr; s += 50){ const q = fracPoint(c, a + s / c.ds), r = Math.atan2(-q.rz, q.rx), u = uc - Wt + 0.14; redB.push([q.x + q.rx * u, q.y + 0.25, q.z + q.rz * u, r, 0.25, 1.0, 0.7]); }
+        for(let s = 100; s < Lr - 20; s += 200){ const q = fracPoint(c, a + s / c.ds), r = Math.atan2(-q.rz, q.rx); for(const sg of [-1, 1]){ const u = uc + sg * (Wt - 0.06); grnS.push([q.x + q.rx * u, q.y + 2.45, q.z + q.rz * u, r, 0.08, 0.32, 0.9]); } }
+        // 坑口（面壁＋アーチ環＋袖壁）。面壁の上の縁は山の斜面に合わせる
         for(const [ip, dir] of [[a, -1], [b, 1]]){ const real = dir < 0 ? (ip > 0 && !c.tn[ip - 1]) : (ip < c.n - 1 && !c.tn[ip + 1]); if(!real) continue;
-          const gi = ground(P(c, ip, uc, 0)[0], P(c, ip, uc, 0)[2]), gj = (() => { const q = P(c, Math.max(0, Math.min(c.n - 1, ip - dir * 2)), uc, 0); return ground(q[0], q[2]); })(), yr = P(c, ip, uc, 0)[1];
-          const sh = new THREE.Shape(); const Wp = Wt + 4.2, Ht = Math.max(9.6, Math.min(26, Math.max(gi, gj) - yr + 1.6)); sh.moveTo(-Wp, -1.2); sh.lineTo(Wp, -1.2); sh.lineTo(Wp, Ht); sh.lineTo(-Wp, Ht); sh.lineTo(-Wp, -1.2);
-          const hole = new THREE.Path(); hole.moveTo(prof[0][0], 0); for(const q of prof) hole.lineTo(q[0], q[1]); sh.holes.push(hole);
-          const sg = new THREE.ShapeGeometry(sh), pa = sg.attributes.position, ix = sg.index.array, v0 = PF.p.length / 3, off = 0.06 * dir;
-          for(let q = 0; q < pa.count; q++){ const p = P(c, ip, uc + pa.getX(q), pa.getY(q)); PF.p.push(p[0] + c.tx[ip] * off, p[1], p[2] + c.tz[ip] * off); }
+          const yr = P(c, ip, uc, 0)[1], Wp = Wt + 3.6, off = 0.06 * dir, tx = c.tx[ip] * dir, tz = c.tz[ip] * dir;   // (tx,tz) = トンネルの外へ向かう向き
+          const at = (u, h, o) => { const p = P(c, ip, uc + u, h); return [p[0] + tx * o, p[1], p[2] + tz * o]; };
+          const gh = (u, o) => { const p = at(u, 0, o); return ground(p[0], p[2]) - yr; };
+          // 面壁の高さは天井の 1.3〜2.6m 上（山がそれより高ければ山の斜面が上を覆う）。下の縁は地面まで（崖の途中の坑口でも宙に浮かない）
+          const NQ = 8, tops = []; for(let k = 0; k <= NQ; k++){ const u = -Wp + 2 * Wp * k / NQ; tops.push([u, Math.max(HT + 1.3, Math.min(HT + 2.6, Math.max(gh(u, -4), gh(u, -10)) + 0.6))]); }
+          let bot = -1.0; for(let k = 0; k <= 4; k++) bot = Math.min(bot, gh(-Wp + 2 * Wp * k / 4, 1) - 0.5); bot = Math.max(bot, -30);
+          const sh = new THREE.Shape(); sh.moveTo(-Wp, bot); sh.lineTo(Wp, bot); for(let k = NQ; k >= 0; k--) sh.lineTo(tops[k][0], tops[k][1]); sh.lineTo(-Wp, bot);
+          const hole = new THREE.Path(); const opn = prof.slice(2, prof.length - 2); hole.moveTo(opn[0][0], 0); for(const q of opn) hole.lineTo(q[0], q[1]); hole.lineTo(opn[opn.length - 1][0], 0); sh.holes.push(hole);
+          const sg = new THREE.ShapeGeometry(sh, 6), pa = sg.attributes.position, ix = sg.index.array, v0 = PF.p.length / 3, wc = [0.60, 0.59, 0.55];
+          for(let q = 0; q < pa.count; q++){ const p = at(pa.getX(q), pa.getY(q), off); PF.p.push(p[0], p[1], p[2]); PF.uv.push(pa.getX(q) / 4, pa.getY(q) / 4); PF.c.push(wc[0], wc[1], wc[2]); }
           for(let q = 0; q < ix.length; q++) PF.ix.push(v0 + ix[q]); sg.dispose();
-          // 坑口の壁に奥行き（上と左右の面を、トンネルの奥へ 8m）。山の斜面に埋まって「薄い板」に見えないように
-          { const L8 = 12, A = [-Wp, -1.2], Bq = [Wp, -1.2], Cq = [Wp, Ht], Dq = [-Wp, Ht], v1 = PF.p.length / 3;
-            for(const q of [A, Bq, Cq, Dq]){ const p = P(c, ip, uc + q[0], q[1]); PF.p.push(p[0] + c.tx[ip] * off, p[1], p[2] + c.tz[ip] * off); }
-            for(const q of [A, Bq, Cq, Dq]){ const p = P(c, ip, uc + q[0], q[1]); PF.p.push(p[0] - c.tx[ip] * dir * L8, p[1], p[2] - c.tz[ip] * dir * L8); }
-            PF.ix.push(v1 + 3, v1 + 2, v1 + 6, v1 + 3, v1 + 6, v1 + 7,  v1 + 0, v1 + 3, v1 + 7, v1 + 0, v1 + 7, v1 + 4,  v1 + 1, v1 + 2, v1 + 6, v1 + 1, v1 + 6, v1 + 5); } }
+          // アーチ環: 開口の縁を外へ 0.9m 突き出し、厚み 0.75m の環（内面・前面・外面）
+          { const ring = opn.map(q => [q[0], q[1]]), R2 = ring.map(q => { if(q[1] <= Hw + 1e-6) return [q[0] + Math.sign(q[0]) * 0.75, q[1]]; const d = Math.hypot(q[0], q[1] - Hw) || 1, k = 1 + 0.75 / d; return [q[0] * k, Hw + (q[1] - Hw) * k]; });
+            const rc = [0.70, 0.69, 0.65], add4 = (A, B, C2, D) => { const v = PF.p.length / 3; for(const p of [A, B, C2, D]){ PF.p.push(p[0], p[1], p[2]); PF.uv.push(0, 0); PF.c.push(rc[0], rc[1], rc[2]); } PF.ix.push(v, v + 1, v + 2, v, v + 2, v + 3); };
+            for(let k = 0; k + 1 < ring.length; k++){
+              add4(at(ring[k][0], ring[k][1], off), at(ring[k + 1][0], ring[k + 1][1], off), at(ring[k + 1][0], ring[k + 1][1], 0.9), at(ring[k][0], ring[k][1], 0.9));          // 内面
+              add4(at(ring[k][0], ring[k][1], 0.9), at(ring[k + 1][0], ring[k + 1][1], 0.9), at(R2[k + 1][0], R2[k + 1][1], 0.9), at(R2[k][0], R2[k][1], 0.9));               // 前面
+              add4(at(R2[k][0], R2[k][1], 0.9), at(R2[k + 1][0], R2[k + 1][1], 0.9), at(R2[k + 1][0], R2[k + 1][1], off), at(R2[k][0], R2[k][1], off)); } }              // 外面
+          // v43: 袖壁は作らない（山の斜面の上に羽のように浮いて見えた）
+        }
       }
-      add(mesh(TB, mt.tube)); add(mesh(LS, mt.lampStrip)); add(mesh(PF, mt.conc)); }
+      add(mesh(TB, mt.tube)); add(mesh(PF, mt.portal, { shadow: true, cast: true }));
+      add(inst(BOX, mt.lampHead, fix)); add(inst(mt.fanGeo, mt.fan, fans)); add(inst(BOX, mt.fireBox, redB)); add(inst(BOX, mt.exitSign, grnS)); }
     // --- 行き止まりの車止め ---
     if(c.free) for(const f of c.free){ if(f.i < i0 || f.i > i1) continue; const rot = rotOf(c, f.i), q = fracPoint(c, f.i), bx = f.x + f.tx * 0.6, bz = f.z + f.tz * 0.6, w = f.hw * 2 + 1.2;
       const ba = [], br = []; ba.push([bx, q.y + 0.0, bz, rot, w, 1.0, 0.3]); br.push([bx + f.tx * 0.2, q.y + 0.35, bz + f.tz * 0.2, rot, w + 0.02, 0.3, 0.32]);
@@ -1405,8 +1513,49 @@ const MW = (() => {
   }
   function disposeChunk(g){ g.traverse(o => { if(o.geometry) o.geometry.dispose(); if(o.isInstancedMesh) o.dispose(); }); }
   /* ---------- 読み込み・解放 ---------- */
+  /* v43: OSM のトンネル区間の端が谷・崖の上にあると、管が山の外の宙に突き出していた（宙に浮いた白い筒）。
+     地面が路面より 1m 以上高い所（山・坑口の前の土の斜面）まで坑口を奥へずらす（端から最大でトンネルの長さの 4 割まで。
+     ほとんど全部が地表に出ている短いもの＝道路の下をくぐる箱は、そのまま）。坑口の前は地形の工程（outer_tiles.py）で掘ってある */
+  let tnTrimmed = false;
+  const PG = new Map();
+  const roadUnder = (cc, x, z, y) => { const gx = Math.floor(x / 20), gz = Math.floor(z / 20);
+    for(let dx = -1; dx <= 1; dx++) for(let dz = -1; dz <= 1; dz++){ const a = PG.get((gx + dx) + "," + (gz + dz)); if(!a) continue;
+      for(let k = 0; k < a.length; k += 2){ const c = a[k], i = a[k + 1]; if(c === cc) continue; if(c.Y[i] > y - 3) continue;
+        if(Math.hypot(c.X[i] - x, c.Z[i] - z) < (c.hl + c.hr) / 2 + 2.5) return true; } }
+    return false; };
+  function trimTunnels(){
+    let nT = 0, nH = 0;
+    for(const c of chains){ const runsL = []; let a = -1; for(let i = 0; i <= c.n; i++){ const t = i < c.n && c.tn[i]; if(t && a < 0) a = i; if(!t && a >= 0){ runsL.push([a, i - 1]); a = -1; } }
+      for(const [a0, b0] of runsL){ const n = b0 - a0 + 1, cov = (i) => { const g = ground(c.X[i], c.Z[i]); return !isNaN(g) && g >= c.Y[i] + 1.0; };
+        // v43: 地形にほとんど覆われていない「トンネル」（インターチェンジの道が別の道の下をくぐる所など。OSM では tunnel）は
+        //      山のトンネルの筒にせず、ふつうの道にする（平地に筒と坑口が浮いていた）。覆われていない端は全部切る（中が 20m 以上残る時）
+        let ex = 0; for(let i = a0; i <= b0; i++) if(!cov(i)) ex++;
+        if(ex > n * 0.5){ for(let i = a0; i <= b0; i++) c.tn[i] = 0; nT++; continue; }
+        const lim = Math.max(0, n - Math.ceil(20 / c.ds)); let a = a0, b = b0; while(a - a0 < lim && !cov(a)) a++; while(b0 - b < lim && b > a && !cov(b)) b--;
+        if(b - a + 1 < Math.ceil(20 / c.ds)){ for(let i = a0; i <= b0; i++) c.tn[i] = 0; nT++; continue; }
+        for(let i = a0; i < a; i++) c.tn[i] = 0; for(let i = b + 1; i <= b0; i++) c.tn[i] = 0; if(a > a0 || b < b0) nT++; }
+      c.tnRuns = null;
+      // v43: 橋の印が無いのに地面から高く浮いている所（別の道の上を渡る所・谷の上）。桁・橋脚・壁高欄を付ける（ガードレールだけが宙に浮いていた）
+      const hg = new Uint8Array(c.n);
+      for(let i = 0; i < c.n; i++){ if(c.br[i] || c.tn[i] || c.skip[i]) continue; const y = c.Y[i];
+        const m = P(c, i, (c.hr - c.hl) / 2, 0), l = P(c, i, -c.hl - 2, 0), r = P(c, i, c.hr + 2, 0);
+        if(!(ground(m[0], m[2]) < y - 3.5 && ground(l[0], l[2]) < y - 2.5 && ground(r[0], r[2]) < y - 2.5)) continue;
+        hg[i] = 1;
+        // 側ごと: 盛土の法面が地面へ届かない側（崖・谷・下の道）は壁高欄（2 = 左, 4 = 右）。届く側はガードレールのまま（高い盛土）
+        for(const side of [-1, 1]){ const ue = side < 0 ? -c.hl - 0.2 : c.hr + 0.2; let reach = false;
+          for(let t = 1.5; t <= 18; t += 1.5){ const q = P(c, i, ue + side * t, 0); if(c.Y[i] - 0.5556 * t <= ground(q[0], q[2])){ reach = true; break; } }
+          if(!reach) hg[i] |= side < 0 ? 2 : 4; } }
+      for(let i = 0; i < c.n;){ if(!hg[i]){ i++; continue; } let j = i; while(j < c.n && hg[j]) j++; if(j - i < 3) hg.fill(0, i, j); else nH += j - i; i = j; }
+      for(const bit of [2, 4]) for(let i = 0; i < c.n;){ if(!(hg[i] & bit)){ i++; continue; } let j = i; while(j < c.n && (hg[j] & bit)) j++; if(j - i < 3) for(let k = i; k < j; k++) hg[k] &= ~bit; i = j; }
+      c.hang = hg; }
+    // v43: 橋脚が下を通る別の道の上に立たないよう、全部の鎖の点を 20m の升に入れておく
+    PG.clear(); for(const c of chains) for(let i = 0; i < c.n; i += 2){ const k = Math.floor(c.X[i] / 20) + "," + Math.floor(c.Z[i] / 20); let a = PG.get(k); if(!a){ a = []; PG.set(k, a); } a.push(c, i); }
+    tnTrimmed = true; console.log("mw tunnels trimmed", nT, "hang pts", nH);
+    for(const [key, g] of live){ scene.remove(g); disposeChunk(g); } live.clear();
+  }
   function tick(cam, force){
     if(!ready){ if(!started){ started = true; init(); } return; }
+    if(!tnTrimmed && Outer.ready) trimTunnels();
     const now = performance.now(); if(!force && now - lastT < 250) return; lastT = now;
     const x = cam.x, z = cam.z; let built = 0; const want = [];
     for(const c of chains){
@@ -1420,6 +1569,24 @@ const MW = (() => {
     const lim = force ? 12 : 2, t0 = performance.now();
     for(const [d, c, k, key] of want){ if(built >= lim || (!force && performance.now() - t0 > 9)) break; const g = buildChunk(c, k); live.set(key, g); scene.add(g); built++; }
     const night = Env.NIGHT_U.value; mats().glow.opacity = night; mats().glow.visible = night > 0.2;
+    tunU(x, z);
+  }
+  /* v43: カメラに近いトンネルの中心線を地形の材質へ渡す（管の中の地形を描かない） */
+  function tunU(x, z){
+    const arr = TUN_U.uTun.value, cand = [];
+    for(const c of chains){
+      if(!c.tnRuns){ c.tnRuns = []; let a = -1; for(let i = 0; i <= c.n; i++){ const t = i < c.n && c.tn[i] && !c.skip[i]; if(t && a < 0) a = i; if(!t && a >= 0){ c.tnRuns.push([a, i - 1]); a = -1; } } }
+      for(const [a, b] of c.tnRuns){ let bd = 1e18, bi = a; for(let i = a; i <= b; i += 3){ const d = (c.X[i] - x) ** 2 + (c.Z[i] - z) ** 2; if(d < bd){ bd = d; bi = i; } } if(bd < 900 * 900) cand.push([bd, c, a, b, bi]); } }
+    cand.sort((p, q) => p[0] - q[0]); let n = 0;
+    // カメラがトンネルの管の中にいる時だけ（外から見た山の斜面に穴を開けない）
+    const cy = camera.position.y; let inside = false;
+    for(const [, c, a, b, bi] of cand){ const uc = (c.hr - c.hl) / 2, w = (c.hl + c.hr) / 2 + 0.6; for(let i = Math.max(a, bi - 6); i <= Math.min(b, bi + 6); i++){ const p = P(c, i, uc, 0); if(Math.hypot(p[0] - x, p[2] - z) < w + 1 && cy > p[1] - 1 && cy < p[1] + 7.6){ inside = true; break; } } if(inside) break; }
+    if(!inside){ TUN_U.uTunN.value = 0; return; }
+    for(const [, c, a, b, bi] of cand){ if(n > 60) break; const uc = (c.hr - c.hl) / 2, w = (c.hl + c.hr) / 2 + 0.6 + 0.8;
+      const room = Math.min(62 - n, 40), lo = Math.max(a - 1, bi - room * 3 / 2 | 0), hi = Math.min(b + 1, lo + (room - 1) * 3);
+      for(let i = Math.max(0, lo); i <= Math.min(c.n - 1, hi); i += 3){ const p = P(c, i, uc, 0); arr[n++].set(p[0], p[1], p[2], w); }
+      if(n < 64) arr[n++].set(0, 0, 0, -1); }
+    TUN_U.uTunN.value = n;
   }
   return { init, tick, info, get ready(){ return ready; }, roadAt, deckAt, wallAt, endWall, spawn, nearestLane, mats, chains, get man(){ return man; }, get live(){ return live; }, fracPoint, P, ground };
 })();
@@ -1434,9 +1601,10 @@ const MWT = (() => {
     const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(P, 3)); g.setAttribute("normal", new THREE.Float32BufferAttribute(Nn, 3)); g.setIndex(I); return g; }
   const box = (w, h, l, x, y, z) => { const g = new THREE.BoxGeometry(w, h, l); g.translate(x, y, z); return g; };
   function build(){
-    const gCar = merge([box(1.75, 0.72, 4.4, 0, 0.62, 0), box(1.52, 0.52, 2.35, 0, 1.24, -0.15), box(1.78, 0.18, 4.42, 0, 0.3, 0)]);
-    const gTruck = merge([box(2.5, 2.9, 7.4, 0, 2.0, -1.2), box(2.4, 2.1, 2.2, 0, 1.55, 3.6), box(2.5, 0.5, 9.4, 0, 0.55, 0)]);
-    const mk = (g, n) => { const m = new THREE.InstancedMesh(g, new THREE.MeshLambertMaterial({ color: 0xffffff }), n); m.setColorAt(0, new THREE.Color(1, 1, 1)); m.count = 0; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.castShadow = false; scene.add(m); return m; };
+    // v43: 街の車と同じ形（vehicles.js）。以前は箱を重ねた形だった。尾灯・ブレーキは車体の灯火（aBrake）
+    const gCar = Veh.ai("sedan", 1), gTruck = Veh.ai("truck4", 1), vmat = Veh.makeMat();
+    gCar.setAttribute("aBrake", new THREE.InstancedBufferAttribute(new Float32Array(MAXN), 1)); gTruck.setAttribute("aBrake", new THREE.InstancedBufferAttribute(new Float32Array(40), 1));
+    const mk = (g, n) => { const m = new THREE.InstancedMesh(g, vmat, n); m.setColorAt(0, new THREE.Color(1, 1, 1)); m.count = 0; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.castShadow = false; scene.add(m); return m; };
     imC = mk(gCar, MAXN); imT = mk(gTruck, 40);
     imL = new THREE.InstancedMesh(new THREE.BoxGeometry(0.36, 0.14, 0.08), new THREE.MeshBasicMaterial({ color: 0xffffff }), (MAXN + 40) * 4); imL.setColorAt(0, new THREE.Color(1, 0, 0)); imL.count = 0; imL.frustumCulled = false; imL.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(imL);
     built = true;
@@ -1493,13 +1661,11 @@ const MWT = (() => {
     for(const o of cars){
       if(Math.hypot(o.x - camera.position.x, o.z - camera.position.z) > 1300) continue;
       eu.set(o.pitch, o.yaw, 0, "YXZ"); qt.setFromEuler(eu); p3.set(o.x, o.y, o.z); m4.compose(p3, qt, sc1);
-      if(o.truck){ if(nt >= 40) continue; imT.setMatrixAt(nt, m4); imT.setColorAt(nt, o.col); nt++; } else { if(nc >= MAXN) continue; imC.setMatrixAt(nc, m4); imC.setColorAt(nc, o.col); nc++; }
-      const hy = o.truck ? 0.95 : 0.78, hz = o.l / 2 - 0.04, hx = o.w / 2 - 0.3;
-      for(const [zz, red] of [[-hz, 1], [hz, 0]]) for(const sx of [-hx, hx]){ if(nl >= (MAXN + 40) * 4) break; off.set(sx, hy, zz).applyQuaternion(qt).add(p3); m4.compose(off, qt, sc1); imL.setMatrixAt(nl, m4);
-        if(red) lc.setRGB(0.45 + 0.55 * night + o.brake * 0.6, 0.02, 0.02); else lc.setRGB(0.55 + 0.45 * night, 0.55 + 0.4 * night, 0.45 + 0.3 * night); imL.setColorAt(nl, lc); nl++; } }
+      if(o.truck){ if(nt >= 40) continue; imT.setMatrixAt(nt, m4); imT.setColorAt(nt, o.col); imT.geometry.attributes.aBrake.array[nt] = o.brake; nt++; } else { if(nc >= MAXN) continue; imC.setMatrixAt(nc, m4); imC.setColorAt(nc, o.col); imC.geometry.attributes.aBrake.array[nc] = o.brake; nc++; } }
     imC.count = nc; imT.count = nt; imL.count = nl;
     imC.instanceMatrix.needsUpdate = imT.instanceMatrix.needsUpdate = imL.instanceMatrix.needsUpdate = true;
     if(imC.instanceColor) imC.instanceColor.needsUpdate = true; if(imT.instanceColor) imT.instanceColor.needsUpdate = true; if(imL.instanceColor) imL.instanceColor.needsUpdate = true;
+    imC.geometry.attributes.aBrake.needsUpdate = imT.geometry.attributes.aBrake.needsUpdate = true;
   }
   function register(){ if(!(S.mode === "car" && Car.C.active) || !cars.length) return; for(const o of cars){ if(Math.hypot(o.x - Car.C.x, o.z - Car.C.z) > 80) continue; Obs.addBody(o.x, o.z, o.dx, o.dz, o.l, o.w / 2 + 0.1, o, o.y); } }
   function reset(){ cars.length = 0; first = true; tScan = 0; if(imC){ imC.count = imT.count = imL.count = 0; } }
@@ -1549,7 +1715,7 @@ function buildGroundOV(g, buf){
     GeoMem.release(geo, ["position", "uv", "normal"], ()=>{ const t = arrs(cells, U, V, st); return { position: t.attributes.position.array, uv: t.attributes.uv.array, normal: t.attributes.normal.array }; });
     return geo;
   };
-  const ovMat = new THREE.MeshLambertMaterial({map:OrthoPages.ovTex});
+  const ovMat = CityTun.patch(new THREE.MeshLambertMaterial({map:OrthoPages.ovTex}));
   const U0=x=>(x-OV.x0)/OV.w, V0=z=>1-(z-OV.z0)/OV.d;
   for(let tj=0; tj<nz-1; tj+=cellsPer) for(let ti=0; ti<nx-1; ti+=cellsPer){
     const T={x0:g.x0+ti*g.step, z0:g.z0+tj*g.step, size:TS, ti, tj, hi:null, lo:[]};
@@ -1611,8 +1777,8 @@ function buildGround(g, buf, ortho){
     geo.computeVertexNormals();
     return geo;
   };
-  const mats = pages.map((p,q)=>new THREE.MeshLambertMaterial({map:ortho[q]||null, color: ortho[q]?0xffffff:0x777a70}));
-  const other = new THREE.MeshLambertMaterial({color:0x767a6e});
+  const mats = pages.map((p,q)=>CityTun.patch(new THREE.MeshLambertMaterial({map:ortho[q]||null, color: ortho[q]?0xffffff:0x777a70})));
+  const other = CityTun.patch(new THREE.MeshLambertMaterial({color:0x767a6e}));
   for(let tj=0; tj<nz-1; tj+=cellsPer) for(let ti=0; ti<nx-1; ti+=cellsPer){
     const T={x0:g.x0+ti*g.step, z0:g.z0+tj*g.step, size:TS, hi:[], lo:[]};
     for(const [st, list] of [[1,T.hi],[4,T.lo]]){
@@ -1748,7 +1914,37 @@ const HiStream = (() => {
   }
   return { tick, get loaded(){ return loaded; }, set enabled(v){ enabled = v; lastT = 0; } };
 })();
+/* v43: 橋・擁壁・切土の面（色だけの面）に、世界座標の質感（3 方向から投影）を付ける。
+   縦の面 = 打ちっぱなしのコンクリート（型枠の目地・むら）、上を向いた面（切土の斜面など）= 草。色（データの頂点色）はそのまま */
+function structFX(m, kind){
+  const prev = m.onBeforeCompile;
+  m.customProgramCacheKey = () => "sfx43_" + kind;
+  m.onBeforeCompile = (sh, r) => {
+    if(prev) prev(sh, r);
+    sh.uniforms.uDetail = DETAIL_U.uDetail;
+    sh.vertexShader = "varying vec3 vSW; varying vec3 vSN;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vSW = (modelMatrix * vec4(transformed, 1.0)).xyz; vSN = normalize(mat3(modelMatrix) * objectNormal);");
+    sh.fragmentShader = "uniform sampler2D uDetail; varying vec3 vSW; varying vec3 vSN;\n" + sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
+      { vec3 n = normalize(vSN), an = abs(n); vec3 w = an / max(an.x + an.y + an.z, 1e-3);
+        vec3 tX = texture2D(uDetail, vSW.zy / 2.4).rgb, tZ = texture2D(uDetail, vSW.xy / 2.4).rgb, tY = texture2D(uDetail, vSW.xz / 2.4).rgb;
+        float conc = tX.g * w.x + tZ.g * w.z + tY.g * w.y;
+        float grain = tX.r * w.x + tZ.r * w.z + tY.r * w.y;
+        float c1 = 0.62 + 0.8 * conc + (grain - 0.47) * 0.35;
+        ${kind === "cutface" ? "float flat = smoothstep(0.45, 0.75, n.y); float g = 0.5 + (tY.b - 0.42) * 1.2; diffuseColor.rgb = mix(diffuseColor.rgb * c1, diffuseColor.rgb * vec3(0.78, 1.02, 0.66) * (0.55 + g), flat);" : "diffuseColor.rgb *= c1;"}
+        ${kind === "bridge" ? "diffuseColor.rgb *= 1.0 - 0.18 * smoothstep(0.2, -0.6, n.y);" : ""}   // 橋の下面は少し暗く（汚れ・影）
+      }`);
+  };
+  m.needsUpdate = true; return m;
+}
+const RAIL_TEX = (() => canvasTex(128, 128, (g, w, h) => {   // v43: 橋の柵（上の手すり・下の横桟・縦の柵 16 本）。透明の所は抜く
+  g.clearRect(0, 0, w, h); g.fillStyle = "#ffffff";
+  g.fillRect(0, 0, w, 13); g.fillRect(0, h - 10, w, 10); g.fillRect(0, 36, w, 4);
+  for(let k = 0; k < 16; k++) g.fillRect(k * w / 16 + 2, 0, 3, h);
+  g.fillRect(0, 0, 7, h); }))();
 function mat(c, atlas, ortho){
+  if(c.mat === "color" && (c.layer === "bridge" || c.layer === "skirt" || c.layer === "cutface")){
+    const k2 = "color_" + c.layer; if(MATS[k2]) return MATS[k2];
+    const m2 = structFX(new THREE.MeshLambertMaterial({ vertexColors: true }), c.layer); NightL.patch(m2); Env.patch(m2, "color"); MATS[k2] = m2; return m2;
+  }
   const key = c.mat + (c.page!==undefined? "_"+c.page : "");
   if(MATS[key]) return MATS[key];
   let m;
@@ -1778,6 +1974,21 @@ function mat(c, atlas, ortho){
       break;
     case "gold": m = new THREE.MeshPhongMaterial({color:0xe0b04a, specular:0xfff2c0, shininess:90, emissive:0x3a2600, side:THREE.DoubleSide}); break;
     case "stationsign": m = new THREE.MeshLambertMaterial({map:(()=>{ const t=stationSignTex(); t.repeat.x=-1; t.offset.x=1; return t; })(), polygonOffset:true, polygonOffsetFactor:-2, polygonOffsetUnits:-4}); break;
+    // v43: 橋の鋼製の柵（透明の抜き・両面）
+    case "railing": m = new THREE.MeshLambertMaterial({ map: RAIL_TEX, vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide }); break;
+    // v43: 道路のトンネル（箱）の壁・天井・照明。照明で明るいので MeshBasic（昼夜同じ）。UV は (距離 m / 2.1, 高さ m) ×100（int16）
+    case "tunwall": m = new THREE.MeshBasicMaterial({ vertexColors: true, map: (() => { const t = canvasTex(256, 512, (g, w, h) => {
+        const Y = (hm) => h * (1 - hm / 5); g.fillStyle = "#e9e6dc"; g.fillRect(0, 0, w, h);
+        g.fillStyle = "#8d8a84"; g.fillRect(0, Y(5), w, Y(3.0) - Y(5));                                       // 上: コンクリート
+        const gr = g.createLinearGradient(0, Y(5), 0, Y(3)); gr.addColorStop(0, "rgba(255,250,235,0.25)"); gr.addColorStop(1, "rgba(0,0,0,0.12)"); g.fillStyle = gr; g.fillRect(0, Y(5), w, Y(3) - Y(5));
+        g.fillStyle = "#5d5b57"; g.fillRect(0, Y(0.3), w, h - Y(0.3));                                          // 足元の幅木
+        g.strokeStyle = "rgba(120,115,104,0.35)"; g.lineWidth = 1; for(let y = 0.3; y < 3.0; y += 0.15){ g.beginPath(); g.moveTo(0, Y(y)); g.lineTo(w, Y(y)); g.stroke(); }   // タイルの目地
+        for(let x = 0; x < w; x += w / 14){ g.beginPath(); g.moveTo(x, Y(3.0)); g.lineTo(x, Y(0.3)); g.stroke(); }
+        g.fillStyle = "rgba(60,58,54,0.8)"; g.fillRect(0, Y(3.02), w, 4); g.fillRect(0, Y(3.0), 3, Y(0.3) - Y(3.0));   // 見切り・2.1m ごとの目地
+        for(let i = 0; i < 1200; i++){ const v = Math.random(); g.fillStyle = `rgba(${v > 0.5 ? 255 : 0},${v > 0.5 ? 255 : 0},${v > 0.5 ? 255 : 0},${Math.random() * 0.06})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); } });
+      t.repeat.set(0.01, 0.002); return t; })() }); break;
+    case "tunceil": m = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xc8c5be }); break;
+    case "lamp": m = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xffffff, side: THREE.DoubleSide }); break;
     default:
       if(c.mat.startsWith("facade_")){ m=facadeMaterial(c.mat.slice(7)); }
       else m = new THREE.MeshLambertMaterial({vertexColors:true});
@@ -1785,11 +1996,22 @@ function mat(c, atlas, ortho){
   if(c.layer==="track" && c.mat!=="rail") Object.assign(m, off);
   Env.patch(m, c.mat); MATS[key]=m; return m;
 }
+const MarkFix = { n: 0 };   // v43: 潰した標示の三角形の数（確認用）
 function buildChunks(chunks, bufs, atlas, ortho){
   for(const c of chunks){
     if(c.layer==="signal") continue;   // v19: 信号機は車線の信号データから画面側で作る（buildSignalsFromTraffic）
     const buf=bufs[c.file]; if(!buf) continue; const geo=new THREE.BufferGeometry();
     const q=new Int16Array(buf, c.pos, c.count*3);
+    // v43: 路面の標示（白線など）で、頂点の一部が上の段（立体交差の上の道・トンネルの上の地面）の高さを拾って
+    //      縦に立った三角形（坑口の道の真ん中に立つ白い板）は潰す。標示は路面に沿うので、縦の差は横の長さの 15%＋0.3m まで
+    if(c.layer==="mark"){ const sc=c.scale; let nb=0;
+      for(let t=0;t+8<c.count*3;t+=9){
+        const y0=q[t+1], y1=q[t+4], y2=q[t+7], dy=(Math.max(y0,y1,y2)-Math.min(y0,y1,y2))*sc;
+        if(dy<0.3) continue;
+        const L=Math.max(Math.hypot(q[t]-q[t+3],q[t+2]-q[t+5]), Math.hypot(q[t]-q[t+6],q[t+2]-q[t+8]), Math.hypot(q[t+3]-q[t+6],q[t+5]-q[t+8]))*sc;
+        if(dy>0.3+0.15*L){ for(let k=3;k<9;k++) q[t+k]=q[t+(k%3)]; nb++; }
+      }
+      if(nb) MarkFix.n+=nb; }
     geo.setAttribute("position", new THREE.BufferAttribute(q,3));
     const tm = TEX_SCALE[c.mat];
     if(c.uvi!==undefined) geo.setAttribute("uv", new THREE.BufferAttribute(new Int16Array(buf,c.uvi,c.count*2),2,false));
@@ -8546,6 +8768,6 @@ requestAnimationFrame(loop);
 applyMenu();
 loadAll().catch(e=>{ console.error(e); Boot.fail("データの読み込みに失敗しました。通信の状態を確認して、もう一度お試しください。", e, true); });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
-window.__Obs = Obs; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
+window.__Obs = Obs; window.__MarkFix = MarkFix; window.__CityTun = CityTun; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
 window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream; window.__Stamps = Stamps;
 })();

@@ -793,12 +793,52 @@ def lift_marks(P):
         for v in range(3): t[k, v, 1] = F(t[k, v, 0], t[k, v, 2]) + 0.015
     return t.reshape(-1, 3)
 M["white"] = lift_marks(M["white"]); M["yellow"] = lift_marks(M["yellow"])
+# v43: 道路のトンネル（箱）の範囲で、屋根の上面より下にある一般の標示は捨てる（上を渡る道の横断歩道などが坑口の床へ落ちて
+#      「道の真ん中の白い板」になっていた。箱の中の線は tunnels.py が別に作る）
+def _tun_mark_drop(P, name):
+    P = np.asarray(P, np.float64)
+    if not len(P) or not TUNNELS: return P
+    t = P.reshape(-1, 3, 3); cen = t.mean(1); keep = np.ones(len(t), bool)
+    for _t in TUNNELS:
+        rp = _t.get("roof_poly")
+        if rp is None or rp.is_empty: continue
+        ins = shapely.contains_xy(rp.buffer(0.5), cen[:, 0], cen[:, 2])
+        if not ins.any(): continue
+        idx = np.flatnonzero(ins); s_ = shapely.line_locate_point(_t["line"], shapely.points(cen[idx, 0], cen[idx, 2]))
+        yt = np.interp(s_, np.asarray(_t["cum"]), np.asarray(_t["ytop"]))
+        keep[idx[cen[idx, 1] < yt - 0.5]] = False
+    if (~keep).any(): print("  v43 marks dropped inside tunnel boxes", name, int((~keep).sum()), flush=True)
+    return t[keep].reshape(-1, 3)
+M["white"] = _tun_mark_drop(M["white"], "white"); M["yellow"] = _tun_mark_drop(M["yellow"], "yellow")
 add_chunk("mark", M["white"], col=tri_colors(len(M["white"]) // 3, (0.92, 0.92, 0.90)), mat="paint", file_key="road", nrm=np.tile([0.0, 1.0, 0.0], (len(M["white"]), 1)))
 add_chunk("mark", M["yellow"], col=tri_colors(len(M["yellow"]) // 3, (0.93, 0.74, 0.20)), mat="paint", file_key="road")
 print("  marks white", len(M["white"]) // 3, "yellow", len(M["yellow"]) // 3, flush=True)
 del M; RT.clear(); R["tris"] = {}; R["curb"] = None   # v29: 出力済み（メモリ）
 
+from structures import railing_quads as STR_railing
 print("bridge rails...", flush=True); print("  [rss MB]", _rss(), flush=True)
+# v43: 道路のトンネル（箱）の中に入り込む橋・高架の部材（上を通る高架の側面・高欄など）を捨てる（トンネルの中に「宙に浮いた板」が見えていた）
+_TUNV = []
+for _t in TUNNELS:
+    if _t.get("floor_poly") is None: continue
+    _fp = _t["floor_poly"].buffer(0.3); shapely.prepare(_fp)
+    _TUNV.append((_fp, _t["line"], np.asarray(_t["cum"]), np.asarray(_t["z"]), np.asarray(_t["ytop"])))
+def tunnel_clip(T, uv=None):
+    T = np.asarray(T)
+    if not len(T) or not _TUNV: return (T, uv) if uv is not None else T
+    tt = T.reshape(-1, 3, 3); cen = tt.mean(1); keep = np.ones(len(tt), bool)
+    for fp, ln, cum, zz, yt in _TUNV:
+        ins = shapely.contains_xy(fp, cen[:, 0], cen[:, 2])
+        if not ins.any(): continue
+        idx = np.flatnonzero(ins)
+        s_ = shapely.line_locate_point(ln, shapely.points(cen[idx, 0], cen[idx, 2]))
+        zf = np.interp(s_, cum, zz); ztop = np.interp(s_, cum, yt)
+        bad = (cen[idx, 1] > zf - 0.5) & (cen[idx, 1] < ztop - 0.05)
+        keep[idx[bad]] = False
+    if uv is not None:
+        return tt[keep].reshape(-1, 3), np.asarray(uv).reshape(-1, 3, 2)[keep].reshape(-1, 2)
+    return tt[keep].reshape(-1, 3)
+FENCE, FENCE_UV = [], []
 # v30: 道路は部分のリスト（lanes_parts・raised_parts）。v29 と同じく全体の和集合の輪郭のうち、軌道の近くを通る輪郭を使う
 allroad = unary_union(list(road_parts(R, "lanes")) + list(road_parts(R, "raised")))
 brail = []
@@ -835,10 +875,13 @@ for g in (allroad.geoms if hasattr(allroad, "geoms") else [allroad]):
                 if top is None: continue
             else:
                 a, b, top = segs[k]; last_top = top
-            wall_ = LineString([a, b]).buffer(0.125, cap_style=2)
-            brail.append(extrude_ring(wall_.exterior, lambda x, z, t=top: t - 1.2, lambda x, z, t=top: t + 1.0))
-            brail.append(tri_poly(wall_, lambda x, z, t=top: t + 1.0))
+            wall_ = LineString([a, b]).buffer(0.15, cap_style=2)
+            brail.append(extrude_ring(wall_.exterior, lambda x, z, t=top: t - 1.2, lambda x, z, t=top: t + 0.35))   # v43: 地覆（0.35m）＋鋼製の柵
+            brail.append(tri_poly(wall_, lambda x, z, t=top: t + 0.35))
+            _ft, _fu = STR_railing(np.array([a]), np.array([b]), np.array([top + 0.35]), np.array([top + 0.35]), np.array([top + 1.1]), np.array([top + 1.1]))
+            FENCE.append(_ft); FENCE_UV.append(_fu)
 brail = np.concatenate(brail) if brail else np.zeros((0, 3))
+brail = tunnel_clip(brail)
 add_chunk("bridge", brail, col=tri_colors(len(brail) // 3, (0.72, 0.72, 0.70)), mat="color", file_key="road")
 del allroad   # v29: メモリ
 # ---- v11: 橋の構造（床版の下面・側面の桁・橋脚）。OSM の man_made=bridge の輪郭から ----
@@ -888,9 +931,9 @@ for bname, bpoly in BRIDGES:
     print("  bridge", bname, "len", round(Lb), "width", round(Wb), "piers", nsp - 1, flush=True)
 _cat0 = lambda L: np.concatenate([x for x in L if len(x)]) if any(len(x) for x in L) else np.zeros((0, 3))
 if bdeck:
-    g_ = _cat0(bdeck); add_chunk("bridge", g_, col=tri_colors(len(g_) // 3, (0.60, 0.60, 0.58)), mat="color", file_key="road")
+    g_ = tunnel_clip(_cat0(bdeck)); add_chunk("bridge", g_, col=tri_colors(len(g_) // 3, (0.60, 0.60, 0.58)), mat="color", file_key="road")
 if bpier:
-    g_ = _cat0(bpier); add_chunk("bridge", g_, col=tri_colors(len(g_) // 3, (0.64, 0.63, 0.60), 0.03, 11), mat="color", file_key="road")
+    g_ = tunnel_clip(_cat0(bpier)); add_chunk("bridge", g_, col=tri_colors(len(g_) // 3, (0.64, 0.63, 0.60), 0.03, 11), mat="color", file_key="road")
 print("  bridge rail tris", len(brail) // 3, flush=True)
 # ---- v32: 地形の高低差のある所の構造物（structures.py）: 橋・高架の構造、道路の縁の擁壁、建物の基礎（建物の所で） ----
 import structures as STR
@@ -901,7 +944,14 @@ _bunion = unary_union(_bparts) if _bparts else None
 if _bunion is not None: shapely.prepare(_bunion)
 # v41.20: トンネルの坑口の周り（床の幅＋両端 8m）は、道路の縁の法面・擁壁を作らない（坑口をふさがない）
 _zones = [t["zone"] for t in TUNNELS]
-_bunion_t = unary_union(([_bunion] if _bunion is not None else []) + _zones) if (_bunion is not None or _zones) else None
+# v43: OSM の橋（man_made=bridge の輪郭・bridge=yes の道路の線）も、擁壁・法面を作らない範囲に入れる（川の上の橋が「水面まで届く壁」になっていた）
+_obr = [bp.buffer(1.0) for _, bp in BRIDGES if bp is not None and not bp.is_empty and bp.area > 30]
+for _w in ways:
+    _t = _w["tags"]
+    if _t.get("highway") and _t.get("bridge") not in (None, "no") and len(_w["xy"]) >= 2:
+        _obr.append(LineString(_w["xy"]).buffer(TUN.width_of(_t) / 2 + 1.0, cap_style=2))
+print("  v43 osm bridge zones", len(_obr), flush=True)
+_bunion_t = unary_union(([_bunion] if _bunion is not None else []) + _zones + _obr) if (_bunion is not None or _zones or _obr) else None
 if _bunion_t is not None: shapely.prepare(_bunion_t)
 print("  v32 bridge parts", len(_bparts), "upper cells", 0 if R.get("upper") is None else len(R["upper"][0]), flush=True)
 _blines = [LineString(w["xy"]) for w in ways if w["tags"].get("highway") and w["tags"].get("bridge") not in (None, "no") and len(w["xy"]) >= 2]
@@ -909,9 +959,18 @@ _rlines = [LineString(w["xy"]) for w in ways if w["tags"].get("railway") in ("ra
 if _bparts:
     _BS = STR.bridge_structures(_bparts, _DK, dem_at, _blines, _DK.lower, _rlines, STR.grid_split, tri_poly, log=lambda *a: print(*a, flush=True))
     for _k, _c, _j in (("under", (0.60, 0.60, 0.58), 0.0), ("sides", (0.66, 0.66, 0.63), 0.0), ("rails", (0.74, 0.74, 0.71), 0.02), ("piers", (0.64, 0.63, 0.60), 0.03)):
-        g_ = _BS[_k]
+        g_ = tunnel_clip(_BS[_k])
         if len(g_): add_chunk("bridge", g_, col=tri_colors(len(g_) // 3, _c, _j, 13), mat="color", file_key="road")
+    FENCE.append(_BS["fence"]); FENCE_UV.append(_BS["fence_uv"])
     del _BS
+# v43: 橋の柵（鋼製。UV は柵の絵: u = 2m ごと、v = 下 0〜上 1。app は透明の抜きで柵の形にする）
+if FENCE:
+    _ft = np.concatenate([x for x in FENCE if len(x)]) if any(len(x) for x in FENCE) else np.zeros((0, 3))
+    _fu = np.concatenate([x for x in FENCE_UV if len(x)]) if any(len(x) for x in FENCE_UV) else np.zeros((0, 2))
+    if len(_ft):
+        _ft, _fu = tunnel_clip(_ft, _fu)
+        add_chunk("brail", _ft, uv=_fu, col=tri_colors(len(_ft) // 3, (0.50, 0.54, 0.58), 0.02, 31), mat="railing", file_key="road")
+        print("  railing tris", len(_ft) // 3, flush=True)
 # 道路の縁の擁壁（道路の縁が地面より 0.35m 以上高い所）
 _PI = PartsIndex(list(road_parts(R, "lanes")) + list(road_parts(R, "raised")))
 _tl = [(x_, z_, x_ + 500.0, z_ + 500.0) for x_ in np.arange(math.floor(_BX0 / 500) * 500, _BX1, 500.0) for z_ in np.arange(math.floor(_BZ0 / 500) * 500, _BZ1, 500.0)]
@@ -930,9 +989,87 @@ if TUNNELS:
         return np.concatenate(L_) if L_ else np.zeros((0, 3))
     _g = _tcat("floor")
     if len(_g): add_chunk("road", _g, col=tri_colors(len(_g) // 3, ROAD_TINT["lane"], 0.04, 21), mat=MAT["lane"], file_key="road", nrm=np.tile([0.0, 1.0, 0.0], (len(_g), 1)))
-    for _k, _c, _j in (("wall", (0.64, 0.63, 0.60), 0.03), ("ceil", (0.52, 0.52, 0.50), 0.02), ("roof", (0.62, 0.62, 0.59), 0.02), ("cap", (0.66, 0.65, 0.62), 0.02)):
+    # v43: 屋根の上面は明るいクリーム色で「宙に浮いた白い板」に見えていた → 汚れた打ちっぱなしの灰色。端面も少し暗く
+    for _k, _c, _j in (("roof", (0.43, 0.43, 0.41), 0.03), ("cap", (0.54, 0.53, 0.50), 0.02)):
         _g = _tcat(_k)
         if len(_g): add_chunk("bridge", _g, col=tri_colors(len(_g) // 3, _c, _j, 22), mat="color", file_key="road")
+    # v43: 地面から出ている屋根の縁に地覆（0.35m）と鋼製の柵（〜1.1m）。横の辺は、外側 1.5m が道路（屋根の上を渡る道）なら付けない
+    _fa = [_t["fence_ab"] for _t in TUNNELS if len(_t.get("fence_ab", []))]
+    if _fa:
+        _AB = np.concatenate(_fa); _mid = (_AB[:, 0, [0, 2]] + _AB[:, 1, [0, 2]]) / 2
+        _d = _AB[:, 1, [0, 2]] - _AB[:, 0, [0, 2]]; _L = np.hypot(_d[:, 0], _d[:, 1]) + 1e-9; _nr = np.stack([_d[:, 1], -_d[:, 0]], 1) / _L[:, None]
+        # どちらが外か: 中心線から遠い方。屋根の上を渡る道の判定は外側の点で
+        _po = _mid + _nr * 1.5; _pi = _mid - _nr * 1.5
+        _dl = [shapely.distance(_t["line"], shapely.points(_po[:, 0], _po[:, 1])) for _t in TUNNELS]
+        _dr = [shapely.distance(_t["line"], shapely.points(_pi[:, 0], _pi[:, 1])) for _t in TUNNELS]
+        _out = np.where(np.min(_dl, 0) >= np.min(_dr, 0), 1.0, -1.0)[:, None]
+        _po = _mid + _nr * 1.5 * _out
+        # 屋根の上を渡る道 = トンネルの近くの車道の部分のうち、トンネルの床の範囲に半分以上入っていないもの（トンネルの道自身を除く）
+        _zz = unary_union([_t["zone"].buffer(30) for _t in TUNNELS]); _fpu = unary_union([_t["floor_poly"] for _t in TUNNELS])
+        _xs = [g for g in road_parts(R, "lanes") if g.intersects(_zz) and g.intersection(_fpu).area < 0.5 * g.area]
+        _xr = unary_union(_xs) if _xs else Polygon()
+        _onroad = shapely.intersects_xy(_xr, _po[:, 0], _po[:, 1]) if not _xr.is_empty else np.zeros(len(_po), bool)
+        # 坑口の上の辺（線分の向きが中心線の向きとほぼ直交）は常に付ける（下は切り通し）
+        _tang = []
+        for k_ in range(len(_AB)):
+            best = None
+            for _t in TUNNELS:
+                ln_ = _t["line"]; s_ = ln_.project(Point(*_mid[k_])); a_ = ln_.interpolate(max(0, s_ - 1)); b_ = ln_.interpolate(min(ln_.length, s_ + 1))
+                dd = ln_.distance(Point(*_mid[k_]))
+                if best is None or dd < best[0]: best = (dd, np.array([b_.x - a_.x, b_.y - a_.y]))
+            _tang.append(best[1] / (np.linalg.norm(best[1]) + 1e-9))
+        _tang = np.asarray(_tang); _cos = np.abs(np.sum(_tang * _d / _L[:, None], 1))
+        _isfront = _cos < 0.5
+        _keep = _isfront | ~_onroad
+        _AB = _AB[_keep]; _out = _out[_keep]; _nr = _nr[_keep]
+        A2 = _AB[:, 0, [0, 2]]; B2 = _AB[:, 1, [0, 2]]; ya = _AB[:, 0, 1]; yb = _AB[:, 1, 1]
+        _in = -_nr * _out * 0.25   # 地覆の内側の面（0.25m 内側）
+        A3 = A2 + _in; B3 = B2 + _in
+        def _q(P, Q, yp0, yq0, yp1, yq1):
+            a = np.stack([P[:, 0], yp1, P[:, 1]], 1); b = np.stack([P[:, 0], yp0, P[:, 1]], 1); c = np.stack([Q[:, 0], yq0, Q[:, 1]], 1); d = np.stack([Q[:, 0], yq1, Q[:, 1]], 1)
+            return np.stack([a, b, c, a, c, d], 1).reshape(-1, 3)
+        _curb = np.concatenate([_q(A2, B2, ya - 0.05, yb - 0.05, ya + 0.35, yb + 0.35), _q(B3, A3, yb - 0.05, ya - 0.05, yb + 0.35, ya + 0.35),
+                                np.stack([np.stack([A2[:, 0], ya + 0.35, A2[:, 1]], 1), np.stack([A3[:, 0], ya + 0.35, A3[:, 1]], 1), np.stack([B3[:, 0], yb + 0.35, B3[:, 1]], 1),
+                                          np.stack([A2[:, 0], ya + 0.35, A2[:, 1]], 1), np.stack([B3[:, 0], yb + 0.35, B3[:, 1]], 1), np.stack([B2[:, 0], yb + 0.35, B2[:, 1]], 1)], 1).reshape(-1, 3)])
+        add_chunk("bridge", _curb, col=tri_colors(len(_curb) // 3, (0.58, 0.57, 0.54), 0.02, 33), mat="color", file_key="road")
+        _Fm = A2 + _in * 0.5; _Fn = B2 + _in * 0.5
+        _ft, _fu = STR_railing(_Fm, _Fn, ya + 0.35, yb + 0.35, ya + 1.1, yb + 1.1)
+        add_chunk("brail", _ft, uv=_fu, col=tri_colors(len(_ft) // 3, (0.50, 0.54, 0.58), 0.02, 34), mat="railing", file_key="road")
+        print("  v43 tunnel roof fences", len(_AB), "of", len(_keep), "front", int(_isfront.sum()), "skipped (road over roof)", int((~_keep).sum()), flush=True)
+    # v43: 壁（内装板・目地）と天井は専用の材質。UV = (中心線に沿った距離 / 2.1m, 床からの高さ m)。天井の両端に照明器具（5m おき）
+    _wl, _wu, _cl, _cu, _lamps = [], [], [], [], []
+    for _t in TUNNELS:
+        _ln, _cum, _zz = _t["line"], np.asarray(_t["cum"]), np.asarray(_t["z"])
+        for _key, _L, _U in (("wall", _wl, _wu), ("ceil", _cl, _cu)):
+            _g = _t["tris"][_key]
+            if not len(_g): continue
+            _s = shapely.line_locate_point(_ln, shapely.points(_g[:, 0], _g[:, 2])); _zf = np.interp(_s, _cum, _zz)
+            if _key == "wall": _uv = np.stack([_s / 2.1, _g[:, 1] - _zf], 1)
+            else: _uv = np.stack([_s / 2.1, _g[:, 0] * 0.0], 1)
+            _L.append(_g); _U.append(_uv)
+        # 照明器具: 天井の左右の縁の 0.5m 内側・天井の 0.06m 下、長さ 1.2m・幅 0.25m の板（5m おき）。箱の区間（天井がある所）だけ
+        _ce = _t["tris"]["ceil"]
+        if len(_ce):
+            _cs = shapely.line_locate_point(_ln, shapely.points(_ce[:, 0], _ce[:, 2])); s0, s1 = float(_cs.min()), float(_cs.max())
+            _xy = np.asarray(_t["xy"]); _offL = np.asarray(_t["offL"]); _offR = np.asarray(_t["offR"])
+            _cy = _ce[:, 1]
+            for _sv in np.arange(s0 + 2.5, s1 - 1.0, 5.0):
+                _p = np.array(_ln.interpolate(_sv).coords[0]); _q = np.array(_ln.interpolate(min(_ln.length, _sv + 0.5)).coords[0]); _tv = (_q - _p) / (np.linalg.norm(_q - _p) + 1e-9); _nv = np.array([-_tv[1], _tv[0]])
+                _k = int(np.argmin(np.abs(_cs - _sv))); _yc = float(_cy[_k]) - 0.06
+                for _off in (float(np.interp(_sv, _cum, _offL)) - 0.6, float(np.interp(_sv, _cum, _offR)) + 0.6):
+                    _c0 = _p + _nv * _off
+                    _A = _c0 - _tv * 0.6 - _nv * 0.13; _B = _c0 + _tv * 0.6 - _nv * 0.13; _C = _c0 + _tv * 0.6 + _nv * 0.13; _D = _c0 - _tv * 0.6 + _nv * 0.13
+                    _P = lambda v: [v[0], _yc, v[1]]
+                    _lamps += [_P(_A), _P(_C), _P(_B), _P(_A), _P(_D), _P(_C)]   # 下向き
+    if _wl:
+        _g = np.concatenate(_wl); _u = np.concatenate(_wu)
+        add_chunk("tunnel", _g, uv=_u, col=tri_colors(len(_g) // 3, (1.0, 1.0, 1.0)), mat="tunwall", file_key="road", uv_int=True)
+    if _cl:
+        _g = np.concatenate(_cl); _u = np.concatenate(_cu)
+        add_chunk("tunnel", _g, uv=_u, col=tri_colors(len(_g) // 3, (0.50, 0.50, 0.49), 0.02, 23), mat="tunceil", file_key="road", uv_int=True)
+    if _lamps:
+        _g = np.asarray(_lamps, float); add_chunk("tunnel", _g, col=tri_colors(len(_g) // 3, (1.0, 0.95, 0.85)), mat="lamp", file_key="road")
+    print("  v43 tunnel lamps", len(_lamps) // 6, flush=True)
     _g = _tcat("white")
     if len(_g): add_chunk("mark", _g, col=tri_colors(len(_g) // 3, (0.92, 0.92, 0.90)), mat="paint", file_key="road", nrm=np.tile([0.0, 1.0, 0.0], (len(_g), 1)))
     _g = _tcat("yellow")
@@ -1140,6 +1277,7 @@ for key, r in T["routes"].items():
         box_ = LineString([c0, c1]).buffer(0.9, cap_style=2)
         ring = box_.exterior.buffer(0.1)
         stop_marks.append(tri_poly(ring, lambda x, z: max(surf(x, z), F(x, z)), 0.013))
+stop_marks = [_tun_mark_drop(cat_(stop_marks), "stop")] if len(cat_(stop_marks)) else stop_marks
 add_chunk("mark", cat_(stop_marks), col=tri_colors(len(cat_(stop_marks)) // 3, (0.92, 0.92, 0.90)), mat="paint", file_key="road")
 
 # ================= 6) 架線柱・架線 =================

@@ -144,6 +144,13 @@ def _one(wid, tags, xy, z, L, dem_at):
         if (i == 0 or not box_sec[i - 1]) and exposed[i]: caps.append(_strip(np.stack([wtL[i], wtR[i]]), np.stack([ttL[i], ttR[i]]), -tf[i:i + 1]))
         if (i == len(box_sec) - 1 or not box_sec[i + 1]) and exposed[i]: caps.append(_strip(np.stack([wtL[i + 1], wtR[i + 1]]), np.stack([ttL[i + 1], ttR[i + 1]]), +tf[i + 1:i + 2]))
     cap = np.concatenate(caps) if caps else np.zeros((0, 3))
+    # v43: 地面から出ている屋根の縁（横の 2 辺・坑口の上の辺）に、地覆と柵を付ける線分（A, B: 3D）。build_v5 が地覆と鋼製の柵にする
+    fence_ab = []
+    for i in np.nonzero(exposed)[0]:
+        fence_ab.append((ttL[i], ttL[i + 1])); fence_ab.append((ttR[i + 1], ttR[i]))
+        if i == 0 or not box_sec[i - 1]: fence_ab.append((ttR[i], ttL[i]))
+        if i == len(box_sec) - 1 or not box_sec[i + 1]: fence_ab.append((ttL[i + 1], ttR[i + 1]))
+    fence_ab = np.asarray(fence_ab, float).reshape(-1, 2, 3)
     white, yellow = [], []
     def line_tris(off, y, hwid, dash=None):
         a = pts(off + hwid, y + 0.005); b = pts(off - hwid, y + 0.005)
@@ -184,7 +191,7 @@ def _one(wid, tags, xy, z, L, dem_at):
     return dict(id=wid, name=tags.get("name", ""), hw=hw, offL=offL, offR=offR, gaps=gaps, L=L, xy=xy, z=z, cum=cum, line=ln, floor_poly=floor_poly, band_poly=band_poly,
                 roof_poly=roof_poly, floor_only_poly=floor_only_poly, zone=zone, ytop=ytop, box_frac=float(box_sec.mean()),
                 exposed_frac=float(exposed.mean()), shallow_frac=float(shallow.mean()), cov_max=float(cov.max()),
-                tris=dict(floor=floor, wall=np.concatenate([wallL, wallR]), ceil=ceil, roof=roof, cap=cap,
+                fence_ab=fence_ab, tris=dict(floor=floor, wall=np.concatenate([wallL, wallR]), ceil=ceil, roof=roof, cap=cap,
                           white=np.concatenate(white) if white else np.zeros((0, 3)), yellow=np.concatenate(yellow) if yellow else np.zeros((0, 3))))
 
 def raster_cells(T, poly, x0, z0, step, nx, nz, val):

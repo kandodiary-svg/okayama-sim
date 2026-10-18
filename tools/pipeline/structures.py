@@ -118,6 +118,20 @@ def _quads(A, B, ta, tb, ba, bb, outward):
     return np.concatenate([T1, T2], 1).reshape(-1, 3)
 
 
+def railing_quads(A, B, ba, bb, ta, tb):
+    """v43: 柵の板（両面から見える 1 枚の四角）。A,B: (n,2)、ba/bb: 下端・ta/tb: 上端の高さ。UV は u = 区間の長さ/2.0（0〜1）、v = 0（下）〜1（上）。
+    戻り: 三角形 (n*6,3), UV (n*6,2)"""
+    n = len(A)
+    if n == 0: return np.zeros((0, 3)), np.zeros((0, 2))
+    L = np.hypot(*(B - A).T); u1 = np.clip(L / 2.0, 0.02, 1.0)
+    At = np.stack([A[:, 0], ta, A[:, 1]], 1); Bt = np.stack([B[:, 0], tb, B[:, 1]], 1)
+    Ab = np.stack([A[:, 0], ba, A[:, 1]], 1); Bb = np.stack([B[:, 0], bb, B[:, 1]], 1)
+    T = np.stack([At, Ab, Bb, At, Bb, Bt], 1).reshape(-1, 3)
+    z = np.zeros(n); o = np.ones(n)
+    U = np.stack([np.stack([z, o], 1), np.stack([z, z], 1), np.stack([u1, z], 1), np.stack([z, o], 1), np.stack([u1, z], 1), np.stack([u1, o], 1)], 1).reshape(-1, 2)
+    return T, U
+
+
 def _ring_segments(g, step=2.0):
     """多角形の輪郭を step 以下の区間に（多角形の内側が左）。戻り値: A, B (n,2)"""
     g = orient(g, 1.0); out = []
@@ -368,6 +382,7 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
     U = unary_union(parts)
     polys = [g for g in (U.geoms if hasattr(U, "geoms") else [U]) if g.geom_type == "Polygon" and g.area > 30]
     under, sides, rails_, piers = [], [], [], []
+    fence, fence_uv = [], []
     rtree = STRtree(rail_lines) if rail_lines else None
     bl_tree = STRtree(bridge_lines) if bridge_lines else None
     TH = 1.2
@@ -417,13 +432,16 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
         k = ~endj
         if k.any():
             A2, B2, ta2, tb2, nl2 = A[k], B[k], ta[k], tb[k], nl[k]
-            Ai = A2 + nl2 * 0.25; Bi = B2 + nl2 * 0.25
-            rails_.append(_quads(A2, B2, ta2 + 1.0, tb2 + 1.0, ta2 - 0.05, tb2 - 0.05, -nl2))      # 外面
-            rails_.append(_quads(Ai, Bi, ta2 + 1.0, tb2 + 1.0, ta2 - 0.05, tb2 - 0.05, nl2))      # 内面
-            T1 = np.stack([np.stack([A2[:, 0], ta2 + 1.0, A2[:, 1]], 1), np.stack([B2[:, 0], tb2 + 1.0, B2[:, 1]], 1), np.stack([Bi[:, 0], tb2 + 1.0, Bi[:, 1]], 1)], 1)
-            T2 = np.stack([np.stack([A2[:, 0], ta2 + 1.0, A2[:, 1]], 1), np.stack([Bi[:, 0], tb2 + 1.0, Bi[:, 1]], 1), np.stack([Ai[:, 0], ta2 + 1.0, Ai[:, 1]], 1)], 1)
+            # v43: 高欄は「コンクリートの地覆（高さ 0.35m・幅 0.3m）＋鋼製の柵（0.35〜1.1m）」。以前は高さ 1m のコンクリートの壁で「ただのコンクリート」に見えた
+            Ai = A2 + nl2 * 0.3; Bi = B2 + nl2 * 0.3; KH = 0.35
+            rails_.append(_quads(A2, B2, ta2 + KH, tb2 + KH, ta2 - 0.05, tb2 - 0.05, -nl2))      # 地覆の外面
+            rails_.append(_quads(Ai, Bi, ta2 + KH, tb2 + KH, ta2 - 0.05, tb2 - 0.05, nl2))      # 地覆の内面
+            T1 = np.stack([np.stack([A2[:, 0], ta2 + KH, A2[:, 1]], 1), np.stack([B2[:, 0], tb2 + KH, B2[:, 1]], 1), np.stack([Bi[:, 0], tb2 + KH, Bi[:, 1]], 1)], 1)
+            T2 = np.stack([np.stack([A2[:, 0], ta2 + KH, A2[:, 1]], 1), np.stack([Bi[:, 0], tb2 + KH, Bi[:, 1]], 1), np.stack([Ai[:, 0], ta2 + KH, Ai[:, 1]], 1)], 1)
             T = np.concatenate([T1, T2]); nrm = np.cross(T[:, 1] - T[:, 0], T[:, 2] - T[:, 0]); T[nrm[:, 1] < 0] = T[nrm[:, 1] < 0][:, [0, 2, 1]]
             rails_.append(T.reshape(-1, 3))
+            Am = A2 + nl2 * 0.15; Bm = B2 + nl2 * 0.15
+            t_, u_ = railing_quads(Am, Bm, ta2 + KH, tb2 + KH, ta2 + 1.1, tb2 + 1.1); fence.append(t_); fence_uv.append(u_)
     # 橋脚: 橋の中の OSM の橋の中心線に沿って約 30m おき（つながった橋ごと。高さはその点を含む区間のうち一番低い段）
     def pier_top(p0):
         idx = tree.query(Point(*p0), predicate="intersects")
@@ -464,7 +482,8 @@ def bridge_structures(bparts, deck, dem_at, bridge_lines, lower_road_at, rail_li
         if not L: return np.zeros((0, 3))
         a = np.concatenate(L).reshape(-1, 3, 3); a = a[np.isfinite(a).all(axis=(1, 2))]   # 念のため: 高さの無い三角形は捨てる
         return a.reshape(-1, 3)
-    res = dict(under=cat(under), sides=cat(sides), rails=cat(rails_), piers=cat(piers))
+    res = dict(under=cat(under), sides=cat(sides), rails=cat(rails_), piers=cat(piers),
+               fence=np.concatenate(fence).reshape(-1, 3) if fence else np.zeros((0, 3)), fence_uv=np.concatenate(fence_uv).reshape(-1, 2) if fence_uv else np.zeros((0, 2)))
     log("  bridge structures: parts", len(parts), "seam edges skipped", n_int, {k: len(v) // 3 for k, v in res.items()})
     return res
 

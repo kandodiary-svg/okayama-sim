@@ -77,6 +77,8 @@ align_traffic(){ rm -f $W/traffic_pre_align.json $W/traffic_pts_pre_align.txt /t
 step align align_traffic
 # v41.21: トンネルの床の幅を車線に合わせる（次に tunnels 段を流す時の入力 tunnel_fit.json。この回の値と違えば build をやり直す）
 step tunnelfit python3 tunnel_fit.py
+# v43: 道路のトンネル（箱）の形を app 用に（坑口の地面の盛り上がりを描かない範囲。data/tunnels_v.json）
+step tunexport python3 tunnel_export.py
 # v41.21: 車線の高さに合う層が走行格子に無い所（立体交差の下をくぐる道・堤防の下・高架の面の穴）へ層を足す（位置合わせの後＝最終の車線の点列がある）
 step underfill $M lane_underfill.py
 # 山陽道（mw.bin）の高さを走行格子にそろえる（走行格子を作り直したら毎回。元の mw.bin は mw.bin.v38.bak）
