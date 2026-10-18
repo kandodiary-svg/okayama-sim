@@ -3264,7 +3264,25 @@ async function loadAll(){
   Prefs.restore();
   Trams.populate(S.key, S.cum[0]+40, S.vehicle);
   await _memlog("end");
-  $("loadbar").style.width="100%"; $("start").disabled=false; applyMenu();
+  $("loadbar").style.width="100%"; startGate();
+}
+/* v45.2: 開始ボタンは、ほかの部分の読み込み（周りの建物・道路のタイル、遠景の地形タイルの目録と標高、山陽道〔立体交差・PA/SA・街の区間の調整まで〕）が
+   終わってから押せるようにする。起動直後に押すと、読み込みが途中のまま始まり、道路や地形が欠けることがあった。
+   読み込みに失敗したものは待たない。90 秒たっても終わらなければ、その旨を出して押せるようにする */
+window.__startGate = () => startGate();
+function startGate(){
+  const t0 = performance.now(), btn = $("start"), lab = $("start-label"), bar = $("loadbar");
+  const items = () => { const p = camera.position, np = Stream.pending(p.x, p.z);
+    return [["周りの建物・道路", np === 0, np ? "残り " + np : ""], ["遠景の地形", Outer.ready || Outer.failed, ""], ["山陽自動車道", MW.prepared || MW.failed, MW.ready ? "整え中" : ""]]; };
+  const step = () => {
+    const it = items(), done = it.filter(x => x[1]).length, all = done === it.length, late = performance.now() - t0 > 90000;
+    window.__gate = { wait: Math.round(performance.now() - t0), boot: Math.round(t0), items: it.map(x => x[0] + ":" + (x[1] ? 1 : 0)) };
+    if(all || late){ btn.disabled = false; btn.classList.remove("waiting"); applyMenu(); if(!all){ lab.textContent += "（一部の読み込みが遅れています）"; } return; }
+    btn.disabled = true; btn.classList.add("waiting");
+    const left = it.filter(x => !x[1]).map(x => x[0] + (x[2] ? "（" + x[2] + "）" : "")).join("・");
+    lab.textContent = "準備中… " + left + "（" + done + "/" + it.length + "）"; bar.style.width = (90 + 10 * done / it.length).toFixed(1) + "%";
+    setTimeout(step, 400); };
+  step();
 }
 
 /* ---------------- タイルの読み込み・解放（v16） ----------------
@@ -3367,7 +3385,9 @@ const Stream = (() => {
     // 電線（v17）: 近くのタイルだけ・高い所からは出さない（遠くで黒い筋になっていた）
     for(const W of PWIRES){ const dx=Math.max(W.x0-c.x,0,c.x-(W.x0+W.size)), dz=Math.max(W.z0-c.z,0,c.z-(W.z0+W.size)); W.obj.visible = Math.hypot(dx,dz) < 380 && c.y - (heli ? gy : 0) < 160; }
   }
-  return { update, tick, R, get loaded(){ return loaded; } };
+  // v45.2: (x,z) の近く（NEAR の内側）でまだ読めていないタイルの数（開始ボタンの準備の判定に使う）
+  function pending(x, z){ if(!S.scene || !S.scene.tiles) return 0; let n = 0; for(const fk of wanted(x, z, 0)){ if(!S.scene.files[fk] || loaded.has(fk)) continue; if(tileDist(fk.split("@")[1], x, z) < NEAR) n++; } return n; }
+  return { update, tick, R, pending, get loaded(){ return loaded; } };
 })();
 
 /* 建物の外観の切替（写真 ⇄ 簡略）。タイルの読み込みで入れ替える */
@@ -3404,17 +3424,17 @@ async function buildFarTerrain(meta, buf){
    pipeline/outer_tiles.py: 2km 四方・40m 格子の標高（国土地理院）と 512px の航空写真。近く（約 3.3km）の分だけ作り、離れたら捨てる。
    遠景の範囲の中に入る部分は作らない（遠景の地形がある）。 */
 const Outer = (() => {
-  let man = null, A = null, ready = false, busy = 0, lastT = 0, manP = null;
+  let man = null, A = null, ready = false, failed = false, busy = 0, lastT = 0, manP = null;
   const idxW = new Map(), idxF = new Map(), live = new Map(), loading = new Set(), R_LOAD = 3300, R_DROP = 4600;
   // v37: 目録は遠景の地形（buildFarTerrain）からも使う（山陽道沿いの細かいブロックの下に遠景を沈める）
   function loadMan(){ if(!manP) manP = getJSON("data/outer.json").catch(() => null); return manP; }
   async function init(){
     try{
-      man = await loadMan(); if(!man) return;
+      man = await loadMan(); if(!man){ failed = true; return; }
       A = new Int16Array(await withRetry(() => fetchOK("data/outer_h.bin").then(r => r.arrayBuffer()), "outer_h.bin"));
       for(const t of man.tiles) (t.kind === "FF" ? idxF : idxW).set(t.i + "_" + t.j, t);
       ready = true;
-    }catch(e){ console.warn("outer", e); }
+    }catch(e){ console.warn("outer", e); failed = true; }
   }
   // v37: タイルは種類ごと。W/F = 世界座標の 2km 格子（i=floor(x/2000)）、FF = 遠景の格子に揃えた 2km ブロック。解像度（nh）はタイルごと（W 51 点・F/FF 201 点）
   function tileAt(x, z){
@@ -3460,7 +3480,7 @@ const Outer = (() => {
       if(d < R_LOAD && !live.has(key) && !loading.has(key) && busy < (force ? 6 : 3)) load(t);
       else if(d > R_DROP && live.has(key)){ const m = live.get(key); if(m){ scene.remove(m); m.geometry.dispose(); if(m.material.map) m.material.map.dispose(); m.material.dispose(); } live.delete(key); } }
   }
-  return { tick, h, loadMan, get live(){ return live; }, get ready(){ return ready; }, get man(){ return man; } };
+  return { tick, h, loadMan, get live(){ return live; }, get ready(){ return ready; }, get failed(){ return failed; }, get man(){ return man; } };
 })();
 /* ---------------- v37: 山陽自動車道（県内。福山西〜上郡） ----------------
    pipeline/mw.py・mw_prof.py・mw_out.py: OSM の本線（上下線別）・ランプ・IC・料金所・SA/PA、縦断は国土地理院の標高から推定（勾配 3.2% 以下、橋・トンネルは OSM の区分）。
@@ -3469,7 +3489,7 @@ const Outer = (() => {
    路面の横断勾配 1.5%、カーブでは曲率から片勾配（最大 6.5%）。 */
 const MW = (() => {
   const CH = 100, R_BUILD = 1500, R_DROP = 2100, C0 = 0.015;
-  let man = null, PT = null, GP = null, ready = false, lastT = 0, busy = false, started = false;
+  let man = null, PT = null, GP = null, ready = false, lastT = 0, busy = false, started = false, mwFailed = false;
   const chains = [], grid = new Map(), GC = 32, live = new Map();
   let M = null;                                        // 材質（初回に作る）
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -3477,13 +3497,13 @@ const MW = (() => {
   async function init(){
     try{
       const [mj, buf] = await Promise.all([getJSON("data/mw.json").catch(() => null), withRetry(() => fetchOK("data/mw.bin").then(r => r.arrayBuffer()), "mw.bin").catch(() => null)]);
-      if(!mj || !buf) return;
+      if(!mj || !buf){ mwFailed = true; return; }
       man = mj; PT = new Float32Array(buf, 0, man.total * 3); GP = new Uint8Array(buf, man.total * 12, man.total);
       SA = await getJSON("data/mw_sa.json").catch(() => null);   // v44: PA・SA の中（無くても動く）
       for(const c of man.chains) chains.push(prep(c));
       gradeSep();
       buildIndex(); ready = true; mergeBlend(); conEnds(); findLots(); ready = false; findFreeEnds(); mapIC(); ready = true;
-    }catch(e){ console.warn("mw", e); }
+    }catch(e){ console.warn("mw", e); mwFailed = true; }
   }
   function runsToArr(n, runs){ const a = new Uint8Array(n); for(const [s, e] of runs) a.fill(1, s, Math.min(n, e + 1)); return a; }
   function prep(c){
@@ -4345,7 +4365,7 @@ const MW = (() => {
       if(n < 64) arr[n++].set(0, 0, 0, -1); }
     TUN_U.uTunN.value = n;
   }
-  return { init, tick, info, get ready(){ return ready; }, roadAt, deckAt, wallAt, endWall, spawn, nearestLane, mats, chains, get man(){ return man; }, get live(){ return live; }, fracPoint, P, ground, lotAt, lots };
+  return { init, tick, info, get ready(){ return ready; }, get prepared(){ return ready && tnTrimmed && lotsBuilt; }, get failed(){ return mwFailed; }, roadAt, deckAt, wallAt, endWall, spawn, nearestLane, mats, chains, get man(){ return man; }, get live(){ return live; }, fracPoint, P, ground, lotAt, lots };
 })();
 
 /* ---------------- 山陽道の交通（v37）: 本線を、車線を守って走る乗用車・トラック ---------------- */
