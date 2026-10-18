@@ -115,6 +115,13 @@ h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
 .gearsel{ display:flex; flex-direction:column; gap:4px; }
 .gearsel button{ width:52px; height:46px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:#a99f88; font-size:18px; font-weight:900; font-family:inherit; cursor:pointer; }
 .gearsel button.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+/* v44: 定速走行のボタンと表示 */
+.ccbox{ display:flex; flex-direction:column; gap:4px; align-self:flex-end; }
+.ccbox > button{ width:56px; height:46px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:#a99f88; font-size:13px; font-weight:800; font-family:inherit; cursor:pointer; line-height:1.1; }
+.ccbox > button small{ display:block; font-size:9px; font-weight:600; opacity:.7; }
+.ccbox > button.on{ background:#173a2a; color:#7be0a6; border-color:#3fbf7f; }
+.ccpm{ display:flex; gap:4px; } .ccpm button{ width:26px; height:34px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-size:16px; font-weight:800; font-family:inherit; cursor:pointer; padding:0; }
+.cclbl{ margin-left:8px; color:#a99f88; font-weight:700; } .cclbl.on{ color:#7be0a6; }
 #car-gr.on{ background:#4a1d16; color:#ffb4a4; border-color:#d6543f; }
 .gearlbl{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:3px; background:#3a2f18; color:var(--amber); font-weight:700; }
 .gearlbl.rev{ background:#4a1d16; color:#ffb4a4; }
@@ -883,11 +890,12 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
     <path d="M-80 10 Q0 -10 80 10 L60 30 Q0 20 -60 30 Z" fill="#2a2a2a"/><rect x="-10" y="10" width="20" height="70" fill="#2a2a2a"/>
     <circle r="26" fill="#333"/><rect x="-4" y="-98" width="8" height="18" fill="#e6a94d"/>
   </svg>
-  <div class="car-meter"><b id="car-speed">0</b><small>km/h<span class="gearlbl" id="car-gearlbl">D 前進</span>　<span id="car-place"></span></small><div class="rpm"><i id="car-rpm"></i></div></div>
+  <div class="car-meter"><b id="car-speed">0</b><small>km/h<span class="gearlbl" id="car-gearlbl">D 前進</span><span class="cclbl" id="car-cc-lbl"></span>　<span id="car-place"></span></small><div class="rpm"><i id="car-rpm"></i></div></div>
   <div class="pedals">
     <div class="gearsel"><button type="button" id="car-gd" class="on">D</button><button type="button" id="car-gr">R</button></div>
     <button class="pedal brk" id="car-brk" type="button">ブレーキ</button>
     <button class="pedal acc" id="car-acc" type="button">アクセル</button>
+    <div class="ccbox"><button type="button" id="car-cc" title="定速走行（C）">定速<small>C</small></button><div class="ccpm"><button type="button" id="car-ccm" title="設定速度を下げる（−）">−</button><button type="button" id="car-ccp" title="設定速度を上げる／復帰（＋）">＋</button></div></div>
   </div>
 </div>
 
