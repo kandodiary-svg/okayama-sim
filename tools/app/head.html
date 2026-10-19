@@ -195,6 +195,17 @@ body.ctl-hide #car-wheel, body.ctl-hide .pedals, body.ctl-hide .hpad{ display:no
 .chip .rname{ font-size:12px; color:var(--brass); }
 .chip .rname b{ color:var(--cream); font-size:14px; margin-left:6px; }
 .iconbtn{ background:rgba(23,20,15,.86); border:1px solid var(--line); color:var(--cream); width:38px; height:38px; border-radius:2px; font-size:15px; cursor:pointer; }
+/* v46.1: いつでもメニューに戻るボタンと、その確認 */
+.iconbtn.homebtn{ width:auto; padding:0 11px; font-size:13px; font-weight:700; border-color:rgba(230,169,77,.55); white-space:nowrap; flex-shrink:0; }
+.iconbtn.homebtn:hover{ background:#3a2f18; }
+@media (max-width:619px){ .topright .iconbtn.homebtn{ order:-1; padding:0 8px; font-size:12px; } }   /* スマホの幅ではボタン列が画面からはみ出すので、メニューのボタンを先頭（いつも見える所）に */
+#home-confirm{ position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(9,13,10,.6); backdrop-filter:blur(3px); }
+#home-confirm.on{ display:flex; }
+#home-confirm .hc-card{ width:min(360px,100%); background:rgba(20,17,12,.97); border:1px solid var(--line); border-radius:6px; padding:20px 20px 16px; color:var(--cream); box-shadow:0 18px 50px rgba(0,0,0,.5); }
+#home-confirm h3{ margin:0 0 6px; font-size:16px; } #home-confirm p{ margin:0 0 16px; font-size:13px; color:#cbbf9f; line-height:1.6; }
+#home-confirm .hc-btns{ display:flex; gap:8px; justify-content:flex-end; }
+#home-confirm button{ height:38px; padding:0 16px; border-radius:4px; border:1px solid var(--line); background:rgba(35,30,22,.95); color:var(--cream); font:inherit; font-size:13.5px; font-weight:700; cursor:pointer; }
+#home-confirm button.go{ background:var(--amber); border-color:var(--amber); color:#1a1408; }
 .topright{ display:flex; gap:8px; }
 
 .mission{
@@ -793,6 +804,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn" id="view-toggle" title="視点切替">⟲</button>
       <button class="iconbtn" id="sound-btn" title="音を消す">音</button>
       <button class="iconbtn" id="help-btn">?</button>
+      <button class="iconbtn homebtn" id="ui-menu" type="button" title="メニューに戻る">メニュー</button>
     </div>
   </header>
 
@@ -875,7 +887,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn ttbtn" id="tt-btn2" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn rescue" id="rescue-btn" title="すぐそばの道路へ戻る（T）">道路に戻る <small>T</small></button>
       <button class="iconbtn" id="car-view" title="視点切替">⟲</button>
-      <button class="iconbtn" id="car-menu" title="メニューへ">≡</button>
+      <button class="iconbtn homebtn" id="car-menu" type="button" title="メニューに戻る">メニュー</button>
     </div>
   </header>
   <div class="car-msg" id="car-msg"></div>
@@ -921,7 +933,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
       <button class="iconbtn" id="heli-auto" title="自動で街を周回（O）">自動周回 <small>O</small></button>
       <button class="iconbtn" id="heli-view" title="視点切替（V）">⟲</button>
-      <button class="iconbtn" id="heli-menu" title="メニューへ">≡</button>
+      <button class="iconbtn homebtn" id="heli-menu" type="button" title="メニューに戻る">メニュー</button>
     </div>
   </header>
   <div class="car-msg" id="heli-msg"></div>
@@ -1048,6 +1060,10 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
     <div class="shortcuts"><span>マスコン W/S</span><span>ブレーキ ↓/↑</span><span>両方戻す C</span><span>警笛 H</span><span>音 右上の「音」</span><span>非常 Space</span><span>視点 V</span></div>
   </div>
 </div>
+
+<!-- v46.1: メニューに戻る確認 -->
+<div id="home-confirm" role="dialog" aria-modal="true" aria-labelledby="hc-t"><div class="hc-card"><h3 id="hc-t">メニューに戻りますか？</h3><p>今の運転・飛行は終わります（スタンプと記録は残ります）。</p>
+  <div class="hc-btns"><button type="button" id="hc-no">続ける</button><button type="button" class="go" id="hc-yes">メニューに戻る</button></div></div></div>
 
 <!-- FINISH -->
 <div class="overlay" id="finish-overlay">

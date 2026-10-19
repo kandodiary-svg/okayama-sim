@@ -962,7 +962,22 @@ function playLaunch(){
   applyMenu(); PlayOv.hide(); $("start").click(); window.__playReady = true;
 }
 function goMenuPage(){ try { Prefs.save(); } catch(e){} location.href = "./"; }
-if(PAGE === "play") document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest("#heli-menu,#car-menu,#restart,#qf-menu"); if(!b) return; e.preventDefault(); e.stopImmediatePropagation(); try { Snd.hush(); } catch(x){} goMenuPage(); }, true);
+if(PAGE === "play") document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest("#restart,#qf-menu"); if(!b) return; e.preventDefault(); e.stopImmediatePropagation(); try { Snd.hush(); } catch(x){} goMenuPage(); }, true);
+/* v46.1: 運転・飛行の途中でも、上のボタン列の「メニュー」でいつでも戻れる（押し間違えで終わらないよう確認を出す）。
+   play.html はメニューのページへ移る。1 ページ版は今までの各モードの戻り方（路面電車・JR は「運転を終えてメニューへ」と同じ） */
+const HomeBtn = (() => {
+  let pend = null; const box = () => $("home-confirm");
+  function ask(btn){ pend = btn; const b = box(); if(!b){ go(); return; } b.classList.add("on"); setTimeout(() => { const y = $("hc-yes"); if(y) y.focus(); }, 0); }
+  function close(){ const b = box(); if(b) b.classList.remove("on"); pend = null; }
+  function go(){ const btn = pend; close(); try { Snd.hush(); } catch(x){}
+    if(PAGE === "play"){ goMenuPage(); return; }
+    if(!btn || btn.id === "ui-menu"){ $("restart").click(); return; }
+    btn._homeOk = true; btn.click(); }
+  document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest("#ui-menu,#car-menu,#heli-menu"); if(!b) return; if(b._homeOk){ b._homeOk = false; return; } e.preventDefault(); e.stopImmediatePropagation(); ask(b); }, true);
+  { const y = $("hc-yes"), n = $("hc-no"), b = box(); if(y) y.addEventListener("click", go); if(n) n.addEventListener("click", close); if(b) b.addEventListener("click", (e) => { if(e.target === b) close(); }); }
+  document.addEventListener("keydown", (e) => { const b = box(); if(!b || !b.classList.contains("on")) return; if(e.key === "Escape"){ e.preventDefault(); e.stopImmediatePropagation(); close(); } else if(e.key === "Enter"){ e.preventDefault(); e.stopImmediatePropagation(); go(); } }, true);
+  return { ask, close, go };
+})();
 /* v46: メニューのページ（index.html）の起動。路線の一覧（routes.json）と JR の路線の一覧（jr_menu.json: 小さな要約）だけ読み、すぐに開始を押せる */
 async function menuBoot(){
   try { const rt = await getJSON("data/routes.json"); S.routes = rt; buildRoutePicker(); setupRoute(S.key, true); } catch(e){ console.warn("routes", e); }
