@@ -1,0 +1,1070 @@
+<!doctype html><meta charset="utf-8">
+<title>OKADEN運転席</title>
+<script>
+/* v41.13: 起動の失敗を画面に出す。以前は three.js を外部サイトから読み込む間ページが真っ白で、読み込みに失敗すると「読み込み中…」のまま何も出なかった。
+   three.js は自サイト（vendor/）から読み、画面（メニュー）を先に描く。画質・データは変えない */
+window.OkadenBoot=(function(){
+  var KEY="okaden.autoreload";
+  function el(i){ return document.getElementById(i); }
+  function box(msg,canReload){ var b=el("boot-err"),m=el("boot-err-msg"),r=el("boot-retry"); if(!b||!m) return; m.textContent=msg; b.hidden=false; if(r){ r.hidden=!canReload; r.onclick=function(){ location.reload(); }; } }
+  function hide(){ var b=el("boot-err"); if(b) b.hidden=true; }
+  function autoReload(){ try{ var t=Number(sessionStorage.getItem(KEY)||0); if(Date.now()-t>60000){ sessionStorage.setItem(KEY,String(Date.now())); return true; } }catch(e){} return false; }
+  function fail(msg,err,auto){ try{ console.error("boot:",msg,err||""); }catch(e){}
+    var l=el("start-label"); if(l) l.textContent="読み込めませんでした";
+    if(auto&&autoReload()){ box(msg+" もう一度、自動で読み込みます…",false); setTimeout(function(){ location.reload(); },1800); }
+    else box(msg+(err&&err.message?"（"+err.message+"）":""),true); }
+  return {box:box,hide:hide,fail:fail};
+})();
+</script>
+<style>
+:root{
+  --cream:#f1ead9;
+  --panel:#17140f;
+  --panel-2:#221d15;
+  --brass:#c9a86a;
+  --amber:#e6a94d;
+  --red:#d6543f;
+  --leaf:#7fae72;
+  --line:rgba(201,168,106,.28);
+  color-scheme: dark;
+  background:#0c110d;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0;
+  background:#0c110d;
+  color:var(--cream);
+  font-family:'Zen Kaku Gothic New','Hiragino Sans',sans-serif;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,.disp{ font-family:'Shippori Mincho', serif; }
+@font-face{font-family:'Zen Kaku Gothic New';src:local('sans-serif');}
+
+#world{ position:fixed; inset:0; width:100%; height:100%; display:block; background:#0c110d; touch-action:none; }
+/* v46: メニューのページは 3D を描かず、同じ場所の静止画を背景に（メニューの半透明・ぼかしはそのまま掛かる） */
+body.page-menu{ background:#0c110d url("menu_bg.jpg") center/cover no-repeat; }
+body.page-menu #world{ display:none; }
+/* v46: モードのページ（play.html）は、読み込みが済むまでメニューの代わりに読み込み中の画面 */
+body.page-play #menu{ visibility:hidden; }
+#playload{ position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; padding:20px;
+  background:#0c110d url("menu_bg.jpg") center/cover no-repeat; }
+#playload::before{ content:""; position:absolute; inset:0; background:rgba(8,12,20,.62); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+#playload .pl-card{ position:relative; width:min(460px,100%); padding:26px 28px 22px; border-radius:18px; background:#1a222e; color:#e8eef7; box-shadow:0 24px 60px rgba(0,0,0,.45); }
+#playload .pl-brand{ font-weight:900; letter-spacing:.14em; font-size:15px; } #playload .pl-brand span{ letter-spacing:0; font-weight:500; color:#9fb0c7; margin-left:8px; font-size:12px; }
+#playload .pl-mode{ margin:14px 0 16px; font-size:24px; font-weight:800; }
+#playload .pl-bar{ height:6px; border-radius:3px; background:#34415a; overflow:hidden; } #playload .pl-bar i{ display:block; height:100%; width:0; background:#ffb23e; transition:width .3s; }
+#playload .pl-txt{ margin-top:10px; font-size:13px; color:#9fb0c7; min-height:1.4em; }
+#playload .pl-back{ display:inline-block; margin-top:14px; font-size:12.5px; color:#9fb0c7; text-decoration:underline; }
+.veil{ position:fixed; inset:0; pointer-events:none; z-index:2;
+  background:
+    radial-gradient(120% 90% at 50% 108%, rgba(0,0,0,.55), transparent 55%),
+    radial-gradient(120% 60% at 50% -10%, rgba(0,0,0,.4), transparent 60%);
+}
+
+.stopguide{ margin-top:8px; font-size:12px; color:#cfc5ac; }
+.stopguide .sgbar{ position:relative; height:10px; margin-top:4px; background:rgba(241,234,217,.12); border-radius:5px; overflow:hidden; }
+.stopguide .sgzone{ position:absolute; left:calc(50% - 11.6%); width:23.3%; top:0; bottom:0; background:rgba(120,200,120,.35); }
+.stopguide .sgmark{ position:absolute; top:0; bottom:0; width:3px; margin-left:-1px; background:#e6a94d; left:0; }
+.stopguide.ok .sgtxt{ color:#9fe09f; }
+.card p.lead{ margin:0 0 20px; color:#cfc5ac; font-size:14px; line-height:1.7; }
+
+.iconbtn.rescue{ width:auto; padding:0 12px; font-size:13px; white-space:nowrap; }
+.iconbtn.rescue small{ opacity:.6; margin-left:4px; }
+.iconbtn.rescue.hint{ border-color:var(--amber); color:var(--amber); animation:rescuePulse 1.1s ease-in-out infinite; }
+@keyframes rescuePulse{ 50%{ box-shadow:0 0 14px rgba(230,169,77,.8); } }
+@media (prefers-reduced-motion: reduce){ .iconbtn.rescue.hint{ animation:none; } }
+.locchip{ position:fixed; left:50%; transform:translateX(-50%); top:calc(58px + env(safe-area-inset-top,0px)); z-index:12; display:none; pointer-events:none;
+  background:rgba(23,20,15,.78); border:1px solid var(--line); border-radius:14px; padding:4px 12px; font-size:12.5px; color:var(--cream); white-space:nowrap; max-width:calc(100% - 24px); overflow:hidden; text-overflow:ellipsis; }
+.locchip.on{ display:block; } .locchip b{ color:var(--amber); font-weight:700; } .locchip i{ font-style:normal; color:#a99f88; margin:0 6px; }
+.busui{ display:none; } .busui.on{ display:block; }
+.busui .bpanel{ position:absolute; left:12px; top:calc(58px + env(safe-area-inset-top,0px)); width:min(300px, calc(100% - 24px)); background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:10px 12px; }
+.busui .bpanel h2{ margin:2px 0 0; font-size:18px; } .busui .bpanel .row{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.busui .bpanel .dist b{ font-size:22px; color:var(--amber); font-variant-numeric:tabular-nums; }
+.busui .req{ display:inline-block; margin-top:6px; padding:2px 10px; border-radius:3px; background:#2a2418; color:#6d624c; font-weight:900; letter-spacing:.1em; }
+.busui .req.on{ background:#b3261e; color:#fff; box-shadow:0 0 10px #e6503e; }
+.busui .small{ font-size:11.5px; color:#a99f88; margin-top:4px; }
+.busui .brack{ position:absolute; left:12px; top:calc(292px + env(safe-area-inset-top,0px)); display:flex; gap:6px; }
+.busui .brack .icard{ min-width:78px; }
+.busui .doorbtn{ position:absolute; right:18px; bottom:calc(150px + env(safe-area-inset-bottom,0px)); width:126px; height:44px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-family:inherit; font-size:14px; font-weight:700; cursor:pointer; }
+.busui .doorbtn.open{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+.busui .bmsg{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(96px + env(safe-area-inset-bottom,0px)); width:min(720px, calc(100% - 24px)); text-align:center; font-size:13px; color:#ffe7b8; text-shadow:0 1px 3px #000; }
+.fade{ position:fixed; inset:0; z-index:40; background:#000; opacity:0; pointer-events:none; transition:opacity .6s; display:flex; align-items:center; justify-content:center; color:#f1ead9; font-size:16px; }
+.fade.on{ opacity:1; pointer-events:auto; }
+/* 運転台視点: 下のコンソールを消し、ボタンだけ小さく残す（ハンドルは3Dの運転台で操作） */
+.ui.cab .console{ background:none; display:block; pointer-events:none; padding-bottom:calc(6px + env(safe-area-inset-bottom,0px)); }
+.ui.cab .state-block, .ui.cab .speedcard, .ui.cab .chead, .ui.cab .notchbar, .ui.cab .legend{ display:none; }
+.ui.cab .ctrl{ background:none; border:none; padding:0; max-width:380px; margin:0 auto; pointer-events:none; }
+.ui.cab .touch{ pointer-events:auto; grid-template-columns:repeat(6,1fr); margin:0; opacity:.9; }
+.ui.cab .touch button{ padding:6px 2px; font-size:10px; }
+/* 運転台視点: 字幕は運転台の机の上（前方の景色を隠さない）、案内パネルは左上の窓柱側に縦に並べる */
+.ui.cab .subtitle{ bottom:calc(92px + env(safe-area-inset-bottom,0px)); left:50%; right:auto; transform:translateX(-50%); width:min(760px, calc(100% - 24px)); font-size:12px; padding:6px 10px; background:rgba(12,17,13,.72); }
+.ui.cab .mission{ left:12px; right:auto; width:280px; transform:none; padding:8px 12px; }
+.ui.cab .mission .mrow h2{ font-size:16px; }
+.ui.cab .rack{ left:12px; right:auto; width:280px; transform:none; gap:6px; }
+.ui.cab .icard{ padding:6px 8px; }
+.ui.cab .icard .val strong{ font-size:15px; }
+.ui.cab .minimap{ right:12px; top:64px; width:96px; }
+.cabhint{ display:none; position:absolute; left:50%; transform:translateX(-50%); bottom:calc(58px + env(safe-area-inset-bottom,0px)); font-size:11px; color:#f1ead9; background:rgba(12,17,13,.7); padding:4px 10px; border-radius:2px; pointer-events:none; white-space:nowrap; }
+.ui.cab .cabhint{ display:block; }
+.cabspeed{ display:none; position:absolute; right:12px; bottom:calc(58px + env(safe-area-inset-bottom,0px)); background:rgba(23,20,15,.86); border:1px solid var(--line); padding:6px 10px; border-radius:2px; font-variant-numeric:tabular-nums; }
+.cabspeed b{ font-size:22px; color:var(--amber); } .ui.cab .cabspeed{ display:block; }
+.ui.cab.hs .rack{ top:64px; left:auto; right:120px; width:350px; }   /* v39.3: 新幹線の運転台では、情報カードを左ミラーに重ならない位置（上・右寄り）へ */
+.ui.cab.hs .subtitle{ bottom:auto; top:134px; left:304px; right:130px; width:auto; transform:none; }                          /* 字幕を計器・レバー目盛りに重ねない */
+.ui.cab.hs .cabhint{ bottom:calc(54px + env(safe-area-inset-bottom,0px)); font-size:10px; opacity:.8; }
+/* 車モード */
+.carui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
+.carui.on{ display:block; }
+.carui > *{ pointer-events:auto; }
+.car-top{ position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); left:12px; right:12px; display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+.car-meter{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom,0px)); background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:8px 16px; text-align:center; min-width:150px; }
+.car-meter b{ font-size:34px; font-variant-numeric:tabular-nums; display:block; line-height:1; }
+.car-meter small{ color:#a99f88; font-size:11px; }
+.car-meter .rpm{ height:4px; background:rgba(255,255,255,.12); margin-top:6px; border-radius:2px; overflow:hidden; } .car-meter .rpm i{ display:block; height:100%; width:10%; background:var(--amber); }
+#car-wheel{ position:absolute; left:18px; bottom:calc(18px + env(safe-area-inset-bottom,0px)); width:150px; height:150px; touch-action:none; cursor:grab; }
+.pedals{ position:absolute; right:18px; bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:flex; gap:10px; align-items:flex-end; }
+.pedal{ width:64px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-family:inherit; font-size:12px; touch-action:none; user-select:none; cursor:pointer; }
+.pedal.brk{ height:78px; } .pedal.acc{ height:112px; width:52px; }
+.pedal.on{ background:#3a2f18; border-color:var(--amber); transform:translateY(3px); }
+.gearsel{ display:flex; flex-direction:column; gap:4px; }
+.gearsel button{ width:52px; height:46px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:#a99f88; font-size:18px; font-weight:900; font-family:inherit; cursor:pointer; }
+.gearsel button.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+/* v44: 定速走行のボタンと表示 */
+.ccbox{ display:flex; flex-direction:column; gap:4px; align-self:flex-end; }
+.ccbox > button{ width:56px; height:46px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:#a99f88; font-size:13px; font-weight:800; font-family:inherit; cursor:pointer; line-height:1.1; }
+.ccbox > button small{ display:block; font-size:9px; font-weight:600; opacity:.7; }
+.ccbox > button.on{ background:#173a2a; color:#7be0a6; border-color:#3fbf7f; }
+.ccpm{ display:flex; gap:4px; } .ccpm button{ width:26px; height:34px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-size:16px; font-weight:800; font-family:inherit; cursor:pointer; padding:0; }
+.cclbl{ margin-left:8px; color:#a99f88; font-weight:700; } .cclbl.on{ color:#7be0a6; }
+#car-gr.on{ background:#4a1d16; color:#ffb4a4; border-color:#d6543f; }
+.gearlbl{ display:inline-block; margin-left:6px; padding:1px 6px; border-radius:3px; background:#3a2f18; color:var(--amber); font-weight:700; }
+.gearlbl.rev{ background:#4a1d16; color:#ffb4a4; }
+.car-msg{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(104px + env(safe-area-inset-bottom,0px)); max-width:min(560px, calc(100% - 32px)); color:#ffe2b0; font-size:13.5px; line-height:1.55; text-align:center; pointer-events:none;
+  background:rgba(20,17,12,.78); border:1px solid rgba(255,214,150,.18); border-radius:8px; padding:6px 14px; }
+.car-msg:empty{ display:none; }   /* v42: 文字だけだと景色に溶けて読めない・上の場所の表示やナビと重なっていたので、帯にして速度計の上へ */
+/* ヘリ（v17） */
+.hmeter{ position:absolute; left:50%; transform:translateX(-50%); bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:flex; gap:14px; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:8px 14px; }
+.hmeter > div{ display:flex; flex-direction:column; align-items:center; min-width:52px; }
+.hmeter b{ font-size:24px; line-height:1.05; font-variant-numeric:tabular-nums; color:var(--cream); } .hmeter b.sm{ font-size:15px; line-height:1.6; }
+.hmeter small{ font-size:10.5px; color:#a99f88; }
+.hpad{ position:absolute; bottom:calc(18px + env(safe-area-inset-bottom,0px)); display:grid; gap:6px; }
+/* v42: 画面のハンドル・ペダル・ギア・ヘリの操作ボタンはタッチ用。マウスとキーボードの PC では隠す（画面に触れたら出す）。表示設定で「常に出す／出さない」 */
+body.ctl-auto:not(.touchui) #car-wheel, body.ctl-auto:not(.touchui) .pedals, body.ctl-auto:not(.touchui) .hpad,
+body.ctl-hide #car-wheel, body.ctl-hide .pedals, body.ctl-hide .hpad{ display:none !important; }
+.hpad button{ border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.88); color:var(--cream); font-family:inherit; font-size:16px; touch-action:none; user-select:none; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; }
+.hpad button small{ font-size:9.5px; color:#a99f88; }
+.hpad button.on{ background:#3a2f18; border-color:var(--amber); color:var(--amber); }
+.hpad.left{ left:18px; grid-template-columns:repeat(3,52px); grid-template-rows:repeat(2,52px); }
+.hpad.left .up{ grid-column:2; grid-row:1; } .hpad.left .lf{ grid-column:1; grid-row:2; } .hpad.left .dn{ grid-column:2; grid-row:2; } .hpad.left .rt{ grid-column:3; grid-row:2; }
+.hpad.right{ right:18px; grid-template-columns:64px; grid-template-rows:52px 34px 52px; font-weight:700; }
+.hpad.right .fast{ font-size:12px; }
+#heli-msg{ top:auto; }   /* v42: 速度・高度の表示の上（車と同じ位置） */
+#heli-auto{ width:auto; padding:0 10px; white-space:nowrap; }
+#heli-auto.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+@media (max-width:640px){ .hmeter{ gap:8px; padding:6px 8px; bottom:calc(142px + env(safe-area-inset-bottom,0px)); } .hmeter b{ font-size:18px; } .hmeter > div{ min-width:40px; } }
+
+
+.startbtn{
+  width:100%; margin-top:18px; padding:14px 16px; border:none; border-radius:2px;
+  background:var(--amber); color:#221503; font-weight:900; font-size:15px; letter-spacing:.02em;
+  display:flex; align-items:center; justify-content:space-between; cursor:pointer; font-family:inherit;
+}
+.startbtn:active{ transform:translateY(1px); }
+.foot{ margin-top:14px; font-size:11px; color:#8a8067; line-height:1.7; }
+
+
+
+.navi{ position:fixed; right:12px; top:calc(62px + env(safe-area-inset-top,0px)); width:220px; z-index:11; display:none; pointer-events:none; }
+.navi.on{ display:block; }
+.navi canvas{ width:220px; height:220px; border-radius:50%; border:2px solid rgba(201,168,106,.95); box-shadow:0 4px 16px rgba(0,0,0,.55); background:#cfcab8; display:block; pointer-events:auto; }
+.navi-bar{ position:absolute; left:-4px; top:84px; display:flex; flex-direction:column; gap:4px; pointer-events:auto; }
+.navi-bar button{ width:30px; height:30px; border-radius:6px; border:1px solid var(--line); background:rgba(23,20,15,.9); color:var(--cream); font-size:16px; font-weight:700; font-family:inherit; cursor:pointer; line-height:1; }
+.navi-bar button.on{ background:#3a2f18; color:var(--amber); border-color:var(--amber); }
+.navi-info{ margin-top:6px; background:rgba(23,20,15,.88); border:1px solid var(--line); border-radius:3px; padding:5px 9px; text-align:center; }
+.navi-info #navi-rd{ font-size:12.5px; color:#f1ead9; font-weight:700; min-height:16px; } .navi-info #navi-ll{ font-size:11px; color:#a99f88; font-variant-numeric:tabular-nums; }
+/* ---------- GAME UI ---------- */
+.ui{ position:fixed; inset:0; z-index:10; pointer-events:none; display:none; }
+.ui.on{ display:block; }
+.ui > *{ pointer-events:auto; }
+
+.topbar{
+  position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); left:12px; right:12px;
+  display:flex; justify-content:space-between; align-items:flex-start; gap:8px;
+}
+.chip{ background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:8px 12px; backdrop-filter: blur(4px); }
+.chip .rname{ font-size:12px; color:var(--brass); }
+.chip .rname b{ color:var(--cream); font-size:14px; margin-left:6px; }
+.iconbtn{ background:rgba(23,20,15,.86); border:1px solid var(--line); color:var(--cream); width:38px; height:38px; border-radius:2px; font-size:15px; cursor:pointer; }
+.topright{ display:flex; gap:8px; }
+
+.mission{
+  position:absolute; top:64px; left:12px; right:12px;
+  background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px;
+  padding:10px 14px; backdrop-filter: blur(4px);
+}
+.kicker{ font-size:10.5px; letter-spacing:.14em; color:var(--brass); }
+.mrow{ display:flex; justify-content:space-between; align-items:baseline; margin-top:2px; }
+.mrow h2{ margin:0; font-size:19px; }
+.mrow .dist{ font-size:13px; color:#cfc5ac; }
+.mrow .dist b{ font-size:20px; color:var(--amber); }
+.progtrack{ height:4px; background:rgba(255,255,255,.12); border-radius:2px; margin-top:8px; overflow:hidden; }
+.progtrack i{ display:block; height:100%; width:0%; background:var(--amber); }
+.mfoot{ display:flex; justify-content:space-between; margin-top:6px; font-size:10.5px; color:#8a8067; }
+.diarow{ display:flex; align-items:baseline; gap:10px; margin-top:7px; padding-top:6px; border-top:1px solid var(--line); font-size:12px; color:#cfc5ac; font-variant-numeric:tabular-nums; }
+.diarow .dk{ font-size:10.5px; letter-spacing:.14em; color:var(--brass); }
+.diarow b{ margin-left:auto; font-size:15px; }
+.diarow b.ok{ color:#9fe09f; } .diarow b.wait{ color:#e6a94d; } .diarow b.late{ color:#ff8a5c; } .diarow b.early{ color:#7cc4ff; }
+
+.rack{ position:absolute; top:170px; left:12px; right:12px; display:flex; gap:8px; }
+.icard{ flex:1; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:9px 10px; backdrop-filter: blur(4px); }
+.icard .lbl{ font-size:10px; color:var(--brass); letter-spacing:.06em; }
+.icard .val{ display:flex; align-items:baseline; gap:4px; margin-top:2px; }
+.icard .val strong{ font-size:18px; font-variant-numeric: tabular-nums; }
+.icard .val span{ font-size:11px; color:#a99f88; }
+.siglamp{ width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:6px; background:#3a3a3a; box-shadow:0 0 6px rgba(0,0,0,.5); }
+.siglamp.green{ background:#57d27a; box-shadow:0 0 8px #57d27a; }
+.siglamp.yellow{ background:#e6c33e; box-shadow:0 0 8px #e6c33e; }
+.siglamp.red{ background:#e6503e; box-shadow:0 0 8px #e6503e; }
+.sigrow{ display:flex; align-items:center; }
+
+.minimap{ position:absolute; top:170px; right:12px; width:112px; }
+.loadbar{ height:3px; background:rgba(255,255,255,.12); margin-top:10px; border-radius:2px; overflow:hidden; }
+.loadbar i{ display:block; height:100%; width:0%; background:var(--amber); transition:width .2s; }
+.minimap canvas{ width:100%; display:block; background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; }
+
+.subtitle{
+  position:absolute; left:12px; right:12px; bottom:calc(200px + env(safe-area-inset-bottom,0px));
+  background:rgba(12,17,13,.82); border-left:3px solid var(--amber); border-radius:2px;
+  padding:9px 12px; font-size:13px; color:#f1ead9; backdrop-filter: blur(4px);
+}
+
+.console{
+  position:absolute; left:0; right:0; bottom:0; padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg, rgba(15,12,9,.2), rgba(10,8,6,.94) 34%);
+  display:grid; grid-template-columns:1fr auto 1fr; align-items:end; gap:10px;
+}
+.state-block{ background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:10px 12px; }
+.state-block .k{ font-size:10px; color:var(--brass); letter-spacing:.1em; }
+.state-block strong#drive-state{ display:block; font-size:15px; margin:2px 0 8px; }
+.readouts{ display:flex; gap:14px; }
+.readouts span{ display:flex; flex-direction:column; font-size:10px; color:#a99f88; }
+.readouts b{ color:var(--cream); font-size:13px; font-variant-numeric: tabular-nums; }
+
+.speedcard{ display:flex; flex-direction:column; align-items:center; gap:2px; }
+.speedcard canvas{ display:block; }
+.speedreadout{ text-align:center; margin-top:-46px; }
+.speedreadout strong{ font-size:30px; display:block; line-height:1; font-variant-numeric: tabular-nums; }
+.speedreadout span{ font-size:11px; color:#a99f88; }
+
+.ctrl{ background:rgba(23,20,15,.86); border:1px solid var(--line); border-radius:2px; padding:10px 12px; }
+.chead{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+.chead .k{ font-size:10px; color:var(--brass); letter-spacing:.1em; }
+.chead strong{ font-size:16px; color:var(--amber); }
+.notchbar{ display:flex; gap:3px; height:26px; align-items:flex-end; }
+.notchbar.wide{ gap:1px; }
+.notchbar i{ flex:1; background:rgba(255,255,255,.12); border-radius:1px; }
+.notchbar i.on.brake{ background:var(--red); }
+.notchbar i.on.power{ background:var(--leaf); }
+.legend{ display:flex; justify-content:space-between; font-size:9.5px; color:#8a8067; margin-top:4px; }
+
+.touch{ display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-top:10px; }
+.touch button{
+  background:rgba(23,20,15,.94); border:1px solid var(--line); border-radius:2px;
+  color:var(--cream); padding:9px 2px; font-size:10.5px; line-height:1.5; cursor:pointer; font-family:inherit;
+}
+.touch button .sym{ display:block; font-size:14px; font-weight:900; }
+.touch button.brake{ color:#f2b3a6; } .touch button.power{ color:#bfe0b4; }
+.touch button.emergency{ color:#f2b3a6; border-color:rgba(214,84,63,.5); }
+
+/* ---------- HELP / FINISH ---------- */
+.overlay{ position:fixed; inset:0; z-index:30; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(9,13,10,.72); backdrop-filter: blur(3px); }
+.overlay.on{ display:flex; }
+.ocard{ width:min(420px,100%); background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:22px; }
+.ohead{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+.closebtn{ background:none; border:1px solid var(--line); color:var(--cream); width:30px; height:30px; border-radius:2px; cursor:pointer; font-family:inherit; }
+.steps div{ display:flex; gap:10px; margin-bottom:10px; font-size:13px; }
+.steps b{ width:20px; height:20px; border-radius:50%; background:var(--amber); color:#221503; display:grid; place-items:center; font-size:11.5px; flex:0 0 auto; }
+.steps small{ display:block; color:#a99f88; margin-top:2px; }
+.shortcuts{ display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+.shortcuts span{ font-size:11px; color:var(--brass); border:1px solid var(--line); padding:4px 8px; border-radius:2px; }
+
+.finish-card{ text-align:center; }
+.finish-card .kicker{ display:block; margin-bottom:6px; }
+#finish-score{ font-size:44px; font-family:'Shippori Mincho', serif; color:var(--amber); margin:10px 0 4px; }
+#finish-text{ font-size:13px; color:#cfc5ac; line-height:1.8; white-space:pre-line; margin-bottom:18px; }
+
+@media (min-width:760px){
+  .topbar,.mission,.rack{ max-width:640px; left:50%; transform:translateX(-50%); right:auto; }
+  .console{ max-width:820px; margin:0 auto; left:0; right:0; }
+  .minimap{ position:absolute; top:170px; right:calc(50% - 320px + 12px); }
+}
+@media (prefers-reduced-motion: reduce){
+  *{ transition:none !important; }
+}
+
+/* ---------- v41.7: 時計・ダイヤの帯・時刻表パネル ---------- */
+.ck-in{ display:inline-flex; align-items:baseline; gap:5px; margin-left:10px; padding-left:10px; border-left:1px solid var(--line); font-variant-numeric:tabular-nums; vertical-align:baseline; }
+.ck-in .ckg{ font-style:normal; font-size:10.5px; letter-spacing:.1em; color:var(--brass); }
+.ck-in b{ font-size:17px; color:var(--amber); letter-spacing:.02em; }
+.ck-in .cks{ font-size:11px; color:#a99f88; margin-left:-3px; }
+@media (max-width:619px){ .chip .rlab{ display:none; } .ck-in{ margin-left:8px; padding-left:8px; } .ck-in b{ font-size:15px; } }
+.iconbtn.ttbtn{ width:auto; padding:0 11px; font-size:12.5px; white-space:nowrap; }
+.iconbtn.ttbtn small{ opacity:.55; margin-left:5px; font-size:10.5px; }
+.iconbtn.ttbtn.on{ border-color:var(--amber); color:var(--amber); }
+.pace{ margin-top:6px; }
+.pace .pbar{ position:relative; height:9px; border-radius:5px; overflow:visible;
+  background:linear-gradient(90deg, rgba(92,150,220,.55) 0 45.8%, rgba(110,200,120,.75) 45.8% 54.2%, rgba(230,190,70,.6) 54.2% 66.7%, rgba(214,84,63,.7) 66.7% 100%); }
+.pace .pm{ position:absolute; top:-3px; width:5px; height:15px; margin-left:-2.5px; border-radius:2px; background:#fff; box-shadow:0 0 0 1.5px rgba(0,0,0,.55), 0 0 8px rgba(255,255,255,.5); left:50%; transition:left .25s linear; }
+.pace .pm.late{ background:#ffb09a; } .pace .pm.early{ background:#bfe0ff; } .pace .pm.warn{ background:#ffe29a; }
+.pace .plab{ display:flex; justify-content:space-between; margin-top:3px; font-size:9.5px; letter-spacing:.14em; color:#8a8067; }
+.ttp{ position:fixed; z-index:16; right:12px; top:calc(64px + env(safe-area-inset-top,0px)); width:min(372px, calc(100% - 24px)); max-height:calc(100% - 270px); display:none; flex-direction:column;
+  background:rgba(20,17,12,.95); border:1px solid var(--line); border-radius:6px; backdrop-filter:blur(6px); box-shadow:0 18px 50px rgba(0,0,0,.5); overflow:hidden; }
+.ttp.on{ display:flex; }
+.ttp-h{ display:flex; align-items:center; gap:10px; padding:11px 12px 9px 14px; border-bottom:1px solid var(--line); }
+.ttp-h > div:first-child{ flex:1; min-width:0; }
+.ttp-h h3{ margin:2px 0 0; font-size:15.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ttp-now{ text-align:right; font-variant-numeric:tabular-nums; } .ttp-now small{ display:block; font-size:9.5px; letter-spacing:.16em; color:var(--brass); } .ttp-now b{ font-size:17px; color:var(--amber); }
+.ttp-cols{ display:grid; grid-template-columns:1fr 66px 66px 58px; gap:4px; padding:7px 14px 5px; font-size:10px; letter-spacing:.14em; color:#8a8067; text-align:right; }
+.ttp-cols span:first-child{ text-align:left; }
+.ttp.plain .ttp-cols{ display:none; }
+.ttp-rows{ list-style:none; margin:0; padding:0 6px 4px; overflow-y:auto; flex:1 1 auto; min-height:60px; }
+.ttp-rows .row{ display:grid; grid-template-columns:1fr 66px 66px 58px; gap:4px; align-items:center; padding:5px 8px; border-radius:4px; font-size:12.5px; font-variant-numeric:tabular-nums; text-align:right; color:#cfc5ac; }
+.ttp.plain .ttp-rows .row{ grid-template-columns:1fr 70px; }
+.ttp-rows .row .nm{ text-align:left; color:var(--cream); font-size:13px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ttp-rows .row .t{ font-size:11.5px; } .ttp-rows .row .t.d{ color:#a99f88; }
+.ttp-rows .row.cur{ background:rgba(230,169,77,.14); box-shadow:inset 3px 0 0 var(--amber); } .ttp-rows .row.cur .nm::before{ content:"▶ "; color:var(--amber); font-size:10px; }
+.ttp-rows .row.passed .nm{ text-decoration:line-through; opacity:.6; }
+.ttp-rows .res{ font-weight:700; font-size:11.5px; } .res.ok{ color:#9fe09f; } .res.late{ color:#ff8a5c; } .res.warn{ color:#ffd47a; } .res.early{ color:#7cc4ff; } .res.pass{ color:#ff8a5c; }
+.ttp-sub{ margin:0; padding:6px 14px 8px; font-size:10.5px; line-height:1.55; color:#8f866e; border-top:1px solid var(--line); }
+.ttp-foot{ padding:8px 14px 10px; font-size:12.5px; border-top:1px solid var(--line); background:rgba(0,0,0,.18); }
+.ttp-foot:empty{ display:none; }
+.ttp-foot b{ font-size:18px; color:var(--amber); } .ttp-foot b.g{ margin-left:4px; } .ttp-foot span{ display:block; font-size:10.5px; color:#8f866e; margin-top:2px; }
+@media (min-width:760px){ .ttp{ top:calc(64px + env(safe-area-inset-top,0px)); } }
+.ftt{ margin:0 0 16px; text-align:left; border:1px solid var(--line); border-radius:4px; overflow:hidden; font-variant-numeric:tabular-nums; }
+.ftt-h, .ftt-r{ display:grid; grid-template-columns:1fr 84px 62px; gap:6px; padding:5px 10px; font-size:12px; text-align:right; }
+.ftt-h{ font-size:10px; letter-spacing:.14em; color:#8a8067; background:rgba(0,0,0,.2); } .ftt-h span:first-child, .ftt-r .nm{ text-align:left; }
+.ftt-r{ border-top:1px solid rgba(201,168,106,.12); } .ftt-r .t{ color:#a99f88; font-size:11.5px; } .ftt-r .res{ font-weight:700; }
+
+/* ---------- v41.7: ミッション ---------- */
+.qhud{ position:fixed; z-index:12; left:12px; top:calc(58px + env(safe-area-inset-top,0px)); width:min(300px, calc(100% - 24px)); display:none; pointer-events:none;
+  background:rgba(20,17,12,.88); border:1px solid var(--line); border-radius:6px; padding:9px 12px 10px; backdrop-filter:blur(5px); box-shadow:0 10px 30px rgba(0,0,0,.4); }
+.qhud.on{ display:block; } .qhud button{ pointer-events:auto; }
+.qtop{ display:flex; align-items:center; gap:8px; } .qtop b{ font-size:14px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.qkick{ font-size:9.5px; letter-spacing:.16em; color:var(--brass); }
+.qtop button{ font-family:inherit; font-size:11px; color:#cfc5ac; background:transparent; border:1px solid var(--line); border-radius:3px; padding:2px 8px; cursor:pointer; }
+.qtop button:hover{ border-color:var(--amber); color:var(--amber); }
+.qmain{ display:grid; grid-template-columns:46px 1fr auto; align-items:center; gap:10px; margin-top:7px; }
+.qarrow{ width:46px; height:46px; transition:transform .08s linear; } .qarrow svg{ width:46px; height:46px; display:block; }
+.qnow small{ display:block; font-size:10.5px; letter-spacing:.1em; color:var(--brass); } .qnow b{ display:block; font-size:16px; line-height:1.25; }
+.qdist{ text-align:right; font-variant-numeric:tabular-nums; } .qdist b{ font-size:24px; color:var(--amber); } .qdist small{ font-size:11px; color:#a99f88; margin-left:2px; }
+.qbar{ height:5px; margin-top:7px; border-radius:3px; background:rgba(255,255,255,.12); overflow:hidden; } .qbar i{ display:block; height:100%; width:0; background:linear-gradient(90deg,#35d0ff,#7dff9a); }
+.qhint{ margin-top:5px; font-size:11.5px; color:#d6cba9; min-height:16px; }
+.qrow{ display:flex; justify-content:space-between; gap:8px; margin-top:6px; padding-top:6px; border-top:1px solid var(--line); font-size:12px; color:#cfc5ac; font-variant-numeric:tabular-nums; }
+.qrow b{ color:var(--cream); } #q-time.late{ color:#ff8a5c; font-weight:700; } #q-score{ color:var(--amber); font-size:14px; }
+.qfoot{ display:flex; align-items:center; justify-content:space-between; margin-top:6px; } .qfoot small{ font-size:10.5px; color:#a99f88; }
+.qdots{ display:flex; gap:6px; } .qdots i{ width:11px; height:11px; border-radius:50%; border:2px solid rgba(255,255,255,.35); background:transparent; }
+.qdots i.cur{ border-color:#fff; box-shadow:0 0 8px rgba(255,255,255,.6); } .qdots i.done{ background:#7dff9a; border-color:#7dff9a; }
+.qdots i.load.cur{ border-color:#35d0ff; } .qdots i.drop.cur{ border-color:#ffb02e; } .qdots i.pass.cur{ border-color:#7dff9a; }
+.qtoast{ position:fixed; z-index:13; left:50%; top:calc(104px + env(safe-area-inset-top,0px)); transform:translate(-50%,-8px); max-width:min(560px, calc(100% - 24px)); padding:9px 18px; border-radius:22px; font-size:14px; font-weight:700; text-align:center;
+  background:rgba(20,17,12,.92); border:1px solid var(--line); color:var(--cream); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; }
+.qtoast.on{ opacity:1; transform:translate(-50%,0); } .qtoast.good{ border-color:#7dff9a; color:#c9ffd6; } .qtoast.bad{ border-color:#ff8a5c; color:#ffd0bd; } .qtoast.load{ border-color:#35d0ff; color:#c9f2ff; }
+/* v41.15: 岡山めぐり（スタンプ）・お客さんの会話 */
+.iconbtn.stbtn{ width:auto; padding:0 11px; font-size:12.5px; white-space:nowrap; } .iconbtn.stbtn small{ opacity:.55; margin-left:5px; font-size:10.5px; }
+.stpop{ position:fixed; z-index:14; left:50%; top:calc(96px + env(safe-area-inset-top,0px)); transform:translate(-50%,-14px) scale(.96); width:min(400px, calc(100% - 24px)); display:flex; gap:16px; align-items:center; padding:14px 20px 14px 16px; border-radius:10px;
+  background:rgba(20,17,12,.95); border:1px solid var(--brass); box-shadow:0 18px 50px rgba(0,0,0,.55); opacity:0; pointer-events:none; transition:opacity .3s, transform .3s; }
+.stpop.on{ opacity:1; transform:translate(-50%,0) scale(1); }
+body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 道の真ん中（画面の中央）をふさがないよう上へ。ナビの案内が出ている時はその下 */
+.stpop-mark{ flex:0 0 auto; width:66px; height:66px; border-radius:50%; display:grid; place-items:center; color:#e0634c; font-size:32px; font-weight:900; font-family:'Zen Kaku Gothic New','Hiragino Sans',sans-serif;
+  border:3px solid #e0634c; box-shadow:inset 0 0 0 3px rgba(20,17,12,.95), inset 0 0 0 5px #e0634c; transform:rotate(-9deg); }
+.stpop.on .stpop-mark{ animation:stpIn .5s cubic-bezier(.2,1.5,.4,1) both; }
+@keyframes stpIn{ from{ transform:rotate(-9deg) scale(2.4); opacity:0; } to{ transform:rotate(-9deg) scale(1); opacity:1; } }
+@media (prefers-reduced-motion: reduce){ .stpop.on .stpop-mark{ animation:none; } .stpop{ transition:none; } }
+.stpop-t small{ display:block; font-size:10.5px; letter-spacing:.12em; color:var(--brass); }
+.stpop-t b{ display:block; font-size:19px; margin:2px 0 4px; } .stpop-t span{ display:block; font-size:12.5px; line-height:1.65; color:#cfc5ac; }
+.stp-card{ width:min(520px,100%); max-height:min(86vh,720px); display:flex; flex-direction:column; padding:18px 18px 14px; }
+.stp-card h2 small{ font-size:13px; color:var(--amber); margin-left:8px; font-weight:700; }
+.stp-bar{ height:6px; background:rgba(128,128,128,.28); border-radius:3px; overflow:hidden; margin:8px 0 6px; } .stp-bar i{ display:block; height:100%; width:0; background:#e0634c; transition:width .4s; }
+.stp-title{ margin:0 0 6px; font-size:12.5px; font-weight:700; color:var(--amber); }
+.stp-rows{ list-style:none; margin:0 0 8px; padding:0; overflow-y:auto; flex:1 1 auto; min-height:90px; }
+.stp-row{ display:grid; grid-template-columns:22px 1fr auto; gap:8px; align-items:start; padding:7px 4px; border-bottom:1px solid rgba(128,128,128,.24); font-size:12.5px; line-height:1.55; }
+.stp-row i{ font-style:normal; text-align:center; opacity:.55; } .stp-row.got i{ color:#e0634c; font-weight:900; opacity:1; }
+.stp-row b{ font-size:13.5px; } .stp-row small{ display:block; font-size:11.5px; opacity:.78; } .stp-row em{ font-style:normal; font-size:11px; opacity:.65; white-space:nowrap; }
+.stp-row button{ font:inherit; font-size:11px; padding:3px 9px; border:1px solid currentColor; border-radius:3px; background:none; color:inherit; cursor:pointer; opacity:.9; }
+#menu .stp-rows{ max-height:34vh; margin-top:8px; } #menu .stp-row.got i{ color:#c8412c; }
+.txtalk{ position:fixed; z-index:13; left:50%; bottom:calc(176px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,8px); max-width:min(520px, calc(100% - 24px)); padding:9px 18px 10px; border-radius:18px;
+  background:rgba(244,238,224,.96); color:#2a241a; font-size:14px; font-weight:700; line-height:1.55; box-shadow:0 8px 26px rgba(0,0,0,.4); opacity:0; pointer-events:none; transition:opacity .25s, transform .25s; }
+.txtalk.on{ opacity:1; transform:translate(-50%,0); } .txtalk small{ display:block; font-size:10px; letter-spacing:.12em; color:#8a6a2a; font-weight:700; }
+.qfin-card{ width:min(400px,100%); } .qscore{ display:flex; align-items:center; justify-content:center; gap:14px; margin:8px 0 6px; }
+.qscore b{ font-size:50px; font-family:'Shippori Mincho', serif; color:var(--amber); line-height:1; }
+.qgrade{ width:54px; height:54px; border-radius:50%; display:grid; place-items:center; font-size:30px; font-weight:900; border:3px solid currentColor; }
+.qgrade.gS{ color:#ffd84a; } .qgrade.gA{ color:#7dff9a; } .qgrade.gB{ color:#7cc4ff; } .qgrade.gC{ color:#c9c1ac; }
+.qrows{ margin:6px 0 4px; border:1px solid var(--line); border-radius:4px; overflow:hidden; text-align:left; }
+.qr{ display:grid; grid-template-columns:1fr auto 58px; gap:8px; padding:6px 10px; font-size:12.5px; border-top:1px solid rgba(201,168,106,.12); } .qr:first-child{ border-top:0; } .qr span:nth-child(2){ color:#a99f88; font-size:11.5px; } .qr b{ text-align:right; font-variant-numeric:tabular-nums; }
+.qbest{ margin:6px 0 14px; font-size:12px; color:#cfc5ac; }
+.startbtn.alt{ background:#3a3326; color:#f1ead9; margin-top:8px; }
+@media (max-width:619px){ .qhud{ width:calc(100% - 24px); } .qmain{ grid-template-columns:40px 1fr auto; } .qarrow, .qarrow svg{ width:40px; height:40px; } .qnow b{ font-size:15px; } .qtoast{ top:calc(150px + env(safe-area-inset-top,0px)); } }
+/* ---------- v41.7 開始画面: 駅の案内サイン＋行先表示器 ----------
+   紺の枠（乗り物の選択）と白い紙面（あそびかた・コース）。選んだ乗り物の「路線色」が全体に差す。
+   行先表示器は「いま選んでいる内容」をそのまま映す。 */
+@font-face{ font-family:'OkadenDot'; src:url('fonts/dotgothic16-okaden.woff2') format('woff2'); font-display:swap; }
+#menu{
+  --c-tram:#c43b15; --c-jr:#355bbd; --c-bus:#008760; --c-car:#a66d00; --c-heli:#00829f;
+  --navy:#1a222e; --navy-2:#243044; --navy-line:#34415a; --navy-ink:#e8eef7; --navy-sub:#9fb0c7;
+  --paper:#f3f5f7; --paper-2:#e9edf2; --ink:#18202b; --ink-2:#556173; --rule:#d3d9e1; --led:#ffb23e; --lc:var(--c-tram);
+  position:fixed; inset:0; z-index:20; display:flex; align-items:center; justify-content:center;
+  padding:calc(18px + env(safe-area-inset-top,0px)) 18px calc(18px + env(safe-area-inset-bottom,0px));
+  background:rgba(8,12,20,.6); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+  color-scheme:light; color:var(--ink);
+  font-family:"BIZ UDPGothic","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Noto Sans JP","Meiryo",system-ui,sans-serif;
+  font-size:14px; line-height:1.5;
+}
+#menu[data-mode="tram"]{ --lc:var(--c-tram); } #menu[data-mode="jr"]{ --lc:var(--c-jr); } #menu[data-mode="bus"]{ --lc:var(--c-bus); }
+#menu[data-mode="car"]{ --lc:var(--c-car); } #menu[data-mode="heli"]{ --lc:var(--c-heli); }
+#menu button, #menu select{ font-family:inherit; }
+#menu button:focus-visible, #menu a:focus-visible, #menu summary:focus-visible, #menu select:focus-visible{ outline:3px solid var(--led); outline-offset:2px; }
+#menu .ic{ display:block; width:100%; height:100%; }
+
+.mn{ width:min(1180px,100%); height:min(760px,100%); display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr) auto; background:var(--navy); border-radius:16px; overflow:hidden; box-shadow:0 30px 90px rgba(3,6,12,.6); }
+
+/* 上の帯 */
+.mn-top{ display:flex; align-items:center; gap:20px; padding:14px 22px 12px 28px; color:var(--navy-ink); }
+.mn-brand{ display:flex; align-items:baseline; gap:12px; white-space:nowrap; }
+.mn-brand b{ font-size:20px; font-weight:800; letter-spacing:.06em; }
+.mn-brand span{ font-size:14px; color:var(--navy-sub); }
+.mn-lead{ flex:1; margin:0; font-size:13px; color:var(--navy-sub); }
+.mn-info{ display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid var(--navy-line); border-radius:999px; background:transparent; color:var(--navy-ink); font-size:13px; cursor:pointer; white-space:nowrap; }
+.mn-info .s{ display:none; }
+.mn-info:hover{ border-color:var(--navy-sub); background:rgba(255,255,255,.06); } .mn-info i{ font-style:normal; color:var(--navy-sub); }
+
+.mn-body{ display:grid; grid-template-columns:308px minmax(0,1fr); min-height:0; }
+
+/* 見出し（番号は表示している順に振る） */
+#menu .mn-main{ counter-reset:step 1; }
+.mn-step{ display:flex; align-items:center; gap:10px; margin:0 0 10px; font-size:17px; font-weight:800; counter-increment:step; }
+.mn-step::before{ content:counter(step); display:grid; place-items:center; flex:0 0 auto; width:26px; height:26px; border-radius:50%; background:var(--lc); color:#fff; font-size:14px; font-weight:800; }
+#sec-course > .mn-step{ margin-bottom:0; }
+.mn-step.s1{ counter-increment:none; color:var(--navy-ink); } .mn-step.s1::before{ content:"1"; }
+
+/* 左: 乗り物（選ぶと右の紙面とつながる） */
+.mn-rail{ display:flex; flex-direction:column; min-height:0; overflow-y:auto; padding:8px 0 14px 18px; }
+.mn-rail .mn-step{ margin:6px 14px 18px 4px; }
+.mlist{ display:flex; flex-direction:column; gap:6px; }
+#menu .mode-opt, #menu .flightlink{ position:relative; display:flex; align-items:center; gap:13px; width:100%; padding:9px 14px 9px 10px; border:0; border-radius:14px 0 0 14px; background:transparent; color:#d5deeb; text-align:left; text-decoration:none; font-size:16px; cursor:pointer; }
+#menu .mode-opt:hover, #menu .flightlink:hover{ background:rgba(255,255,255,.08); }
+#menu .mode-opt.on{ background:var(--paper); color:var(--ink); }
+#menu .mode-opt.on::before, #menu .mode-opt.on::after{ content:""; position:absolute; right:0; width:14px; height:14px; pointer-events:none; }
+#menu .mode-opt.on::before{ top:-14px; background:radial-gradient(circle at 0 0, transparent 13.5px, var(--paper) 14px); }
+#menu .mode-opt.on::after{ bottom:-14px; background:radial-gradient(circle at 0 100%, transparent 13.5px, var(--paper) 14px); }
+.mi{ --bd:var(--lc); flex:0 0 auto; display:grid; place-items:center; width:52px; height:46px; padding:7px 6px; border-radius:10px; background:var(--lc); font-style:normal; }
+.mi.sm{ width:46px; height:40px; padding:6px 5px; }
+.mode-opt[data-mode="tram"] .mi{ --lc:var(--c-tram); } .mode-opt[data-mode="jr"] .mi{ --lc:var(--c-jr); } .mode-opt[data-mode="bus"] .mi{ --lc:var(--c-bus); }
+.mode-opt[data-mode="car"] .mi{ --lc:var(--c-car); } .mode-opt[data-mode="heli"] .mi{ --lc:var(--c-heli); }
+.cveh-opt .mi{ --lc:var(--c-car); } .flightlink .mi{ --lc:#556a86; }
+.mt{ min-width:0; } .mt b{ display:block; font-size:16.5px; font-weight:800; line-height:1.3; }
+.mt small{ display:block; margin-top:1px; font-size:12px; font-weight:400; color:#93a5bf; line-height:1.4; }
+#menu .mode-opt.on .mt small{ color:var(--ink-2); }
+#menu .flightlink{ margin-top:12px; border-radius:14px 0 0 14px; border:1px dashed var(--navy-line); border-right:0; } #menu .flightlink b{ font-size:15.5px; }
+
+/* 右: 紙面 */
+.mn-pane{ display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--paper); }
+.mn-main{ flex:1; min-height:0; overflow-y:auto; padding:20px 28px 10px; }
+.mn-sec{ margin:0 0 16px; }
+
+/* 行先表示器 */
+.mn-board{ display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:18px; margin:0 0 20px; padding:13px 20px; border-radius:12px; background:#0b0e13; box-shadow:inset 0 0 0 2px #1e2634; color:var(--led); font-family:'OkadenDot',"BIZ UDGothic","Yu Gothic UI","Meiryo",monospace; text-shadow:0 0 7px rgba(255,178,62,.42); }
+.bd-badge{ --bd:var(--lc); display:grid; place-items:center; width:64px; height:56px; padding:8px 7px; border-radius:12px; background:var(--lc); text-shadow:none; }
+.bd-txt{ min-width:0; }
+.bd-l1{ font-size:32px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.bd-l2{ display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin-top:6px; font-size:16px; line-height:1.5; color:#ffcf86; }
+.bd-tag{ font-style:normal; padding:0 9px; background:var(--led); color:#0b0e13; text-shadow:none; font-size:16px; }
+.bd-side{ text-align:right; white-space:nowrap; } .bd-clock{ font-size:32px; line-height:1.2; } .bd-wx{ margin-top:6px; font-size:16px; line-height:1.5; color:#ffcf86; }
+.mn-board.flip .bd-l1, .mn-board.flip .bd-l2{ animation:bdFlip .2s steps(4,end); }
+@keyframes bdFlip{ from{ opacity:0; transform:translateY(-35%); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion:reduce){ .mn-board.flip .bd-l1, .mn-board.flip .bd-l2{ animation:none; } }
+
+/* あそびかた */
+.mn-play{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+#menu .play-opt{ position:relative; padding:12px 18px 13px; border:2px solid var(--rule); border-radius:14px; background:#fff; color:var(--ink); text-align:left; cursor:pointer; box-shadow:0 3px 0 var(--rule); transition:transform .08s, box-shadow .08s; }
+#menu .play-opt:hover{ border-color:#b3bdca; }
+#menu .play-opt:active{ transform:translateY(2px); box-shadow:0 1px 0 var(--rule); }
+.po-t{ display:flex; align-items:center; gap:10px; font-size:19px; font-weight:800; line-height:1.3; }
+.po-t em{ font-style:normal; padding:1px 9px; border-radius:999px; background:var(--paper-2); color:var(--ink-2); font-size:12px; font-weight:700; }
+.po-s{ display:block; margin-top:5px; font-size:13.5px; color:var(--ink-2); line-height:1.55; }
+#menu .play-opt.on{ background:var(--lc); border-color:var(--lc); color:#fff; box-shadow:0 3px 0 rgba(0,0,0,.3); }
+#menu .play-opt.on:active{ box-shadow:0 1px 0 rgba(0,0,0,.3); }
+#menu .play-opt.on .po-s{ color:rgba(255,255,255,.92); } #menu .play-opt.on .po-t em{ background:rgba(255,255,255,.22); color:#fff; }
+
+/* コース・路線・車両・出発地（カード） */
+.mn-sub{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:14px 0 8px; }
+.mn-sub span{ font-size:14px; font-weight:800; } .mn-sub small{ font-size:12.5px; color:var(--ink-2); text-align:right; }
+.routes{ display:grid; grid-template-columns:repeat(auto-fill,minmax(290px,1fr)); gap:10px; }
+.vehs{ display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+.cvehs{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+.quests{ display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:10px; }
+#menu .route-opt, #menu .veh-opt, #menu .quest-opt, #menu .cveh-opt{ position:relative; border:2px solid var(--rule); border-radius:12px; background:#fff; color:var(--ink); text-align:left; cursor:pointer; }
+#menu .route-opt:hover, #menu .veh-opt:hover, #menu .quest-opt:hover, #menu .cveh-opt:hover{ border-color:#aeb8c6; }
+#menu .route-opt.on, #menu .veh-opt.on, #menu .quest-opt.on, #menu .cveh-opt.on{ border-color:var(--lc); box-shadow:0 0 0 3px rgba(0,0,0,.05); box-shadow:0 0 0 3px color-mix(in srgb, var(--lc) 20%, transparent); }
+#menu .route-opt{ display:flex; align-items:center; gap:12px; width:100%; padding:11px 14px; }
+.rcode{ flex:0 0 auto; display:grid; place-items:center; width:36px; height:36px; border-radius:50%; font-size:14px; font-weight:900; }
+.rcode.h{ background:#e0b23a; color:#241a02; } .rcode.s{ background:#4c9cd6; color:#04121e; }
+.route-opt strong{ display:block; font-size:15.5px; } .route-opt .dir{ font-size:12.5px; color:var(--ink-2); line-height:1.5; }
+.route-opt .dir i{ font-style:normal; color:var(--lc); margin:0 5px; font-weight:800; }
+#menu .veh-opt{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:10px 14px 11px; }
+.veh-opt .sw{ display:block; width:100%; height:8px; margin-bottom:5px; border-radius:3px; } .veh-opt b{ font-size:15px; } .veh-opt small{ font-size:12.5px; color:var(--ink-2); line-height:1.5; }
+#menu .cveh-opt{ display:flex; align-items:center; gap:12px; padding:10px 14px; }
+#menu .cveh-opt .mt b{ font-size:15.5px; } #menu .cveh-opt .mt small{ color:var(--ink-2); font-size:12.5px; }
+#menu .quest-opt{ display:grid; grid-template-columns:1fr auto; align-items:baseline; gap:3px 10px; padding:12px 14px 12px; }
+.quest-opt b{ font-size:16px; font-weight:800; } .quest-opt .qs{ grid-column:2; grid-row:1; color:#e19a12; font-size:13px; letter-spacing:1px; } .quest-opt .qs i{ font-style:normal; color:#d6dce5; }
+.quest-opt small{ grid-column:1 / -1; font-size:12.5px; color:var(--ink-2); line-height:1.55; }
+.quest-opt em{ grid-column:1 / -1; justify-self:start; margin-top:3px; padding:0 9px; border-radius:999px; background:var(--paper-2); font-style:normal; font-size:12px; font-weight:800; color:var(--ink); }
+
+/* 出発地・選択肢（小さいボタン） */
+.hstarts{ display:flex; flex-wrap:wrap; gap:8px; }
+#menu .hstart-opt, #menu .cstart-opt, #menu .cstart-dir, #menu .time-opt, #menu .rain-opt, #menu .look-opt, #menu .shadow-opt{ padding:9px 15px; border:2px solid var(--rule); border-radius:999px; background:#fff; color:var(--ink); font-size:14px; font-weight:700; cursor:pointer; }
+#menu .hstart-opt:hover, #menu .cstart-opt:hover, #menu .cstart-dir:hover, #menu .time-opt:hover, #menu .rain-opt:hover, #menu .look-opt:hover, #menu .shadow-opt:hover{ border-color:#aeb8c6; }
+#menu .hstart-opt.on, #menu .cstart-opt.on, #menu .cstart-dir.on, #menu .time-opt.on, #menu .rain-opt.on, #menu .look-opt.on, #menu .shadow-opt.on{ background:var(--lc); border-color:var(--lc); color:#fff; }
+#mw-start-sel{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
+#mw-place{ min-width:240px; padding:9px 12px; border:2px solid var(--rule); border-radius:12px; background:#fff; color:var(--ink); font-size:14px; }
+
+/* 補足（開いて読む） */
+.mn-help{ margin:16px 0 4px; font-size:13px; color:var(--ink-2); }
+.mn-help summary{ display:inline-block; padding:4px 0; cursor:pointer; font-weight:700; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:4px; }
+.mn-help[open] summary{ color:var(--ink); }
+#menu .mn-help .foot{ max-width:76ch; margin:8px 0 0; font-size:12.5px; line-height:1.85; color:var(--ink-2); }
+
+/* 下の設定帯 */
+.mn-set{ position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:8px 24px; padding:10px 28px 12px; border-top:1px solid var(--rule); background:var(--paper-2); }
+.mset{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; } .mset .ml{ font-size:13px; font-weight:800; color:var(--ink-2); }
+.chips{ display:flex; flex-wrap:wrap; gap:6px; }
+#menu .mn-set .chips button{ padding:6px 12px; font-size:13px; }
+.dset{ margin-left:auto; } .dset summary{ list-style:none; display:inline-block; padding:6px 14px; border:2px solid var(--rule); border-radius:999px; background:#fff; font-size:13px; font-weight:700; cursor:pointer; user-select:none; }
+.dset summary::-webkit-details-marker{ display:none; } .dset summary::after{ content:" ▾"; color:var(--ink-2); } .dset[open] summary{ border-color:var(--lc); } .dset[open] summary::after{ content:" ▴"; }
+.dset-pop{ position:absolute; right:28px; bottom:calc(100% + 8px); display:flex; flex-wrap:wrap; gap:6px; width:max-content; max-width:calc(100% - 56px); padding:12px; border-radius:14px; background:#fff; box-shadow:0 12px 40px rgba(10,20,40,.28); z-index:6; }
+.dset-pop .ml{ width:100%; font-size:12.5px; font-weight:800; color:var(--ink-2); }
+
+/* 下の帯: 出発ボタン */
+.mn-foot{ position:relative; display:flex; align-items:center; gap:24px; padding:14px 22px 14px 28px; color:var(--navy-ink); }
+.mn-foot-l{ position:relative; flex:1; min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:4px 20px; }
+.mn-links{ display:flex; gap:18px; }
+#menu .mdet{ font-size:13px; } #menu .mdet summary{ padding:4px 0; cursor:pointer; list-style:none; color:var(--navy-sub); text-decoration:underline; text-decoration-style:dotted; text-underline-offset:4px; }
+#menu .mdet summary::-webkit-details-marker{ display:none; } #menu .mdet[open] summary, #menu .mdet summary:hover{ color:var(--navy-ink); }
+/* v42: 運転手帳（経験値・レベル・今日の挑戦・記録） */
+.cr-lv{ display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; } .cr-lv b{ font-size:22px; } .cr-lv span{ font-weight:700; color:#b5541f; }
+.cr-bar{ height:8px; background:rgba(128,128,128,.25); border-radius:4px; overflow:hidden; margin:6px 0 4px; } .cr-bar i{ display:block; height:100%; background:linear-gradient(90deg,#d9822b,#e8b04a); border-radius:4px; }
+.cr-daily{ margin:10px 0; padding:10px 12px; border:1.5px dashed #c98a3a; border-radius:10px; } .cr-daily.done{ border-style:solid; border-color:#4f8a4a; }
+.cr-daily b{ display:block; } .cr-daily small{ display:block; opacity:.8; line-height:1.6; }
+.cr-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:6px 14px; margin:8px 0; } .cr-grid div{ font-size:12.5px; } .cr-grid b{ display:block; font-size:17px; }
+.cr-rec{ width:100%; border-collapse:collapse; font-size:12.5px; margin-top:6px; } .cr-rec td{ padding:4px 6px; border-bottom:1px solid rgba(128,128,128,.22); } .cr-rec td:nth-child(n+2){ text-align:right; white-space:nowrap; }
+.qf-xp{ margin:8px 0 2px; font-size:13px; line-height:1.6; } .qf-xp b{ color:var(--amber); font-size:15px; } .qf-xp .cr-bar{ margin:5px 0 0; } .qf-xp.up b.lvup{ color:#7fd17a; }
+.quest-opt .qdaily{ position:absolute; top:-9px; right:10px; font-size:10.5px; font-weight:800; padding:1px 8px; border-radius:999px; background:#d9822b; color:#fff; }
+#menu .mdet-body{ position:absolute; left:0; bottom:calc(100% + 16px); width:min(780px,92vw); max-height:52vh; overflow:auto; padding:16px 20px; border-radius:12px; background:var(--paper); color:var(--ink); font-size:13px; line-height:1.85; box-shadow:0 18px 50px rgba(0,0,0,.5); z-index:5; }
+#menu #records{ flex:1 1 260px; margin:0; font-size:12.5px; line-height:1.5; color:var(--navy-sub); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+#menu .mn-foot .loadbar{ position:absolute; left:0; right:0; top:0; height:3px; margin:0; border-radius:0; background:rgba(255,255,255,.08); }
+#menu .mn-foot .loadbar i{ background:var(--led); }
+.mn-foot:has(#start:not(:disabled)) .loadbar{ opacity:0; transition:opacity .6s .3s; }
+#menu .mn-go{ flex:0 0 auto; display:flex; align-items:center; gap:18px; width:auto; min-width:340px; margin:0; padding:16px 24px 16px 28px; border:0; border-radius:14px; background:var(--lc); color:#fff; font-size:19px; font-weight:800; letter-spacing:.02em; white-space:nowrap; cursor:pointer; box-shadow:0 4px 0 rgba(0,0,0,.4); transition:transform .08s, box-shadow .08s; }
+#menu .mn-go::after{ content:""; margin-left:auto; border-left:13px solid currentColor; border-top:8px solid transparent; border-bottom:8px solid transparent; }
+#menu .mn-go:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,.4); }
+#menu .mn-go:disabled{ background:#3a4658; color:#a9b6c9; box-shadow:0 4px 0 rgba(0,0,0,.3); cursor:wait; font-weight:700; }
+#menu .mn-go:disabled::after{ display:none; }
+
+/* 狭い画面: 乗り物は横一列のタブにする */
+@media (max-width:900px){
+  #menu{ padding:0; align-items:stretch; }
+  .mn{ width:100%; height:100%; border-radius:0; }
+  .mn-lead{ display:none; } .mn-top{ padding:12px 14px 8px 16px; } .mn-brand b{ font-size:18px; } .mn-info{ margin-left:auto; padding:7px 12px; }
+  .mn-body{ grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  .mn-rail{ min-width:0; padding:0 0 0 12px; overflow:visible; }
+  .mn-info .l{ display:none; } .mn-info .s{ display:inline; }
+  .mn-rail .mn-step{ margin:2px 12px 8px 4px; font-size:15px; }
+  .mlist{ flex-direction:row; gap:4px; overflow-x:auto; padding-right:12px; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  .mlist::-webkit-scrollbar{ display:none; }
+  #menu .mode-opt, #menu .flightlink{ flex:0 0 auto; flex-direction:column; width:88px; gap:5px; padding:8px 4px 8px; border-radius:12px 12px 0 0; text-align:center; }
+  #menu .flightlink{ margin:0; border:0; border-bottom:0; } #menu .flightlink b{ font-size:13px; }
+  .mn-rail .mt small{ display:none; } .mn-rail .mt b{ font-size:13px; }
+  #menu .mode-opt.on::before, #menu .mode-opt.on::after{ display:none; }
+  .mn-pane{ overflow-y:auto; }
+  .mn-main{ flex:none; overflow:visible; padding:16px 16px 6px; }
+  .mn-set{ padding:10px 16px 14px; }
+  .mn-board{ grid-template-columns:auto minmax(0,1fr); gap:12px 14px; padding:14px 16px; margin-bottom:20px; }
+  .bd-side{ grid-column:1 / -1; display:flex; justify-content:space-between; align-items:baseline; text-align:left; gap:12px; padding-top:8px; border-top:1px dashed #3a2c10; }
+  .bd-clock{ font-size:32px; } .bd-wx{ margin:0; }
+  .bd-badge{ width:56px; height:50px; padding:7px 6px; }
+  .mn-play{ grid-template-columns:1fr; gap:10px; }
+  .mn-foot{ flex-direction:column-reverse; align-items:stretch; gap:10px; padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px)); }
+  #menu .mn-go{ min-width:0; width:100%; justify-content:flex-start; padding:13px 20px 13px 22px; font-size:18px; }
+  .mn-foot-l{ gap:2px 14px; } #menu #records{ flex-basis:100%; }
+  #menu .mdet-body{ bottom:auto; top:calc(100% + 8px); }
+}
+@media (max-width:560px){
+  .bd-l1{ font-size:32px; } .routes, .vehs, .quests, .cvehs{ grid-template-columns:1fr; }
+  .mn-sub small{ display:none; }
+}
+
+#boot-err{ position:fixed; left:50%; top:16px; transform:translateX(-50%); z-index:9999; width:max-content; max-width:min(600px,calc(100% - 24px)); padding:12px 16px; border-radius:12px; background:#5a1f1a; color:#ffe9e4; font-size:14px; line-height:1.7; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+#boot-err[hidden]{ display:none; }
+#boot-err button{ margin-left:10px; padding:5px 14px; border:0; border-radius:999px; background:#ffe9e4; color:#5a1f1a; font:inherit; font-weight:700; cursor:pointer; }
+#boot-err button[hidden]{ display:none; }
+</style>
+
+<canvas id="world"></canvas>
+<div id="boot-err" role="alert" hidden><span id="boot-err-msg"></span><button type="button" id="boot-retry" hidden>再読み込み</button></div>
+<div class="veil"></div>
+
+<!-- MENU -->
+<section id="menu" data-mode="tram">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+<symbol id="ic-tram" viewBox="0 0 32 20"><path d="M11.5 4.2 15.2 1.3h1.6l3.7 2.9" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><rect x="2" y="4" width="28" height="11.2" rx="3.2" fill="#fff"/><g fill="var(--bd)"><rect x="4.4" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="10.8" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="17.2" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="23.6" y="6.1" width="4.6" height="4.2" rx=".9"/><rect x="2" y="11.6" width="28" height="1.1"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="8.5" cy="16.3" r="1.9"/><circle cx="23.5" cy="16.3" r="1.9"/></g><rect x="1" y="18.5" width="30" height="1.2" rx=".6" fill="#fff"/></symbol>
+<symbol id="ic-jr" viewBox="0 0 32 20"><path d="M1 15V8.4C1 6.5 2.5 5 4.4 5H17c4.7 0 9 2.5 12.5 7.6L31 15z" fill="#fff"/><g fill="var(--bd)"><rect x="3.6" y="7.1" width="14" height="2.4" rx="1.1"/><path d="M20.4 7.1h1.7c1.8.7 3.2 2 4.4 3.8h-6.1z"/><rect x="1" y="11.6" width="25" height="1.1"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="7" cy="16.4" r="1.7"/><circle cx="23" cy="16.4" r="1.7"/></g><rect x="1" y="18.5" width="30" height="1.2" rx=".6" fill="#fff"/></symbol>
+<symbol id="ic-bus" viewBox="0 0 32 20"><rect x="2" y="3" width="28" height="12.4" rx="2.8" fill="#fff"/><g fill="var(--bd)"><rect x="4" y="5.2" width="5.2" height="4.8" rx=".9"/><rect x="10.4" y="5.2" width="5.2" height="4.8" rx=".9"/><rect x="16.8" y="5.2" width="5.2" height="4.8" rx=".9"/><rect x="23.4" y="5.2" width="4.8" height="6.4" rx=".9"/><rect x="2" y="12" width="21" height="1"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="8.5" cy="16.4" r="2.3"/><circle cx="23.5" cy="16.4" r="2.3"/></g></symbol>
+<symbol id="ic-car" viewBox="0 0 32 20"><path d="M2 14.4v-3.5c0-.9.5-1.5 1.4-1.8L8 7.6l3-3.4c.4-.5 1-.8 1.7-.8h7.6c.7 0 1.3.3 1.8.7L26 8.2l3 .8c.7.2 1 .7 1 1.4v4z" fill="#fff"/><g fill="var(--bd)"><path d="M11.9 5.4h3.3v3H9.6z"/><path d="M16.6 5.4h3.4c.4 0 .8.2 1.1.5l1.9 2.5h-6.4z"/></g><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="9" cy="15" r="2.6"/><circle cx="23" cy="15" r="2.6"/></g></symbol>
+<symbol id="ic-bike" viewBox="0 0 32 20"><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="6.6" cy="14.6" r="3.3"/><circle cx="25.4" cy="14.6" r="3.3"/></g><path d="M6.8 14.2l4.6-5.6h5.4l1.6 1.9 4.6-.1 1.7 3.9-1.5.6-1.6-2.6-3.3.1-1.5 2.4h-4.4l-1.3-2.2-1.6 1.6z" fill="#fff"/><path d="M11.4 8.6l1.6-2.6h3.4l.8 2.6z" fill="#fff"/><path d="M19.6 7.2l1.4-3.2h3" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M17.2 8.4l-.6 2.6h-5" stroke="var(--bd)" stroke-width=".9" fill="none"/></symbol>
+<symbol id="ic-truck" viewBox="0 0 32 20"><rect x="1.5" y="3" width="17.5" height="11.8" rx="1.6" fill="#fff"/><path d="M20.4 6h5c.7 0 1.3.3 1.7.8l2.9 3.7v4.3H20.4z" fill="#fff"/><path d="M22 7.7h3.2c.4 0 .7.2 1 .5l1.6 2.2H22z" fill="var(--bd)"/><g fill="#fff" stroke="var(--bd)" stroke-width="1"><circle cx="6.5" cy="15.7" r="2.4"/><circle cx="13.5" cy="15.7" r="2.4"/><circle cx="25" cy="15.7" r="2.4"/></g></symbol>
+<symbol id="ic-heli" viewBox="0 0 32 20"><rect x="2" y="1.8" width="24" height="1.5" rx=".75" fill="#fff"/><rect x="13" y="3" width="1.6" height="2.6" fill="#fff"/><ellipse cx="13.5" cy="10.4" rx="8" ry="4.8" fill="#fff"/><path d="M19.5 9.2 30 6.6v2.5l-9.6 3.6z" fill="#fff"/><path d="M28.3 3.6l2.2.5-1 5z" fill="#fff"/><path d="M15.4 6.9c2.2.1 4.1 1.4 4.8 3.5h-4.8z" fill="var(--bd)"/><path d="M6.5 17.4h15.5M9.5 15.1v2.3M17.5 15.1v2.3" fill="none" stroke="#fff" stroke-width="1.3" stroke-linecap="round"/></symbol>
+<symbol id="ic-plane" viewBox="0 0 32 20"><path d="M30.4 10c0-.8-.7-1.4-1.6-1.4h-5.7L16.6 1.4h-2.5l3.1 7.2H9.4L6.6 5.2H4.8l1.8 4.8-1.8 4.8h1.8l2.8-3.4h7.8l-3.1 7.2h2.5l6.5-7.2h5.7c.9 0 1.6-.6 1.6-1.4z" fill="#fff"/></symbol>
+  </defs></svg>
+  <div class="mn">
+    <header class="mn-top">
+      <div class="mn-brand"><b>OKADEN</b><span>岡山シミュレーター</span></div>
+      <p class="mn-lead">PLATEAU・OpenStreetMap・国土地理院のデータで再現した岡山の街を、運転できます。</p>
+      <button type="button" id="src-btn" class="mn-info"><span class="l">出典・基準時点・推定について</span><span class="s">出典</span><i>ⓘ</i></button>
+    </header>
+
+    <div class="mn-body">
+      <nav class="mn-rail" aria-label="乗り物">
+        <h2 class="mn-step s1">乗り物をえらぶ</h2>
+        <div class="modes mlist">
+          <button type="button" class="mode-opt on" data-mode="tram"><i class="mi"><svg class="ic"><use href="#ic-tram"/></svg></i><span class="mt"><b>路面電車</b><small>東山線・清輝橋線（岡電）</small></span></button>
+          <button type="button" class="mode-opt" data-mode="jr"><i class="mi"><svg class="ic"><use href="#ic-jr"/></svg></i><span class="mt"><b>JR・新幹線</b><small>山陽新幹線・在来線</small></span></button>
+          <button type="button" class="mode-opt" data-mode="bus"><i class="mi"><svg class="ic"><use href="#ic-bus"/></svg></i><span class="mt"><b>路線バス</b><small>両備バス 西大寺線</small></span></button>
+          <button type="button" class="mode-opt" data-mode="car"><i class="mi"><svg class="ic"><use href="#ic-car"/></svg></i><span class="mt"><b>車・トラック・バイク</b><small>街なか・山陽自動車道</small></span></button>
+          <button type="button" class="mode-opt" data-mode="heli"><i class="mi"><svg class="ic"><use href="#ic-heli"/></svg></i><span class="mt"><b>ヘリコプター</b><small>空から岡山を見る・運ぶ</small></span></button>
+          <a class="flightlink" href="flight/"><i class="mi"><svg class="ic"><use href="#ic-plane"/></svg></i><span class="mt"><b>フライト</b><small>全国28空港（別ページ）</small></span></a>
+        </div>
+      </nav>
+
+      <div class="mn-pane">
+        <main class="mn-main">
+          <div class="mn-board" id="dest" role="status" aria-live="polite" aria-label="いま選んでいる内容">
+            <i class="bd-badge"><svg class="ic"><use id="dest-ic" href="#ic-tram"/></svg></i>
+            <div class="bd-txt"><div class="bd-l1" id="dest-1">路面電車</div><div class="bd-l2"><span id="dest-2">東山線</span><em class="bd-tag" id="dest-tag">ダイヤ運行</em></div></div>
+            <div class="bd-side"><div class="bd-clock" id="dest-clock">12:00</div><div class="bd-wx" id="dest-wx">昼・晴れ</div></div>
+          </div>
+
+          <section class="mn-sec" id="play-wrap">
+            <h2 class="mn-step"><span id="play-title">あそびかた</span></h2>
+            <div class="mn-play">
+              <button type="button" class="play-opt on" data-play="mission"><span class="po-t">ダイヤ運行<em>採点あり</em></span><span class="po-s">時刻表どおりに走ります</span></button>
+              <button type="button" class="play-opt" data-play="free"><span class="po-t">自由運転<em>採点なし</em></span><span class="po-s">好きなように走ります</span></button>
+            </div>
+          </section>
+
+          <section class="mn-sec" id="sec-course">
+            <h2 class="mn-step"><span id="course-title">路線と車両</span></h2>
+
+            <div id="routes-wrap">
+              <div class="mn-sub"><span>路線</span><small>往復とも選べます</small></div>
+              <div class="routes" id="routes"></div>
+              <div class="mn-sub"><span>車両</span><small>形式を選べます</small></div>
+              <div class="vehs">
+                <button type="button" class="veh-opt on" data-veh="momo"><i class="sw" style="background:linear-gradient(#c9ced3 55%,#1f4fa0 55%)"></i><b>9200形 MOMO</b><small>2車体連接 18.0m・低床・VVVF</small></button>
+                <button type="button" class="veh-opt" data-veh="t3005"><i class="sw" style="background:linear-gradient(#a9cfb4 58%,#e2772e 58%)"></i><b>3000形 3005号</b><small>東武日光軌道線 復元塗装・12m 単車</small></button>
+                <button type="button" class="veh-opt" data-veh="t3007"><i class="sw" style="background:linear-gradient(#141414 57%,#c9a54a 57%,#c9a54a 61%,#141414 61%)"></i><b>3000形 3007号 KURO</b><small>黒に金帯・赤いパンタ・12m 単車</small></button>
+              </div>
+            </div>
+
+            <div id="jr-wrap" style="display:none">
+              <div class="mn-sub"><span>路線</span><small>再現範囲（約 11×9km）の中を走ります</small></div>
+              <div class="routes" id="jr-routes"></div>
+              <div class="mn-sub"><span>車両</span><small>路線に合う形式</small></div>
+              <div class="vehs" id="jr-vehs"></div>
+              <details class="mn-help"><summary>操作方法とデータの出どころ</summary><p class="foot" id="jr-foot">線形は OpenStreetMap の本線、駅の位置は OSM の停車位置（railway=stop）。新幹線は高架橋（レール面は地面＋10.5m と仮定）、在来線の橋・高架は地面＋6.5m と仮定。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h、岡山駅構内や駅の前後の減速）とカーブの制限（曲率から算出）は仮定で、実際の線区の速度表ではありません。加速・減速の数値は各形式の公表値に近い簡略モデルです。<br>操作は路面電車と同じ: マスコン（在来線は力行 1〜4・新幹線は P1〜P13）・ブレーキ弁（在来線は B1〜B5・新幹線は B1〜B7、どちらも非常あり）・D でドア。停止位置に車両の先頭を合わせて停め、ドアを開けると到着。新幹線は 285km/h からの制動に約 4km 要るので、画面の「ブレーキ目安」より速度が高ければブレーキを。</p></details>
+            </div>
+
+            <div id="bus-note" style="display:none">
+              <div class="route-opt on" style="cursor:default"><div class="rcode" style="background:#1d3f86;color:#fff">両</div><div><strong>両備バス 西大寺線（314系統）</strong><div class="dir">岡山駅東口 13番のりば<i>→</i>天満屋<i>→</i>県庁前<i>→</i>古京<i>→</i>東山（11停留所・約4.4km）</div></div></div>
+              <details class="mn-help"><summary>操作方法とデータの出どころ</summary><p class="foot">道路・一方通行は OpenStreetMap、停留所の順序と位置は晴れバスナビ（岡山の時刻表検索）の経路ページと OSM の標柱による。天満屋バスステーションは県庁通りから西側の構内へ入り、駅舎の南を回って東側 4番のりばへ（両備バスは 2〜6番。4番は推定）。<br>操作: ↑/W アクセル　↓/S ブレーキ（押している時間が長いほど強く効く）　←→/A D ハンドル（街なかの速度では大きく曲がれ、高速ほど切れ角が小さくなって滑りにくい）　Space 急ブレーキ　Shift を押している間は従来の鋭い操作　F 扉の開閉　V 視点（運転席／後ろ）　H 警笛。前扉を停留所の標柱に合わせ、歩道に寄せて止めてから扉を開けます。降車ボタンが押されたり、待っている人がいる停留所は必ず停車。</p></details>
+            </div>
+
+            <div id="car-wrap" style="display:none">
+              <div id="cveh-wrap">
+                <div class="mn-sub"><span>車種</span><small>配達ミッションは車種ごとにコースが変わります</small></div>
+                <div class="cvehs">
+                  <button type="button" class="cveh-opt on" data-cveh="sedan"><i class="mi sm"><svg class="ic"><use href="#ic-car"/></svg></i><span class="mt"><b>乗用車</b><small>小回りがきく・タクシーなど</small></span></button>
+                  <button type="button" class="cveh-opt" data-cveh="truck"><i class="mi sm"><svg class="ic"><use href="#ic-truck"/></svg></i><span class="mt"><b>トラック</b><small>長くて重い・宅配や長距離</small></span></button>
+                  <button type="button" class="cveh-opt" data-cveh="bike"><i class="mi sm"><svg class="ic"><use href="#ic-bike"/></svg></i><span class="mt"><b>バイク</b><small>車体を傾けて曲がる・細い路地もすいすい</small></span></button>
+                </div>
+              </div>
+              <div id="car-start-wrap" style="display:none">
+                <div class="mn-sub"><span>出発地</span><small>山陽自動車道は県内を端から端まで走れます</small></div>
+                <div class="hstarts" id="cstart-btns">
+                  <button type="button" class="cstart-opt on" data-cs="city">岡山駅前（市街地）</button>
+                  <button type="button" class="cstart-opt" data-cs="mw">山陽自動車道</button>
+                </div>
+                <div id="mw-start-sel" style="display:none">
+                  <select id="mw-place" aria-label="山陽自動車道の出発地">
+                    <option value="-47500,16850">福山東IC（県境・西端）</option>
+                    <option value="-37783,14421">笠岡IC</option>
+                    <option value="-29674,12527">鴨方IC</option>
+                    <option value="-25280,10840">道口PA</option>
+                    <option value="-20981,8730">玉島IC</option>
+                    <option value="-14110,4356">倉敷IC</option>
+                    <option value="-11976,4363">倉敷JCT</option>
+                    <option value="-8922,-1468">岡山JCT</option>
+                    <option value="-4544,-2878" selected>吉備SA</option>
+                    <option value="-3267,-3780">岡山IC</option>
+                    <option value="9826,-8748">山陽IC</option>
+                    <option value="14443,-11455">瀬戸PA</option>
+                    <option value="22396,-13504">和気IC</option>
+                    <option value="30979,-12885">備前IC</option>
+                    <option value="35491,-12786">福石PA</option>
+                    <option value="41877,-12051">赤穂IC（県境・東寄り）</option>
+                    <option value="51000,-17800">兵庫県境付近（播磨JCT方面）</option>
+                  </select>
+                  <button type="button" class="cstart-dir on" data-dir="up">上り（東へ）</button>
+                  <button type="button" class="cstart-dir" data-dir="down">下り（西へ）</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="quest-wrap" style="display:none">
+              <div class="mn-sub"><span id="quest-sub">コース</span><small>★が多いほど難しい。最高点はこのブラウザに残ります</small></div>
+              <div class="quests" id="quest-list"></div>
+            </div>
+
+            <div id="heli-note" style="display:none">
+              <div class="mn-sub"><span>出発地</span><small>空の上から始まります</small></div>
+              <div class="hstarts">
+                <button type="button" class="hstart-opt on" data-start="station">岡山駅</button>
+                <button type="button" class="hstart-opt" data-start="castle">岡山城</button>
+                <button type="button" class="hstart-opt" data-start="garden">後楽園</button>
+                <button type="button" class="hstart-opt" data-start="high">上空 650m</button>
+              </div>
+            </div>
+          </section>
+
+          <details class="mn-help" id="heli-help" style="display:none"><summary>操作方法とデータの出どころ</summary><p class="foot">小型ヘリコプターで街の上を自由に飛びます。高く上がるほど遠くの建物まで読み込み、地図の外は国土地理院の標高と空中写真による遠景（建物なし）が約 20km 四方に広がります。建物の屋上や地面には着地でき、建物の横から突っ込むと止まります。<br>操作: W/↑ 前進　S/↓ 後退　A/← D/→ 旋回　Q/E 横移動　R・Space 上昇　F・C 下降　Shift 速く　V 視点（後ろ／操縦席／真下）　O 自動で街を周回　マウスのドラッグで見回し・ホイールで距離。画面のボタンでも操作できます。</p></details>
+          <details class="mn-help" id="car-note" style="display:none"><summary>操作方法とデータの出どころ</summary><p class="foot">出発地で「山陽自動車道」を選ぶと、県内の山陽道（福山東〜兵庫県境の約 100km）を走れます（上り・下り、IC・SA/PA から出発）。線形・IC・橋・トンネルは OpenStreetMap、道路面の高さは国土地理院の標高から推定した縦断です（実際の設計値ではありません）。他の車は走行車線を守り、前の車に追いつくと減速します。<br>岡山駅前の桃太郎大通りから出発します。道路は PLATEAU の車道・歩道の実測形状、建物や他の車・電車に当たると衝突します。道路には左側通行で車線を守り信号に従う車・バス（約300台）が、軌道には東山線・清輝橋線の電車が走っています。<br>操作: ↑/W アクセル　↓/S ブレーキ（押している時間が長いほど強く効きます。止まってから少し押し続けると R＝バックに入り、そのまま ↓ で下がる。↑ で止まって D に戻る）　R キー／画面の D・R でもギア切替　←→/A D ハンドル（街なかの速度では大きく曲がれ、高速ほど切れ角が小さくなって、押しっぱなしでも滑りにくい）　R ギア切替　V 視点（運転席視点では Q／E で左右・Z で後ろを見られ、画面のドラッグでも見回せます。曲がる向きへは自動で視線が動きます）　Space 急ブレーキ（サイドブレーキ）　Shift を押している間は従来の鋭い操作（ハンドルもブレーキも最初から全開。急な回避や練習用）　H 警笛。画面のハンドルは指で回せます。制限速度は幹線 60・準幹線と市道 50・細い道 40 または 30 km/h で、制限を 20 km/h 超えるまでは減点・注意しません。<br>バイク: ←→/A D は<b>長押しするほど深く傾いて、しっかり曲がります</b>（ちょん押しは車線の微修正、約 0.7 秒押し続けると最大に傾く。離すと起き上がる）。低速ではハンドルを切って小回り、速度が上がるほど車体を傾けて曲がり、傾けられる角度は高速ほど浅くなります（雨ではさらに浅く）。ブレーキは前後輪（ABS つき）で、傾いたままだとタイヤの限界に合わせて自動で弱まります。<b>ただし Space の急ブレーキは ABS なし。深く傾けたまま踏むと前輪がロックして転倒します</b>。壁や車に強くぶつかっても転倒（約 3 秒で起こして再開、衝突として減点）。ギアは 6 速の自動で、画面の速度の下に「3速」のように出ます。R は押し歩き（歩く速さで後ろへ）。運転席視点はヘルメットの目線で、傾くと水平線も傾きます（ミラーは左右）。Shift で傾きの上限と立ち上がりが大きくなりますが、滑りやすくなります。エンジン音は合成です。<br>ナビ: G キー（画面の「ナビ」ボタン）で目的地を地名・施設名で探すか、地図で選ぶと、ミニマップと大きな地図の青い線（これから走る所は青・通過ずみは灰色）・画面上部の案内・音声で案内します。ルートは大きな道を優先して探します（道路の上の青い帯は、ナビ画面の「道路の線」で ON にできます）（ミッションでは次の目的地が自動で入ります）。タクシー営業（ミッションの「タクシー営業」）: 配車依頼は Y（または画面の「受ける」）で受け、乗り場の光の柱の円の中で止まるとお客さんが乗ります。終わる時は「営業終了」。</p></details>
+        </main>
+
+        <div class="mn-set">
+          <div class="mset"><span class="ml">出発の時刻</span><div class="chips">
+            <button type="button" class="time-opt" data-time="morning">朝 7:30</button>
+            <button type="button" class="time-opt on" data-time="noon">昼 12:00</button>
+            <button type="button" class="time-opt" data-time="evening">夕方 17:30</button>
+            <button type="button" class="time-opt" data-time="night">夜 20:00</button>
+            <button type="button" class="rain-opt">天気: 晴れ</button>
+          </div></div>
+          <details class="dset"><summary>表示設定</summary><div class="dset-pop"><span class="ml">PC の性能に合わせて切り替えられます</span>
+            <button type="button" class="look-opt on" data-look="auto" title="地上では窓割りのくっきりした外壁、ヘリで高く上がると実際の外壁写真に自動で切り替えます">建物: 自動（おすすめ）</button>
+            <button type="button" class="look-opt" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写</button>
+            <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁（色は写真から推定）。軽い">建物: 窓割り</button>
+            <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
+            <button type="button" class="ctl-opt" data-ctl="auto" title="画面のハンドル・ペダル・操作ボタン。自動 = タッチ画面のときだけ出す">操作ボタン: 自動</button>
+          </div></details>
+          <button type="button" class="dia-opt on" hidden tabindex="-1" aria-hidden="true">ダイヤ運行: あり</button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="mn-foot">
+      <div class="mn-foot-l">
+        <div class="mn-links">
+          <details class="mdet"><summary>操作方法</summary><div class="mdet-body">マスコン W 進める・S 戻す　ブレーキ ↓ 強める・↑ 緩める　C 両方を戻す　D ドア　V 視点切替　Space 非常制動　J スタンプ帳（岡山めぐり）<br>ゲームパッド（Xbox・PlayStation 系の標準配置）にも対応: 電車 RB/LB マスコン・RT/LT ブレーキ・A ドア、車とバス 左スティック ハンドル・RT アクセル・LT ブレーキ・A 扉・Back ギア、ヘリ 左右のスティックと RT/LT。選んだ設定と最高記録はこのブラウザに保存されます</div></details>
+          <details class="mdet"><summary>データについて</summary><div class="mdet-body">国土交通省 PLATEAU（岡山市2025）の建物約2.9万棟（うち約9千棟は外壁写真付き。近くの建物は元の解像度の写真で表示）・車道/歩道/交通島・街路樹・地形と旭川に、OpenStreetMap の上下線別の線路・電停・車線数・横断歩道・信号・バス停、国土地理院の航空写真を重ねて再現。線路・軌道敷は路面の実測高さに合わせて敷設しています。<br>出典：国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0／© OpenStreetMap contributors（ODbL）／国土地理院 シームレス空中写真・標高タイル。効果音（車・バス・ヘリ・マスコンのノッチ音）は Freesound の CC0 素材（AndrewAlexander・Dmitry_mansurev64・priesjensen・RutgerMuller・Logicogonist・DuranBurrus・qubodup・florianreichelt・am7・okpato123・LaurenPonder・UnderlinedDesigns・schots・xkeril・Mihacappy・BlondPanda）を切り出して使用。開始画面の行先表示器のドット文字は DotGothic16（© The DotGothic16 Project Authors、SIL Open Font License 1.1）。JR の列車（山陽新幹線・山陽本線・宇野線・津山線・吉備線）は OSM の線路に沿って走り、岡山駅に停車します（本数は昼間の平均的な値、車両の形・色と新幹線の高架の高さは簡略・仮定）。歩行者・自転車は OSM の歩道・横断歩道・商店街に沿って歩き、歩行者用信号に従います（人数・歩く速さ・信号の秒数は一般的な値による仮定）。周りの電車・車は信号・前の車両に従って自動で走ります（車線は OSM の道路と PLATEAU の車道範囲から推定、交通量は仮定）。単線区間（引上線・終端）は閉そく信号で1編成ずつ。加減速度は一般的な路面電車の性能値、信号の現示は幹線道路の標準的な周期（120秒）による仮定、架線柱の位置（センターポール区間以外）は推定です。車両は9200形の公表諸元（2車体連接・全長18.0m・幅2.4m）と、3000形（元 東武日光軌道線100形・12m級単車・45kW×2 直接制御・石津式パンタグラフ）の資料に基づく簡略モデルです。</div></details>
+          <details class="mdet"><summary id="stp-sum">岡山めぐり</summary><div class="mdet-body" id="stp-menu"></div></details>
+          <details class="mdet"><summary id="cr-sum">運転手帳</summary><div class="mdet-body" id="cr-menu"></div></details>
+        </div>
+        <p class="foot" id="records"></p>
+        <div class="loadbar"><i id="loadbar"></i></div>
+      </div>
+      <button id="start" class="startbtn mn-go" disabled><span id="start-label">3D都市モデルを読み込み中…</span></button>
+    </footer>
+  </div>
+</section>
+
+<!-- GAME UI -->
+<div class="ui" id="ui">
+  <header class="topbar">
+    <div class="chip"><span class="rname"><span class="rlab">ROUTE </span><b id="route-name">東山線</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
+    <div class="topright">
+      <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
+      <button class="iconbtn ttbtn" id="tt-btn" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
+      <button class="iconbtn" id="view-toggle" title="視点切替">⟲</button>
+      <button class="iconbtn" id="sound-btn" title="音を消す">音</button>
+      <button class="iconbtn" id="help-btn">?</button>
+    </div>
+  </header>
+
+  <section class="mission">
+    <div class="kicker">NEXT STOP</div>
+    <div class="mrow"><h2 id="next-stop">岡山駅前</h2><div class="dist"><b id="distance">0</b> m</div></div>
+    <div class="progtrack"><i id="stop-progress"></i></div>
+    <div class="mfoot"><span>駅間進行</span><span id="stop-seq">1 / 10</span></div>
+    <div class="diarow" id="diarow" style="display:none"><span class="dk">ダイヤ</span><span id="dia-t">--</span><b id="dia-d" class="ok">定刻</b></div>
+    <div class="pace" id="pace" style="display:none"><div class="pbar"><i class="pm" id="pace-m"></i></div><div class="plab"><span>進み</span><span>定刻</span><span>遅れ</span></div></div>
+    <div class="stopguide" id="stopguide"><div class="sgtxt" id="sgtxt">停止位置: ホーム先端の標識に車両先頭を合わせる</div><div class="sgbar"><i class="sgzone"></i><i class="sgmark" id="sgmark"></i></div></div>
+  </section>
+
+  <section class="rack">
+    <div class="icard">
+      <div class="lbl sigrow"><span class="siglamp green" id="siglamp"></span>前方信号</div>
+      <div class="val"><strong id="signal-text">進行</strong></div>
+      <div class="lbl" id="signal-distance">--</div>
+    </div>
+    <div class="icard">
+      <div class="lbl">制限速度</div>
+      <div class="val"><strong id="limit">40</strong><span>km/h</span></div>
+    </div>
+    <div class="icard">
+      <div class="lbl">快適スコア</div>
+      <div class="val"><strong id="score">1000</strong><span>点</span></div>
+      <div class="lbl" id="comfort">快適 100%</div>
+    </div>
+  </section>
+
+  <div class="minimap"><canvas id="mini-map" width="112" height="140"></canvas></div>
+
+  <div class="cabhint" id="cabhint">左のマスコン・右のブレーキハンドルを左右にドラッグして回せます（キー: マスコン W/S、ブレーキ ↓/↑）</div>
+  <div class="cabspeed"><b id="cabspd">0</b> km/h</div>
+  <section class="subtitle"><span id="subtitle">停車中です。ドアを閉めて、力行ノッチを入れてください。</span></section>
+
+  <section class="console">
+    <div class="state-block">
+      <div class="k">DRIVER DESK</div>
+      <strong id="drive-state">停車中</strong>
+      <div class="readouts">
+        <span>ドア<b id="door">開</b></span>
+        <span>時刻<b id="clock">09:00</b></span>
+        <span>加減速<b id="accel">0.0</b></span>
+      </div>
+    </div>
+
+    <div class="speedcard">
+      <canvas id="speedometer" width="150" height="150"></canvas>
+      <div class="speedreadout"><strong id="speed">0</strong><span>km/h</span></div>
+    </div>
+
+    <div class="ctrl">
+      <div class="chead"><span class="k">MASTER CONTROLLER</span><strong id="notch">N</strong></div>
+      <div class="notchbar" id="notch-bar"></div>
+      <div class="legend"><span>制動</span><span>惰行</span><span>力行</span></div>
+      <div class="touch">
+        <button data-action="brake" class="brake" type="button"><span class="sym">B</span>制動</button>
+        <button data-action="coast" type="button"><span class="sym">N</span>惰行</button>
+        <button data-action="power" class="power" type="button"><span class="sym">P</span>力行</button>
+        <button data-action="door" type="button"><span class="sym">↔</span>ドア</button>
+        <button data-action="horn" type="button"><span class="sym">♪</span>警笛</button>
+        <button data-action="emergency" class="emergency" type="button"><span class="sym">E</span>非常</button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="locchip" id="locchip"></div>
+<div id="fade" class="fade"><div id="fade-text"></div></div>
+<!-- CAR UI -->
+<div class="navi" id="navi"><canvas id="navi-cv" width="440" height="440"></canvas>
+  <div class="navi-bar"><button type="button" id="navi-zi" title="拡大（]）">＋</button><button type="button" id="navi-zo" title="縮小（[）">－</button><button type="button" id="navi-rot" title="進行方向を上／北を上">⌖</button></div>
+  <div class="navi-info"><div id="navi-rd"></div><div id="navi-ll"></div></div></div>
+<div class="carui" id="carui">
+  <header class="car-top">
+    <div class="chip"><span class="rname"><span class="rlab">MODE </span><b id="car-mode-lbl">車で自由に走る</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
+    <div class="topright">
+      <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
+      <button class="iconbtn ttbtn" id="tt-btn2" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
+      <button class="iconbtn rescue" id="rescue-btn" title="すぐそばの道路へ戻る（T）">道路に戻る <small>T</small></button>
+      <button class="iconbtn" id="car-view" title="視点切替">⟲</button>
+      <button class="iconbtn" id="car-menu" title="メニューへ">≡</button>
+    </div>
+  </header>
+  <div class="car-msg" id="car-msg"></div>
+  <div class="busui" id="busui">
+    <section class="bpanel">
+      <div class="kicker" id="bus-route">西大寺線</div>
+      <div class="row"><h2 id="bus-next">天満屋</h2><div class="dist"><b id="bus-dist">0</b> m</div></div>
+      <div class="progtrack"><i id="bus-progress"></i></div>
+      <div class="row small"><span>停留所</span><span id="bus-seq">1 / 10</span></div>
+      <span class="req" id="bus-req">とまります</span> <span class="small" id="bus-wait"></span>
+      <div class="diarow" id="bus-diarow" style="display:none"><span class="dk">ダイヤ</span><span id="bus-dia-t">--</span><b id="bus-dia" class="ok">--</b></div>
+      <div class="pace" id="bus-pace" style="display:none"><div class="pbar"><i class="pm" id="bus-pace-m"></i></div><div class="plab"><span>進み</span><span>定刻</span><span>遅れ</span></div></div>
+      <div class="stopguide" id="bus-guide"><div class="sgtxt small" id="bus-zone"></div><div class="sgbar"><i class="sgzone" style="left:40%;width:20%"></i><i class="sgmark" id="bus-gmark"></i></div></div>
+    </section>
+    <section class="brack">
+      <div class="icard"><div class="lbl sigrow"><span class="siglamp green" id="bus-siglamp"></span>前方信号</div><div class="val"><strong id="bus-sig">進行</strong></div><div class="lbl" id="bus-sigd">--</div></div>
+      <div class="icard"><div class="lbl">制限速度</div><div class="val"><strong id="bus-lim">40</strong><span>km/h</span></div></div>
+      <div class="icard"><div class="lbl">スコア</div><div class="val"><strong id="bus-score">1000</strong><span>点</span></div><div class="lbl">乗客 <span id="bus-pax">0人</span></div></div>
+    </section>
+    <canvas id="bus-map" width="150" height="110" style="position:absolute;right:12px;top:calc(58px + env(safe-area-inset-top,0px));width:150px;height:110px;background:rgba(23,20,15,.86);border:1px solid var(--line);border-radius:2px"></canvas>
+    <button class="doorbtn" id="bus-doorbtn" type="button">扉 <span id="bus-door">開</span>（F）</button>
+    <div class="bmsg" id="bus-msg"></div>
+  </div>
+  <svg id="car-wheel" viewBox="-100 -100 200 200" aria-label="ハンドル">
+    <circle r="88" fill="none" stroke="#1b1b1b" stroke-width="18"/><circle r="88" fill="none" stroke="#3a3a3a" stroke-width="3"/>
+    <path d="M-80 10 Q0 -10 80 10 L60 30 Q0 20 -60 30 Z" fill="#2a2a2a"/><rect x="-10" y="10" width="20" height="70" fill="#2a2a2a"/>
+    <circle r="26" fill="#333"/><rect x="-4" y="-98" width="8" height="18" fill="#e6a94d"/>
+  </svg>
+  <div class="car-meter"><b id="car-speed">0</b><small>km/h<span class="gearlbl" id="car-gearlbl">D 前進</span><span class="cclbl" id="car-cc-lbl"></span>　<span id="car-place"></span></small><div class="rpm"><i id="car-rpm"></i></div></div>
+  <div class="pedals">
+    <div class="gearsel"><button type="button" id="car-gd" class="on">D</button><button type="button" id="car-gr">R</button></div>
+    <button class="pedal brk" id="car-brk" type="button">ブレーキ</button>
+    <button class="pedal acc" id="car-acc" type="button">アクセル</button>
+    <div class="ccbox"><button type="button" id="car-cc" title="定速走行（C）">定速<small>C</small></button><div class="ccpm"><button type="button" id="car-ccm" title="設定速度を下げる（−）">−</button><button type="button" id="car-ccp" title="設定速度を上げる／復帰（＋）">＋</button></div></div>
+  </div>
+</div>
+
+<!-- HELI UI (v17) -->
+<div class="carui heliui" id="heliui">
+  <header class="car-top">
+    <div class="chip"><span class="rname"><span class="rlab">MODE </span><b id="heli-mode-lbl">ヘリコプター</b></span><span class="ck-in"><i class="ckg">昼</i><b class="ckt">12:00</b><small class="cks">:00</small></span></div>
+    <div class="topright">
+      <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
+      <button class="iconbtn" id="heli-auto" title="自動で街を周回（O）">自動周回 <small>O</small></button>
+      <button class="iconbtn" id="heli-view" title="視点切替（V）">⟲</button>
+      <button class="iconbtn" id="heli-menu" title="メニューへ">≡</button>
+    </div>
+  </header>
+  <div class="car-msg" id="heli-msg"></div>
+  <div class="hmeter">
+    <div><small>速度</small><b id="heli-speed">0</b><small>km/h</small></div>
+    <div><small>高度（海抜）</small><b id="heli-alt">0</b><small>m</small></div>
+    <div><small>対地</small><b id="heli-agl">0</b><small>m</small></div>
+    <div><small>昇降</small><b id="heli-vs" class="sm">0</b><small>m/s</small></div>
+    <div><small>機首</small><b id="heli-hdg" class="sm">北</b></div>
+  </div>
+  <div class="hpad left">
+    <button type="button" id="hp-f" class="up">▲<small>前進</small></button>
+    <button type="button" id="hp-l" class="lf">⟲<small>左旋回</small></button>
+    <button type="button" id="hp-r" class="rt">⟳<small>右旋回</small></button>
+    <button type="button" id="hp-b" class="dn">▼<small>後退</small></button>
+  </div>
+  <div class="hpad right">
+    <button type="button" id="hp-u">上昇</button>
+    <button type="button" id="hp-fast" class="fast">速く</button>
+    <button type="button" id="hp-d">下降</button>
+  </div>
+</div>
+
+<!-- v41.7: ミッション（配達・搬送・名所めぐり） -->
+<section class="qhud" id="qhud" aria-label="ミッション">
+  <div class="qtop"><span class="qkick" id="q-kick">MISSION</span><b id="q-name">宅配ヘリ</b><button type="button" id="q-quit" title="ミッションをやめて、このまま自由に操縦する">中止</button></div>
+  <div class="qmain">
+    <div class="qarrow" id="q-arrow" aria-hidden="true"><svg viewBox="-24 -24 48 48"><circle r="22" fill="rgba(0,0,0,.35)" stroke="rgba(201,168,106,.55)" stroke-width="1.5"/><path d="M0 -17 L11 12 L0 6 L-11 12 Z" fill="#ffb02e" stroke="#1a1408" stroke-width="1.5" stroke-linejoin="round"/></svg></div>
+    <div class="qnow"><small id="q-verb">荷物を積む</small><b id="q-target">岡山駅 東口</b></div>
+    <div class="qdist"><b id="q-dist">0</b><small id="q-du">m</small></div>
+  </div>
+  <div class="qbar"><i id="q-hold"></i></div>
+  <div class="qhint" id="q-hint"></div>
+  <div class="qrow"><span id="q-time">目安まで 0:00</span><span>経過 <b id="q-el">0:00</b></span><span><b id="q-score">1000</b> 点</span></div>
+  <div class="qfoot"><div class="qdots" id="q-dots"></div><small id="q-cargo"></small></div>
+</section>
+<div class="qtoast" id="qtoast" role="status" aria-live="polite"></div>
+<div class="txtalk" id="txtalk" role="status" aria-live="polite"><small>お客さん</small><span id="txtalk-t"></span></div>
+<div class="stpop" id="stpop" role="status" aria-live="polite"><div class="stpop-mark">岡</div><div class="stpop-t"><small id="stpop-n"></small><b id="stpop-name"></b><span id="stpop-fact"></span></div></div>
+<div class="overlay" id="stp" role="dialog" aria-label="岡山めぐり">
+  <div class="ocard stp-card">
+    <span class="kicker">OKAYAMA STAMP RALLY</span>
+    <h2 style="margin:2px 0 0;font-size:19px;">岡山めぐり<small id="stp-cnt"></small></h2>
+    <div class="stp-bar"><i id="stp-bar"></i></div>
+    <p class="stp-title" id="stp-title"></p>
+    <ol class="stp-rows" id="stp-rows"></ol>
+    <button type="button" class="startbtn alt" id="stp-close"><span>閉じる</span><span>J</span></button>
+  </div>
+</div>
+<div class="overlay" id="qfin">
+  <div class="ocard finish-card qfin-card">
+    <span class="kicker">MISSION COMPLETE</span>
+    <h2 id="qf-name" style="margin:2px 0 0;font-size:19px;">ミッション</h2>
+    <div class="qscore"><b id="qf-score">0</b><span class="qgrade" id="qf-grade">A</span></div>
+    <div class="qrows" id="qf-rows"></div>
+    <p class="qbest" id="qf-best"></p>
+    <button type="button" id="qf-retry" class="startbtn"><span>もう一度</span><span>↻</span></button>
+    <button type="button" id="qf-new" class="startbtn alt" style="display:none"><span>別の場所で挑戦（毎回ランダム）</span><span>⟳</span></button>
+    <button type="button" id="qf-free" class="startbtn alt"><span>このまま自由に操縦する</span><span>→</span></button>
+    <button type="button" id="qf-menu" class="startbtn alt"><span>メニューへ戻る</span><span>≡</span></button>
+  </div>
+</div>
+
+<!-- v41.7: 時刻表パネル -->
+<aside class="ttp" id="ttp" aria-label="時刻表">
+  <header class="ttp-h"><div><div class="kicker" id="ttp-tag">TIMETABLE</div><h3 id="ttp-title">時刻表</h3></div><div class="ttp-now"><small>いま</small><b id="ttp-clock">12:00:00</b></div><button class="closebtn" id="ttp-x" type="button" aria-label="閉じる">×</button></header>
+  <div class="ttp-cols"><span>停留場</span><span>着</span><span>発</span><span>実績</span></div>
+  <ol class="ttp-rows" id="ttp-rows"></ol>
+  <p class="ttp-sub" id="ttp-sub"></p>
+  <footer class="ttp-foot" id="ttp-foot"></footer>
+</aside>
+
+<!-- HELP -->
+<div class="overlay" id="src-overlay">
+  <div class="ocard" style="width:min(640px,100%);max-height:88vh;overflow-y:auto">
+    <div class="ohead"><div><div class="kicker">SOURCES &amp; ASSUMPTIONS</div><h2 style="margin:4px 0 0;font-size:19px;">基準時点・出典・推定している所</h2></div><button class="closebtn" id="close-src" type="button">×</button></div>
+    <div class="srcbody" style="font-size:12.5px;line-height:1.75;color:#d9d0b8">
+      <p style="margin:0 0 10px"><b style="color:#e6a94d">基準時点:</b> 2027年春を想定しています（岡山駅前広場への路面電車の乗り入れが完成した後の姿。岡山市の公表では完成予定は 令和9年3月）。建物はそれより前（PLATEAU 2025年度）のデータなので、その後に建った・無くなった建物は反映されていません。</p>
+      <p style="margin:0 0 10px"><b style="color:#e6a94d">地図の範囲:</b> 東西 約11.4km × 南北 約9.1km（約104km²。PLATEAU の 3 次メッシュ 10×10 区画の範囲で、PLATEAU の地形データ（DEM）のある所いっぱいまで）。北は津高台・宿（岡山大学の北）、南は泉田・洲崎、西は北長瀬・西長瀬、東は百間川を越えて米田・中川町まで。範囲の外は、国土地理院の標高と空中写真による遠景（建物・道路なし）です。</p>
+      <p style="margin:0 0 4px"><b style="color:#e6a94d">出典（実際のデータ）</b></p>
+      <ul style="margin:0 0 10px;padding-left:18px">
+        <li>建物（外壁写真・形）・車道・歩道・交通島・植生・地形: 国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0。建物の外壁写真と、車道・歩道を分けた道路データは中心部（岡山駅〜表町〜岡山城の周り）だけで、その外の建物は箱形（高さは実測）、道路は道路の範囲だけのデータです</li>
+        <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL。中心部〔v28 の範囲〕は 2026年9月26日時点、v29 で広げた所は 9月28日時点、v30 で広げた所は 9月29日時点のデータ）</li>
+        <li>地面・屋根の航空写真: 国土地理院 シームレス空中写真（撮影時期は場所によって異なります）。遠景: 国土地理院 標高タイル・空中写真</li>
+        <li>バスの停留所の順序: 晴れバスナビ（岡山の時刻表検索）。岡山駅東口ののりば: 岡山駅東口バスのりば行き先案内</li>
+        <li>車両の寸法: 9200形・3000形・路線バスの公表諸元。効果音: Freesound の CC0 素材（新幹線の停車中の車内音は Freesound の KoimeMatsuchiya 氏 #872228・#872230（Hikari Green Car 車内）、mycompasstv 氏 #474615（高速列車の車内）のうち使用分、いずれも CC0）。新幹線の走行音・高速時の轟音・「まもなく到着」のチャイムは制作者が用意した音源（出典・ライセンスを確認中）</li>
+      </ul>
+      <p style="margin:0 0 4px"><b style="color:#e6a94d">推定・仮定している所（実際とは異なる場合があります）</b></p>
+      <ul style="margin:0;padding-left:18px">
+        <li>駅前広場の軌道・新しい電停（2面3線）の線形とホームの寸法: 公表の完成イメージ図と航空写真から推定</li>
+        <li>駅前広場から出るバスの経路（軌道の南側を通り、駅前交差点の信号で軌道を渡る）: 推定。完成後の配置は公表資料で確認できていません</li>
+        <li>桃太郎大通りの旧 岡山駅前電停のホーム: 残したまま（電車は通過）。完成後の扱いは未確認</li>
+        <li>信号の周期（120秒）・青の秒数・交差点ごとのずれ、歩行者用信号の点滅の秒数: 幹線道路で一般的な値による仮定</li>
+        <li>信号機・歩行者用信号・電柱・電線の位置と向き: 日本の標準的な配置から推定</li>
+        <li>周りの車の台数・車種の割合、歩行者・自転車の人数と歩く速さ: 仮定</li>
+        <li>JR の列車の本数（昼間の平均的な値）・車両の形と色・新幹線の高架の高さ（地面＋10.5m）・在来線のホーム（上屋の範囲から推定）: 仮定・簡略</li>
+        <li>車・トラック・バイク・路線バスの形・色・運転席（計器・ハンドル・窓の柱）: 特定のメーカー・車種を再現したものではなく、一般的な形をもとにした簡略モデル（バイクは 400cc クラスの標準的なネイキッドとライダー）（バスの塗装の色・線は推定）。ミラーは画面の隅に映像を重ねる方式で、立体の鏡ではありません</li>
+        <li>JR 運転モード: 駅は OSM の railway=stop（停車位置）。制限速度（新幹線 300・山陽本線 120・宇野線 95・津山線/吉備線 85km/h と、岡山駅・各駅の前後の減速）、カーブの制限（曲率から算出）、加速・減速の数値は各形式の公表値に近い簡略モデルによる仮定（実際の線区の速度表・運転曲線ではない）。踏切は再現していない（周りの車は走行中の列車の手前で止まる）</li>
+        <li>ナビの目的地（駅・病院・学校・店・観光地など約 1,260 地点）とタクシー乗り場（30 か所）: © OpenStreetMap contributors（ODbL。2026年10月6日取得）。町名の代表点は PLATEAU の町丁界から計算。タクシー運賃の基準: 岡山県の普通車運賃の改定（2025年11月27日から。初乗り 1.1km で 700 円・250m ごとに 100 円）の報道（KSB）</li>
+        <li>山陽自動車道（福山東〜兵庫県境）: 線形・IC/JCT・SA/PA・料金所の位置・橋とトンネルの区間は OpenStreetMap（2026年10月1日時点）。道路面の高さ（縦断）は国土地理院の標高から推定した値で、勾配 3.2% 以下・橋とトンネルは OSM の区分による（実際の設計縦断ではない）。車線数・幅・路肩・中央帯・ガードレール・照明・視線誘導標・本線の制限速度 100km/h は標準的な断面からの推定。山陽道沿いの掘割・盛土と地形は、国土地理院の標高（10m 格子。遠景は 80m 格子）と空中写真による。山陽道の他の車の台数・速度は仮定。SA/PA・料金所・標識・立体交差の細部は未再現（行き止まりは OSM の道路が途切れる所）</li>
+        <li>新幹線の運転: 力行 P1〜P13・ブレーキ B1〜B7 の段数、加速 2.6km/h/s（起動）と 270km/h までの所要時間は公表値に近い簡略モデル（実機の運転曲線ではない）。モーター・風切り・ATC の音は合成で、実車の録音ではありません。福山〜相生の線形は OSM</li>
+        <li>天満屋バスステーションの両備バスののりば（4番）: 推定</li>
+        <li>ナビの経路: AI の車が走る車線網（OSM の車線・一方通行・信号の位置）で、所要時間が最短になる道を探す（制限速度×0.85・信号 6 秒・右折 4 秒・左折 1.5 秒・細い道は 1.2 倍、は仮定）。通行止め・工事・渋滞は考えない。山陽自動車道と駐車場・敷地の中は案内できない（道路から外れた部分は点線で直線に示す）。実際のカーナビの経路とは一致しないことがある</li>
+        <li>タクシー営業: 運賃は岡山県の普通車運賃に基づく簡略計算（時速 10km 以下は 90 秒ごとに 100 円相当・深夜早朝 22〜5 時は 2 割増・迎車料金 300 円は一般的な値による仮定で、実際の会社のメーターとは違う）。乗り場ごとの待ち客の出やすさ・配車依頼の頻度・お客さんと行き先・おつり（チップ）は仮定・架空</li>
+        <li>路面電車・車・バスの加減速: 一般的な性能値による</li>
+        <li>中心部の外の建物の外壁（色・窓割り）: PLATEAU の用途・構造・建築年・階数から推定（写真ではありません）</li>
+        <li>中心部の外の道路の車道と歩道の分け方: PLATEAU の道路の範囲を、OSM の道路の種類・車線数で分けて推定。PLATEAU に道路面の無い道路（中心部の外の車道の約1.1%）は、OSM の中心線から幅を推定して作成</li>
+        <li>夜の窓明かり: 乱数で点灯（実際の窓の位置とは一致しません）。袖看板は業種の一般名だけ（実在の店名ではありません）</li>
+        <li>後楽園の建物の屋根材・岡山城の石垣の質感: 推定。岡山城天守のライトアップは、毎日 日没〜24時の白色の照明を再現（期間限定の色は再現していません）</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="overlay" id="help-overlay">
+  <div class="ocard">
+    <div class="ohead"><div><div class="kicker">HOW TO DRIVE</div><h2 style="margin:4px 0 0;font-size:19px;">運転のしかた</h2></div><button class="closebtn" id="close-help" type="button">×</button></div>
+    <div class="steps">
+      <div><b>1</b><span><strong>ドアを閉める</strong><small>停車中に「ドア」ボタンまたは D キー</small></span></div>
+      <div><b>2</b><span><strong>力行する</strong><small>ブレーキを ↑ で運転位置まで緩め、マスコンを W で進める（S で戻す）</small></span></div>
+      <div><b>3</b><span><strong>停留場に合わせる</strong><small>マスコンを S で切に戻し、ブレーキを ↓ で強める（↑ で緩める）。制限速度と信号を確認しながら減速</small></span></div>
+      <div><b>4</b><span><strong>ドアを開ける</strong><small>車両の先頭をホーム先端（白い停止目標線・標識）に合わせて止め、「ドア」または D キー（±3.5m 以内）。運転席視点では、左のマスコンと右のブレーキハンドルをドラッグして回せます。</small></span></div>
+    </div>
+    <p class="foot" style="margin:8px 0 0">JR・新幹線: 高速からは止まるまでに長い距離が要ります（新幹線 300km/h からは約 4.5km）。画面の「ブレーキ目安」より速度が高いときは、早めにブレーキを。制限速度の先の低い値は「160→140」のように表示されます。</p>
+    <div class="shortcuts"><span>マスコン W/S</span><span>ブレーキ ↓/↑</span><span>両方戻す C</span><span>警笛 H</span><span>音 右上の「音」</span><span>非常 Space</span><span>視点 V</span></div>
+  </div>
+</div>
+
+<!-- FINISH -->
+<div class="overlay" id="finish-overlay">
+  <div class="ocard finish-card">
+    <span class="kicker">SERVICE COMPLETE</span>
+    <h2 style="margin:0;font-size:19px;">運転終了</h2>
+    <div id="finish-score">0</div>
+    <p id="finish-text"></p>
+    <div class="ftt" id="finish-tt" style="display:none"></div>
+    <button id="turnback" class="startbtn" type="button" style="margin-bottom:8px"><span id="turnback-label">折り返し運転</span><span>⇄</span></button>
+    <button id="restart" class="startbtn" type="button" style="background:#3a3326;color:#f1ead9"><span>運転を終えてメニューへ</span><span>→</span></button>
+  </div>
+</div>
+
+<script src="vendor/three.r128.min.js"></script>
+<script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
+<script>window.THREE||window.OkadenBoot.fail("3D の部品（three.js）を読み込めませんでした。インターネットの接続を確認してください。",null,true)</script>
+<script>window.OKA_PAGE="play";</script>
+<script src="okaden.js?v=404b794aca"></script>

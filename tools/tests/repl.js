@@ -7,9 +7,19 @@ const { chromium } = require('playwright'); const fs=require('fs');
   const p = await b.newPage({viewport:{width:W,height:H}}); p.setDefaultTimeout(1800000);
   p.on('pageerror', e => fs.appendFileSync('/tmp/repl/errors.txt', e.message+'\n'));
   p.on('console', m => { if(m.type()==='error'||m.type()==='warning') fs.appendFileSync('/tmp/repl/console.txt', m.text().slice(0,300)+'\n'); });
-  await p.goto(process.env.URL||'http://localhost:8806/index.html');
-  await p.waitForFunction(() => !document.getElementById('start').disabled, null, {timeout:1800000});
-  if((process.env.MODE||'heli')!=='menu') await p.evaluate((m)=>{ document.querySelector('.mode-opt[data-mode="'+m+'"]').click(); document.getElementById('start').click(); }, process.env.MODE||'heli');
+  // v46: index.html はメニューだけ。モードは play.html?m=<モード>（読み込みが済むと自分で始め、window.__playReady が立つ）。LEGACY=1 なら従来の 1 ページ版（all.html）
+  const MODE=process.env.MODE||'heli', BASE=(process.env.BASE||'http://localhost:8806/');
+  if(process.env.LEGACY){
+    await p.goto(process.env.URL||BASE+'all.html');
+    await p.waitForFunction(() => !document.getElementById('start').disabled, null, {timeout:1800000});
+    if(MODE!=='menu') await p.evaluate((m)=>{ document.querySelector('.mode-opt[data-mode="'+m+'"]').click(); document.getElementById('start').click(); }, MODE);
+  } else if(MODE==='menu'){
+    await p.goto(process.env.URL||BASE+'index.html');
+    await p.waitForFunction(() => !document.getElementById('start').disabled, null, {timeout:1800000});
+  } else {
+    await p.goto(process.env.URL||BASE+'play.html?m='+MODE);
+    await p.waitForFunction(() => window.__playReady === true, null, {timeout:1800000});
+  };
   await p.waitForTimeout(2000);
   fs.writeFileSync('/tmp/repl/ready','1');
   let n=0;

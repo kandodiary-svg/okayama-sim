@@ -22,6 +22,14 @@ const S = {
 const canvas = $("world");
 /* v41.13: 起動の失敗は画面に理由を出す（head.html の OkadenBoot）。画質の設定は変えない */
 const Boot = window.OkadenBoot || { box(){}, hide(){}, fail(m, e){ console.error(m, e); } };
+/* v46: ページの分割。index.html（PAGE = "menu"）はメニューだけ（3D の街は読まず、背景は静止画）。開始で play.html?m=<モード> へ移り、
+   そのモードに要る物だけを読み込んで、メニューで選んだ設定（Prefs に保存）ですぐに始める。メニューへ戻ると index.html に戻る（メモリが空く）。
+   OKA_PAGE が無い時（古い 1 ページの版・試験）は今まで通り全部読む */
+const PAGE = window.OKA_PAGE || "all";
+const PMODE = (() => { try { const m = new URLSearchParams(location.search).get("m"); return ["tram", "jr", "bus", "car", "heli"].includes(m) ? m : "tram"; } catch(e){ return "tram"; } })();
+const NEED = PAGE === "all" ? { outer: true, mw: true, hmax: true } : PAGE === "menu" ? { outer: false, mw: false, hmax: false }
+  : { outer: ["car", "heli", "jr"].includes(PMODE), mw: ["car", "heli"].includes(PMODE), hmax: PMODE === "heli" };   // 遠景の地形タイル・山陽道・屋上の高さ
+if(PAGE !== "all") document.body.classList.add("page-" + PAGE);
 const renderer = (() => {
   try { return new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:"high-performance", logarithmicDepthBuffer:false}); }
   catch(e){ Boot.fail("この端末・ブラウザでは 3D 表示（WebGL）を始められませんでした。ブラウザを最新にするか、「ハードウェアアクセラレーション」を有効にして、もう一度開いてください。", e, false); throw e; }
@@ -500,7 +508,7 @@ const OrthoPages = (() => {
 })();
 /* ---------------- 読み込み ---------------- */
 let loaded=0, toLoad=1;
-function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; if($("start").disabled) $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; }
+function progress(){ const p=Math.min(1,loaded/toLoad); $("loadbar").style.width=(p*100).toFixed(1)+"%"; if($("start").disabled) $("start-label").textContent="3D都市モデルを読み込み中… "+Math.round(p*100)+"%"; if(typeof PlayOv !== "undefined") PlayOv.set("3D都市モデルを読み込み中… "+Math.round(p*100)+"%", p*0.85); }
 /* v41.13: 通信の一時的な失敗（切れた・混み合っている）は少し待って自動で再試行する。404（無いファイル）は再試行しない */
 const _sleep = ms => new Promise(r => setTimeout(r, ms));
 async function withRetry(fn, label, tries){
@@ -884,7 +892,7 @@ async function loadAll(){
   const jget = n => getJSON("data/"+n).catch(e=>{ console.warn(n, e); return null; });   // v41.13: 一時的な失敗は再試行（無いファイルは今まで通り null）
   const JP = { traffic: jget("traffic.json").then(loadTrafficPts).catch(e=>{ console.warn("traffic pts", e); return null; }), signals: jget("signals.json"), peds: jget("peds.json"), jr: jget("jr.json"), bus: jget("bus.json"), places: jget("places.json") };
   // v16: "@" の付いたファイル（建物・植生のタイル）は Stream が近くの分だけ読み込む。それ以外は最初に全部読む
-  const core = Object.entries(sc.files).filter(([k])=>!k.includes("@"));
+  const core = Object.entries(sc.files).filter(([k])=>!k.includes("@") && (NEED.hmax || k !== "hmax"));   // v46: 屋上の高さ（hmax）はヘリだけ
   const OVM = !!sc.ortho_ov;   // v29: 縮小写真＋近くのページだけ（範囲拡大版）
   toLoad = core.reduce((a,[k,f])=>a+(f.size||f.raw*0.9),0) + (OVM ? 12*900e3 + 4e6 : sc.ortho.length*900e3) + 6e7;   // v30: size = 送る大きさ
   const bufs = {};
@@ -937,17 +945,43 @@ async function loadAll(){
    終わってから押せるようにする。起動直後に押すと、読み込みが途中のまま始まり、道路や地形が欠けることがあった。
    読み込みに失敗したものは待たない。90 秒たっても終わらなければ、その旨を出して押せるようにする */
 window.__startGate = () => startGate();
+/* v46: play.html の読み込み中の画面（メニューの代わり）と、開始。メニューへ戻るボタンは index.html へ */
+const PlayOv = (() => {
+  let el = null, bar = null, txt = null, done = false;
+  const NAMES = { tram: "路面電車", jr: "JR・新幹線", bus: "路線バス", car: "車・トラック・バイク", heli: "ヘリコプター" };
+  function mk(){ if(el || done || PAGE !== "play") return; el = document.createElement("div"); el.id = "playload";
+    el.innerHTML = '<div class="pl-card"><div class="pl-brand">OKADEN <span>岡山シミュレーター</span></div><div class="pl-mode">' + NAMES[PMODE] + '</div><div class="pl-bar"><i></i></div><div class="pl-txt">読み込み中…</div><a class="pl-back" href="./">メニューへ戻る</a></div>';
+    document.body.appendChild(el); bar = el.querySelector(".pl-bar i"); txt = el.querySelector(".pl-txt"); }
+  function set(t, f){ mk(); if(!el) return; if(t) txt.textContent = t; if(f !== undefined) bar.style.width = (Math.max(0, Math.min(1, f)) * 100).toFixed(1) + "%"; }
+  function hide(){ done = true; if(el){ el.remove(); el = null; } }   // 始めた後のタイルの読み込み（progress）で出し直さない
+  return { mk, set, hide };
+})();
+if(PAGE === "play") PlayOv.mk();
+function playLaunch(){
+  const sel = document.querySelector('.mode-opt[data-mode="' + PMODE + '"]'); if(sel && !sel.classList.contains("on")) sel.click();
+  applyMenu(); PlayOv.hide(); $("start").click(); window.__playReady = true;
+}
+function goMenuPage(){ try { Prefs.save(); } catch(e){} location.href = "./"; }
+if(PAGE === "play") document.addEventListener("click", (e) => { const b = e.target.closest && e.target.closest("#heli-menu,#car-menu,#restart,#qf-menu"); if(!b) return; e.preventDefault(); e.stopImmediatePropagation(); try { Snd.hush(); } catch(x){} goMenuPage(); }, true);
+/* v46: メニューのページ（index.html）の起動。路線の一覧（routes.json）と JR の路線の一覧（jr_menu.json: 小さな要約）だけ読み、すぐに開始を押せる */
+async function menuBoot(){
+  try { const rt = await getJSON("data/routes.json"); S.routes = rt; buildRoutePicker(); setupRoute(S.key, true); } catch(e){ console.warn("routes", e); }
+  try { const jm = await getJSON("data/jr_menu.json"); buildJRPicker(jm); } catch(e){ console.warn("jr_menu", e); }
+  Prefs.restore(); $("loadbar").style.width = "100%"; $("start").disabled = false; applyMenu();
+}
 function startGate(){
   const t0 = performance.now(), btn = $("start"), lab = $("start-label"), bar = $("loadbar");
   const items = () => { const p = camera.position, np = Stream.pending(p.x, p.z);
-    return [["周りの建物・道路", np === 0, np ? "残り " + np : ""], ["遠景の地形", Outer.ready || Outer.failed, ""], ["山陽自動車道", MW.prepared || MW.failed, MW.ready ? "整え中" : ""]]; };
+    const it = [["周りの建物・道路", np === 0, np ? "残り " + np : ""]];
+    if(NEED.outer) it.push(["遠景の地形", Outer.ready || Outer.failed, ""]); if(NEED.mw) it.push(["山陽自動車道", MW.prepared || MW.failed, MW.ready ? "整え中" : ""]);
+    return it; };
   const step = () => {
     const it = items(), done = it.filter(x => x[1]).length, all = done === it.length, late = performance.now() - t0 > 90000;
     window.__gate = { wait: Math.round(performance.now() - t0), boot: Math.round(t0), items: it.map(x => x[0] + ":" + (x[1] ? 1 : 0)) };
-    if(all || late){ btn.disabled = false; btn.classList.remove("waiting"); applyMenu(); if(!all){ lab.textContent += "（一部の読み込みが遅れています）"; } return; }
+    if(all || late){ btn.disabled = false; btn.classList.remove("waiting"); applyMenu(); if(!all){ lab.textContent += "（一部の読み込みが遅れています）"; } if(PAGE === "play") playLaunch(); return; }
     btn.disabled = true; btn.classList.add("waiting");
     const left = it.filter(x => !x[1]).map(x => x[0] + (x[2] ? "（" + x[2] + "）" : "")).join("・");
-    lab.textContent = "準備中… " + left + "（" + done + "/" + it.length + "）"; bar.style.width = (90 + 10 * done / it.length).toFixed(1) + "%";
+    lab.textContent = "準備中… " + left + "（" + done + "/" + it.length + "）"; bar.style.width = (90 + 10 * done / it.length).toFixed(1) + "%"; PlayOv.set(lab.textContent, 0.9 + 0.1 * done / it.length);
     setTimeout(step, 400); };
   step();
 }
@@ -1044,7 +1078,7 @@ const Stream = (() => {
     R.near = heli ? Math.min(250, agl*0.5) : 0; R.far = heli ? Math.min(3200, agl*4) : 0;
     R.veg = heli ? Math.min(350, agl*0.8) : 0; R.detail = heli ? -Math.min(400, agl*2) : 0;
     const p = heli ? Heli.focus(_fp) : c;
-    update(p.x, p.z, false); Outer.tick(c); MW.tick(c); CityTun.tick(c);
+    update(p.x, p.z, false); if(NEED.outer) Outer.tick(c); if(NEED.mw) MW.tick(c); CityTun.tick(c);   // v46: 要らないモードでは遠景の地形タイル・山陽道を読まない
     const gy = heli ? Heli.H.ground : 0;
     if(OrthoPages.active){ OrthoPages.tick(c, heli ? (c.y-gy)*0.7 : 0, agl); groundTick(c, heli, gy, 1); }
     else for(const T of GROUND_TILES){ const dx=Math.max(T.x0-c.x,0,c.x-(T.x0+T.size)), dz=Math.max(T.z0-c.z,0,c.z-(T.z0+T.size)); const near=Math.hypot(dx,dz, heli ? (c.y-gy)*0.7 : 0)<700;
@@ -6165,8 +6199,8 @@ function leaveJR(){
   if(/^jr_/.test(S.key||"")){ const r=document.querySelector("#routes .route-opt.on"); S.key=r?r.dataset.key:"higashi"; }
 }
 function buildJRPicker(){
-  const wrap=$("jr-routes"), vw=$("jr-vehs"); if(!wrap || !JR.ready) return;
-  const defs=JR.routeDefs(); wrap.innerHTML=""; if(!defs.length){ $("jr-wrap").querySelector(".foot").textContent="JR の線路データを読み込めませんでした。"; return; }
+  const wrap=$("jr-routes"), vw=$("jr-vehs"); if(!wrap || (!JR.ready && !arguments[0])) return;
+  const defs=arguments[0] || JR.routeDefs();   // v46: メニューのページは要約（data/jr_menu.json）から wrap.innerHTML=""; if(!defs.length){ $("jr-wrap").querySelector(".foot").textContent="JR の線路データを読み込めませんでした。"; return; }
   const code={shinkansen:"新",sanyo:"山",uno:"宇",tsuyama:"津",kibi:"吉"}, col={shinkansen:"#1f4f9f",sanyo:"#2a7fc0",uno:"#d87a1d",tsuyama:"#b5452f",kibi:"#3c8d56"};
   const pickVeh=(def,vk)=>{ JRSEL.vkey=vk; vw.querySelectorAll(".veh-opt").forEach(x=>x.classList.toggle("on", x.dataset.veh===vk)); };
   const fillVeh=(def)=>{ vw.innerHTML=""; def.veh.forEach((vk,i)=>{ const V=VEHICLES[vk], M=JR.MODELS[V.mk], b=document.createElement("button"); b.type="button"; b.className="veh-opt"+(i===0?" on":""); b.dataset.veh=vk;
@@ -6193,6 +6227,7 @@ function beginJR(){
   setTimeout(() => { if(S.mode === "tram" && VEH().jr && S.running) jrAnn("start"); }, 1500);   // v44: 発車前の案内放送（行き先・次の駅）
   Trams.populate(null, 0, "none"); Traffic.reset(); }
 $("start").addEventListener("click",()=>{ if($("start").disabled) return; applyMenu(); const sel=document.querySelector(".mode-opt.on"); const m=sel ? sel.dataset.mode : S.mode;
+  if(PAGE==="menu"){ try { Prefs.save(); } catch(e){} $("start").disabled=true; $("start-label").textContent="開始の準備中…"; location.href="play.html?m="+m; return; }   // v46: モードのページへ
   if(m==="car") beginCar(); else if(m==="bus") beginBus(); else if(m==="heli") beginHeli(); else if(m==="jr") beginJR(); else beginRide(); });
 function beginHeli(){
   leaveJR(); Clock.reset(); S.mode="heli"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.remove("on"); $("heliui").classList.add("on");
@@ -7466,7 +7501,9 @@ const Prefs = (() => {
     const m = q(".mode-opt.on"), l = q(".look-opt.on"), h = q(".hstart-opt.on"), sh = q(".shadow-opt"), dp = q(".dia-opt");
     st.set = { mode: m && m.dataset.mode, route: S.key, veh: S.vehicle, look: l && l.dataset.look, shadow: sh ? sh.classList.contains("on") : true, dia: dp ? dp.classList.contains("on") : true,
                lookV: 2, time: Env.st.time, rain: Env.st.rain, hstart: h && h.dataset.start, sound: st.set.sound !== false,
-               play: Object.assign({}, S.playBy), cveh: S.cveh, qsel: { heli: Quest.sel.heli, car: Quest.sel.car } };
+               play: Object.assign({}, S.playBy), cveh: S.cveh, qsel: { heli: Quest.sel.heli, car: Quest.sel.car },
+               jr: JRSEL && JRSEL.def ? { key: JRSEL.def.key, veh: JRSEL.vkey } : (st.set.jr || null),   // v46: ページを移っても同じ選択で始めるため、JR の路線・車両、車の出発地（山陽道の場所・向き）も覚える
+               cstart: S.carStart, mwPlace: ($("mw-place") || {}).value, mwDir: S.mwDir };
     write();
   }
   function setSound(on){ st.set.sound = on; write(); }
@@ -7490,6 +7527,10 @@ const Prefs = (() => {
       if(s.qsel){ if(typeof s.qsel.heli === "string") Quest.sel.heli = s.qsel.heli; if(typeof s.qsel.car === "string") Quest.sel.car = s.qsel.car; }
       if(s.time || s.rain != null) Env.set(s.time || null, !!s.rain);
       if(s.hstart) click('.hstart-opt[data-start="' + s.hstart + '"]');
+      if(s.jr && s.jr.key){ click('#jr-routes .route-opt[data-key="' + s.jr.key + '"]'); if(s.jr.veh) click('#jr-vehs .veh-opt[data-veh="' + s.jr.veh + '"]'); }
+      if(s.cstart) click('.cstart-opt[data-cs="' + s.cstart + '"]');
+      if(s.mwPlace){ const mp = $("mw-place"); if(mp && [...mp.options].some(o => o.value === s.mwPlace)){ mp.value = s.mwPlace; mp.dispatchEvent(new Event("change")); } }
+      if(s.mwDir) click('.cstart-dir[data-dir="' + s.mwDir + '"]');
       click('.mode-opt[data-mode="' + s.mode + '"]');
     } catch(e){ console.warn("prefs", e); }
     restoring = false; applyMenu(); render();
@@ -9591,9 +9632,9 @@ function loop(now){
   layoutHud(); Clock.render(); TT.tick(dt);
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+if(PAGE !== "menu") requestAnimationFrame(loop);   // v46: メニューのページは 3D を描かない
 applyMenu();
-loadAll().catch(e=>{ console.error(e); Boot.fail("データの読み込みに失敗しました。通信の状態を確認して、もう一度お試しください。", e, true); });
+(PAGE==="menu" ? menuBoot() : loadAll()).catch(e=>{ console.error(e); Boot.fail("データの読み込みに失敗しました。通信の状態を確認して、もう一度お試しください。", e, true); });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__MarkFix = MarkFix; window.__CityTun = CityTun; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
 window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream; window.__Stamps = Stamps;
