@@ -1432,12 +1432,13 @@ function stationTex(){
   return canvasTex(512,1024,(g,w,h)=>{
     const Y = f => h*(1-f);   // f: 下からの高さの割合
     g.fillStyle="#f2f2ef"; g.fillRect(0,0,w,h);
-    // 最上部のガラス格子（2段）
-    g.fillStyle="#b9c6cf"; g.fillRect(0,Y(0.95),w,Y(0.61)-Y(0.95));
-    for(let i=0;i<40;i++){ g.fillStyle=`rgba(255,255,255,${0.05+Math.random()*0.12})`; g.fillRect(Math.random()*w, Y(0.95)+Math.random()*(Y(0.61)-Y(0.95)), 40+Math.random()*80, 6); }
-    g.fillStyle="#6f757a"; for(let k=0;k<=4;k++) g.fillRect(k*w/4-4, Y(0.95), 8, Y(0.61)-Y(0.95));
-    for(const f of [0.95,0.86,0.78,0.70,0.61]) g.fillRect(0, Y(f)-4, w, 8);
-    g.fillStyle="#8b9196"; for(let k=0;k<8;k++){ const x=k*w/8; g.fillRect(x-1.5, Y(0.95), 3, Y(0.61)-Y(0.95)); }
+    // 最上部のガラス格子（v49: 写真資料（2022 年の東口）に合わせ、濃い灰青のガラスの奥に屋根の骨組み、白い方立 5 本・中ほどに無目）
+    g.fillStyle="#8a98a2"; g.fillRect(0,Y(0.95),w,Y(0.61)-Y(0.95));
+    const gr=g.createLinearGradient(0,Y(0.95),0,Y(0.61)); gr.addColorStop(0,"rgba(190,205,215,0.35)"); gr.addColorStop(1,"rgba(40,48,54,0.25)"); g.fillStyle=gr; g.fillRect(0,Y(0.95),w,Y(0.61)-Y(0.95));
+    g.strokeStyle="rgba(40,46,50,0.55)"; g.lineWidth=3; for(let k=0;k<6;k++){ g.beginPath(); g.moveTo(k*w/5, Y(0.93)); g.lineTo(k*w/5+w/10, Y(0.80)); g.lineTo(k*w/5+w/5, Y(0.93)); g.stroke(); }   // 奥の屋根の骨組み
+    for(let i=0;i<30;i++){ g.fillStyle=`rgba(255,255,255,${0.04+Math.random()*0.08})`; g.fillRect(Math.random()*w, Y(0.95)+Math.random()*(Y(0.61)-Y(0.95)), 30+Math.random()*60, 5); }
+    g.fillStyle="#eef0ef"; for(let k=0;k<=5;k++) g.fillRect(k*w/5-5, Y(0.95), 10, Y(0.61)-Y(0.95));
+    for(const f of [0.95,0.78,0.61]) g.fillRect(0, Y(f)-5, w, 10);
     // 笠木
     g.fillStyle="#9ea3a6"; g.fillRect(0,0,w,Y(0.965)); g.fillStyle="#5d6266"; g.fillRect(0,Y(0.965)-4,w,6);
     // 白い帯と窓の列（中層）
@@ -1527,14 +1528,47 @@ function facadeTex(kind){
 }
 /* 外壁の材質: 1階と上の階を描き分け、ガラスには空の映り込み・窓ごとに少し違う色（カーテン・ブラインド） */
 const FACADE_UNIFORMS = { uSkyTop:{value:new THREE.Color(0x7fa7cf)}, uSkyHor:{value:new THREE.Color(0xd9e4ea)} };
+/* v49: 駅前〜西川の主な建物の外観（写真資料: ユーザー提供の資料集。Wikimedia Commons の CC BY / CC BY-SA / パブリックドメインの写真を見て、形・色・窓割りを合わせた。写真そのものは貼っていない）。
+   建物の特定は住所 → 国土地理院の住所検索 → PLATEAU の建物の平面形（+1.2m）。小さい建物から順に判定（大きい平面形が隣の建物を含むため）。
+   type: 1 色の違うガラス板のカーテンウォール / 2 反射ガラスのカーテンウォール / 3 横ルーバー / 4 壁に四角い窓 / 5 バルコニーの住宅の塔。
+   値: [type, 板の幅 m, 階の高さ m, 低層部の高さ m] [壁の色, 建物の高さ m] [差し色, 上の帯の高さ m] [ガラスの色, 窓の幅の割合]
+   店名・看板の文字は入れない（看板は色の帯だけ） */
+const LANDMARKS = [
+  { id:67, name:"新光ビル岡山（駅前町1-8-1）：青い反射ガラスのカーテンウォール、屋上に白い塔", poly:[[98.3, -48.8], [98.5, -28.1], [118.9, -28.1], [118.9, -48.8]], v:[[2,1.60,3.80,4.5],[0.90,0.90,0.89,38.0],[0.72,0.75,0.78,7.0],[0.20,0.40,0.64,0.40]] },
+  { id:234, name:"朝日生命岡山桃太郎大通ビル（野田屋町1-1-15）：ベージュの壁に小さな窓", poly:[[323.6, -52.7], [323.7, -30.5], [351.0, -31.3], [350.9, -52.8]], v:[[4,3.20,3.40,4.0],[0.70,0.64,0.52,34.0],[0.55,0.50,0.41,0.0],[0.12,0.15,0.18,0.30]] },
+  { id:276, name:"明治安田生命岡山ビル（駅前町1-9-15）：白い壁に奥まった四角い窓", poly:[[220.9, -44.9], [220.9, -34.0], [222.1, -33.9], [222.1, -29.2], [250.8, -29.3], [256.4, -33.4], [256.4, -50.2], [222.0, -50.1], [222.1, -45.1]], v:[[4,3.00,3.60,4.5],[0.90,0.90,0.88,44.0],[0.66,0.66,0.64,0.0],[0.10,0.13,0.16,0.42]] },
+  { id:264, name:"リベールタワー（平和町1-1）：白いバルコニーの住宅の塔、低層は青緑のガラス", poly:[[299.0, 30.9], [299.6, 51.8], [301.7, 51.8], [301.8, 54.3], [320.3, 53.8], [320.1, 47.1], [324.1, 47.0], [324.3, 53.5], [339.0, 53.0], [338.8, 46.7], [339.9, 46.4], [339.4, 28.6], [337.6, 28.7], [337.4, 20.5], [334.6, 20.6], [334.5, 19.0], [309.9, 19.7], [307.2, 23.1], [305.1, 23.4], [305.1, 25.4], [302.9, 25.4], [302.9, 28.1], [301.7, 28.1]], v:[[5,3.40,3.00,16.0],[0.93,0.93,0.92,77.0],[0.72,0.77,0.80,0.0],[0.18,0.34,0.40,0.00]] },
+  { id:114, name:"ワシントンホテルプラザ・桃太郎プラザ（本町3-6）：白いタイルの壁に小さな四角い窓、最上部は横長の窓", poly:[[189.4, 20.3], [189.7, 55.0], [227.8, 55.1], [227.8, 54.2], [241.0, 54.0], [240.9, 49.2], [242.6, 49.1], [242.5, 27.4], [240.7, 27.3], [240.7, 19.8]], v:[[4,2.60,3.00,8.5],[0.90,0.89,0.86,46.0],[0.62,0.62,0.60,5.5],[0.16,0.22,0.30,0.36]] },
+  { id:255, name:"成通岡山ビル（駅前町1-1-1）：青の濃淡のガラス板のカーテンウォール、屋上に白い看板の箱", poly:[[-29.7, -47.9], [-13.5, -27.8], [48.4, -27.8], [48.1, -49.1], [42.2, -48.9], [41.8, -69.5], [-25.5, -68.1]], v:[[1,1.40,1.75,5.0],[0.94,0.94,0.93,51.0],[0.80,0.13,0.13,13.0],[0.20,0.42,0.72,1.00]] },
+  { id:41, name:"ICOTNICOT（旧ドレミの街、駅前町1-8-18）：明るい灰色の横ルーバー、上に黒い帯、低層は店の入口", poly:[[99.2, -67.0], [99.3, -47.8], [119.2, -47.8], [119.2, -28.1], [212.4, -28.3], [212.4, -64.0], [210.9, -64.0], [210.9, -70.8], [103.5, -70.6]], v:[[3,2.40,0.32,7.0],[0.84,0.85,0.86,43.0],[0.12,0.12,0.13,3.5],[0.10,0.12,0.13,0.00]] },
+];
+LANDMARKS.forEach(L => { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for(const [x, z] of L.poly){ x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } L.bb = [x0, z0, x1, z1]; });
+const LANDMARK_U = { value: LANDMARKS.flatMap(L => L.v.map(a => new THREE.Vector4(a[0], a[1], a[2], a[3]))) };
+function inPoly(P, x, z){ let c = false; for(let i = 0, j = P.length - 1; i < P.length; j = i++){ const xi = P[i][0], zi = P[i][1], xj = P[j][0], zj = P[j][1]; if(((zi > z) !== (zj > z)) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; }
+// 外壁のチャンクに、建物の番号（aSpec）と地面からの高さ（aGH）を付ける（番号の付いた頂点が無いチャンクには付けない）
+function landmarkAttr(c, q, geo){
+  const sc = c.scale, o = c.origin; let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+  for(let i = 0; i < c.count; i += 7){ const x = o[0] + q[i * 3] * sc, z = o[2] + q[i * 3 + 2] * sc; if(x < x0) x0 = x; if(x > x1) x1 = x; if(z < z0) z0 = z; if(z > z1) z1 = z; }
+  const Ls = LANDMARKS.map((L, k) => [L, k + 1]).filter(([L]) => !(L.bb[2] < x0 - 10 || L.bb[0] > x1 + 10 || L.bb[3] < z0 - 10 || L.bb[1] > z1 + 10));
+  if(!Ls.length) return;
+  const sp = new Float32Array(c.count), gh = new Float32Array(c.count), base = new Map(); let n = 0;
+  for(let i = 0; i < c.count; i++){
+    const x = o[0] + q[i * 3] * sc, y = o[1] + q[i * 3 + 1] * sc, z = o[2] + q[i * 3 + 2] * sc;
+    for(const [L, k] of Ls){ if(x < L.bb[0] || x > L.bb[2] || z < L.bb[1] || z > L.bb[3] || !inPoly(L.poly, x, z)) continue; sp[i] = k; gh[i] = y; base.set(k, Math.min(base.has(k) ? base.get(k) : 1e9, y)); n++; break; }
+  }
+  if(!n) return;
+  for(let i = 0; i < c.count; i++) if(sp[i] > 0) gh[i] -= base.get(sp[i]);   // 地面からの高さ = その建物の壁の一番下からの高さ
+  geo.setAttribute("aSpec", new THREE.BufferAttribute(sp, 1)); geo.setAttribute("aGH", new THREE.BufferAttribute(gh, 1));
+}
 function facadeMaterial(kind){
   const t=facadeTex(kind);
   if(kind==="station"){ t.repeat.set(0.01,0.01); return new THREE.MeshLambertMaterial({map:t, vertexColors:true}); }
   t.repeat.set(0.01,0.01); t.generateMipmaps=true; t.minFilter=THREE.LinearMipmapLinearFilter;
   const m=new THREE.MeshPhongMaterial({map:t, vertexColors:true, shininess:28, specular:0x1a1a1a});
   m.onBeforeCompile=(sh)=>{
-    sh.uniforms.uSkyTop=FACADE_UNIFORMS.uSkyTop; sh.uniforms.uSkyHor=FACADE_UNIFORMS.uSkyHor;
-    sh.fragmentShader = "uniform vec3 uSkyTop; uniform vec3 uSkyHor;\n" + sh.fragmentShader
+    sh.uniforms.uSkyTop=FACADE_UNIFORMS.uSkyTop; sh.uniforms.uSkyHor=FACADE_UNIFORMS.uSkyHor; sh.uniforms.uLM = LANDMARK_U;
+    sh.vertexShader = "attribute float aSpec; attribute float aGH; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vSpec = aSpec; vGH = aGH; vSW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+    sh.fragmentShader = "uniform vec3 uSkyTop; uniform vec3 uSkyHor; uniform vec4 uLM[" + (LANDMARKS.length * 4) + "]; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + sh.fragmentShader
       .replace("#include <map_fragment>", `
         vec2 fuv = vUv; float flr = floor(fuv.y); vec2 frc = fract(fuv);
         vec2 tuv = vec2(frc.x, flr < 0.5 ? frc.y*0.5 : 0.5 + frc.y*0.5);
@@ -1567,8 +1601,80 @@ function facadeMaterial(kind){
           diffuseColor.rgb *= 1.0 - wallF * smoothstep(0.6, 1.0, stk) * (1.0 - frc.y) * 0.12;
           float jx = min(frc.x, 1.0 - frc.x); diffuseColor.rgb *= 1.0 - wallF * 0.09 * (1.0 - smoothstep(0.004, 0.012, jx));
           if(flr < 0.5) diffuseColor.rgb *= mix(0.70, 1.0, smoothstep(0.0, 0.16, frc.y));
-          diffuseColor.rgb *= 0.94 + 0.08 * fract(sin((flr + bk*17.0)*78.233)*43758.5453) * wallF; }`)
-      .replace("#include <color_fragment>", "diffuseColor.rgb *= mix(vColor, vec3(1.0), glassF);")
+          diffuseColor.rgb *= 0.94 + 0.08 * fract(sin((flr + bk*17.0)*78.233)*43758.5453) * wallF; }
+        // v49: 写真資料（Wikimedia Commons、出典は画面下の注記）に合わせた個別の外壁（駅前〜西川の主な建物）。vSpec = 建物の番号（0 は一般の建物）
+        float lmOn = 0.0;
+        if(vSpec > 0.5){
+          int si = int(vSpec + 0.5) - 1;
+          vec4 A = uLM[si * 4], Bw = uLM[si * 4 + 1], Cc = uLM[si * 4 + 2], Dg = uLM[si * 4 + 3];
+          vec3 wn = normalize(cross(dFdx(vSW), dFdy(vSW)));
+          vec2 tg = normalize(vec2(-wn.z, wn.x) + 1e-5); float al = dot(vSW.xz, tg) + 1000.0;
+          float hg = max(vGH, 0.0), H = Bw.w, ty = A.x;
+          vec2 pc = vec2(al / A.y, hg / A.z); vec2 lc = floor(pc), lf = fract(pc);
+          float r1 = fract(sin(dot(lc + vec2(vSpec * 13.1, 7.7), vec2(12.9898, 78.233))) * 43758.5453);
+          float aw = fwidth(al) * 1.5, ah = fwidth(hg) * 1.5;
+          // 縁の線（線の幅 w m）を画面の画素で滑らかに
+          #define LINE(c, w, aa) (1.0 - smoothstep(w, w + aa, c))
+          vec3 col = Bw.rgb; float gl = 0.0;
+          float dxm = min(lf.x, 1.0 - lf.x) * A.y, dym = min(lf.y, 1.0 - lf.y) * A.z;
+          if(ty < 1.5){            // 1: 色の違うガラス板を並べたカーテンウォール（青の濃淡のモザイク）
+            // 写真では 濃紺・青・水色 の 3 段の板がばらばらに並ぶ
+            col = r1 < 0.36 ? Dg.rgb * vec3(0.38, 0.45, 0.55) : r1 < 0.72 ? Dg.rgb : mix(Dg.rgb, vec3(0.62, 0.76, 0.9), 0.55);
+            col *= 0.92 + 0.16 * fract(r1 * 7.1); gl = 0.55;
+            float mul = max(LINE(dxm, 0.025, aw), LINE(dym, 0.02, ah));
+            col = mix(col, Cc.rgb * 0.0 + vec3(0.78, 0.80, 0.82), mul); gl *= 1.0 - mul;
+          } else if(ty < 2.5){     // 2: 反射ガラスのカーテンウォール（横の帯＋縦の方立）
+            col = Dg.rgb * (0.85 + 0.3 * fract(sin(lc.y * 3.7 + vSpec) * 437.5)); gl = 1.0;
+            float spd = step(lf.y, 0.16), mul = LINE(dxm, 0.05, aw);
+            col = mix(col, Cc.rgb, max(spd * 0.85, mul)); gl *= 1.0 - max(spd * 0.85, mul);
+          } else if(ty < 3.5){     // 3: 横ルーバー（細い板の重なり。板ごとに明るさを少し変え、ところどころ欠く）
+            float sl = fract(hg / 0.32), row = floor(hg / 0.32), seg = floor(al / 2.4);
+            float rs = fract(sin(row * 12.9898 + seg * 78.233) * 43758.5453);
+            float kf = 1.0 - smoothstep(0.25, 0.8, fwidth(hg / 0.32));          // 遠くでは板の縞を平均に（ちらつき防止）
+            col = Bw.rgb * mix(0.86, mix(0.66, 1.0, smoothstep(0.16, 0.34, sl)) * (0.95 + 0.07 * rs), kf);
+            col *= 1.0 - 0.12 * step(0.95, rs) * kf;
+            // 上の方の小さな窓の列
+            float wr = step(H - 9.5, hg) * step(hg, H - 7.6) * step(abs(fract(al / 4.6) - 0.5), 0.13);
+            col = mix(col, vec3(0.05, 0.06, 0.07), wr); gl = wr;
+          } else if(ty < 4.5){     // 4: 白い壁に四角い窓（ホテル・事務所）。窓の周りに奥行きの陰
+            float ww = Dg.w, wh = Dg.w * 0.95;
+            float inx = step(abs(lf.x - 0.5) * 2.0, ww), iny = step(abs(lf.y - 0.52) * 2.0, wh);
+            float tile = (LINE(abs(fract(al / 0.45) - 0.5) * 0.45, 0.004, aw) + LINE(abs(fract(hg / 0.3) - 0.5) * 0.3, 0.004, ah)) * 0.05 * (1.0 - smoothstep(0.02, 0.08, max(aw, ah)));   // タイルの目地（遠くでは消す）
+            col = Bw.rgb * (1.0 - tile);
+            float win = inx * iny; float rv = step(abs(lf.x - 0.5) * 2.0, ww + 0.06) * step(abs(lf.y - 0.52) * 2.0, wh + 0.07) * (1.0 - win);
+            col = mix(col, Cc.rgb, rv);
+            vec3 gw = Dg.rgb * (0.8 + 0.5 * r1); gw = mix(gw, vec3(0.62, 0.58, 0.5), step(0.85, r1));
+            col = mix(col, gw, win); gl = win;
+            if(Cc.w > 0.0 && hg > H - Cc.w){ float rib = step(abs(lf.y - 0.5) * 2.0, 0.55); col = mix(Bw.rgb, Dg.rgb * 1.1, rib); gl = rib; }
+          } else {                 // 5: 住宅の塔（各階のバルコニー: 白い床の縁・すりガラスの手すり・奥の窓）
+            if(hg < A.w){ col = Dg.rgb * (0.8 + 0.4 * r1); gl = 1.0; float mul = max(LINE(dxm, 0.05, aw), LINE(dym, 0.05, ah)); col = mix(col, vec3(0.7, 0.74, 0.76), mul); gl *= 1.0 - mul; }
+            else {
+              float yy = lf.y;
+              if(yy < 0.11) col = Bw.rgb;                                                   // 床の縁（白）
+              else if(yy < 0.43) col = mix(Cc.rgb, Bw.rgb, 0.45) * (0.96 + 0.06 * r1);     // すりガラスの手すり
+              else { col = mix(vec3(0.36, 0.40, 0.43), vec3(0.66, 0.68, 0.67), step(0.75, r1)) * (0.9 + 0.2 * fract(r1 * 5.3)); gl = 0.55;   // 奥の窓（バルコニーの陰）
+                     float pt = LINE(dxm, 0.28, aw); col = mix(col, Bw.rgb * 0.9, pt); gl *= 1.0 - pt; }                                   // 住戸の境の白い壁
+            }
+          }
+          // 上の帯（看板の箱・屋上の白い塔など）
+          if(ty < 4.5 && ty > 0.5 && ty != 4.0 && Cc.w > 0.0 && hg > H - Cc.w){
+            if(ty < 1.5){ col = Bw.rgb; gl = 0.0; float rb = step(abs(hg - (H - Cc.w * 0.55)) , Cc.w * 0.16); col = mix(col, Cc.rgb, rb); }
+            else if(ty < 2.5){ col = Bw.rgb * 0.97; gl = 0.0; }
+            else { col = Cc.rgb; gl = 0.0; }
+          }
+          // 低層部（店の入口・ショーウィンドウ）
+          if(hg < A.w && ty < 4.5 && !(ty > 4.5)){
+            float sx = fract(al / 4.2), sh = hg / max(A.w, 0.1);
+            float sf = step(0.06, sx) * step(sx, 0.94) * step(0.04, sh) * step(sh, 0.72);
+            vec3 inn = mix(vec3(0.80, 0.76, 0.68), vec3(0.30, 0.31, 0.33), step(0.6, fract(sin(floor(al / 4.2) * 7.7 + vSpec) * 437.5)));
+            vec3 base = ty > 2.5 && ty < 3.5 ? mix(vec3(0.86, 0.84, 0.78), vec3(0.74, 0.62, 0.38), step(0.5, fract(floor(al / 4.2) * 0.5))) : vec3(0.32, 0.34, 0.36);
+            col = mix(base, inn, sf); gl = sf * 0.6; gEm = inn * 0.25 * sf;
+          }
+          diffuseColor.rgb = col; glassF = gl; lmOn = 1.0;
+          cell = vec2(lc.x, floor(hg / 3.4)); flr = hg < A.w ? 0.0 : cell.y + 1.0; hh = r1;
+        }
+`)
+      .replace("#include <color_fragment>", "diffuseColor.rgb *= lmOn > 0.5 ? vec3(1.0) : mix(vColor, vec3(1.0), glassF);")
       .replace("#include <envmap_fragment>", `
         { vec3 vd = normalize(vViewPosition); vec3 rv = reflect(vd, normal);
           vec3 upv = normalize((viewMatrix * vec4(0.0,1.0,0.0,0.0)).xyz);
@@ -4091,6 +4197,7 @@ function buildChunks(chunks, bufs, atlas, ortho){
       if(nb) MarkFix.n+=nb; }
     geo.setAttribute("position", new THREE.BufferAttribute(q,3));
     if(c.mat.startsWith("facade_") && c.uvi!==undefined && c.col!==undefined) facadeGroundV(c, buf, q);   // v48
+    if(c.mat.startsWith("facade_") && c.mat !== "facade_station" && Car.G) landmarkAttr(c, q, geo);   // v49
     const tm = TEX_SCALE[c.mat];
     if(c.uvi!==undefined) geo.setAttribute("uv", new THREE.BufferAttribute(new Int16Array(buf,c.uvi,c.count*2),2,false));
     else if(c.uv!==undefined) geo.setAttribute("uv", new THREE.BufferAttribute(new Uint16Array(buf,c.uv,c.count*2),2,true));
