@@ -4,7 +4,7 @@
 文字は一般の書体で書く（ロゴのマーク・独自の字形は写さない）。"""
 import pickle, glob, json, sys, os
 import numpy as np
-X0, Z0, X1, Z1 = -230, -200, 430, 140
+X0, Z0, X1, Z1 = -300, -200, 430, 480
 W = []
 for f in sorted(glob.glob("/home/claude/wx/out_bldg/*.pkl")):
     d = pickle.load(open(f, "rb"))
