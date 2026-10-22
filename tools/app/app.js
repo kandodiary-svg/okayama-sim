@@ -263,11 +263,33 @@ function facadeMaterial(kind){
         vec4 tex = textureGrad(map, tuv, dFdx(fuv)*vec2(1.0,0.5), dFdy(fuv)*vec2(1.0,0.5));
         float glassF = 1.0 - smoothstep(0.3, 0.7, tex.a);
         vec2 cell = floor(fuv);
-        float hh = fract(sin(dot(cell + vec2(vColor.r*91.7, vColor.b*57.3), vec2(12.9898,78.233)))*43758.5453);
-        vec3 gcol = mix(vec3(0.07,0.10,0.13), vec3(0.16,0.20,0.24), fract(hh*7.3));
+        vec3 vq = floor(vColor * 255.0 + 0.5) / 255.0;   // v48: 頂点色は補間でわずかに揺れる → そのまま乱数に入れると画素ごとに値が飛んで「ざらざら」に見えた。8 bit に丸めてから使う
+        float hh = fract(sin(dot(cell + vec2(vq.r*91.7, vq.b*57.3), vec2(12.9898,78.233)))*43758.5453);
+        // v48: ガラスの色は建物ごと（青緑・灰・ブロンズ・濃色）。窓ごとに少し明暗
+        float bk = fract(sin(dot(vec2(vq.r*91.7 + vq.g*13.1, vq.b*57.3), vec2(12.9898,78.233)))*43758.5453);
+        vec3 gT = bk < 0.4 ? vec3(0.075,0.11,0.135) : bk < 0.7 ? vec3(0.10,0.108,0.115) : bk < 0.85 ? vec3(0.12,0.10,0.08) : vec3(0.05,0.075,0.085);
+        vec3 gcol = gT * (0.75 + 0.7*fract(hh*7.3));
         gcol = mix(gcol, vec3(0.62,0.58,0.50), step(0.86, hh));        // カーテン・ブラインド
         gcol = mix(gcol, vec3(0.80,0.78,0.70), step(0.965, hh));
-        diffuseColor.rgb = mix(tex.rgb, gcol, glassF);`)
+        // v48: 1 階のガラスは店・ロビーの中が見える（明るい店内・木の内装・暗いロビー・白い店）。天井の照明の帯、棚の段、奥ほど暗い
+        vec3 gEm = vec3(0.0);
+        if(flr < 0.5){
+          float sk = fract(hh*13.7 + cell.x*0.37);
+          vec3 inC = sk < 0.42 ? vec3(0.80,0.76,0.68) : sk < 0.70 ? vec3(0.66,0.54,0.40) : sk < 0.88 ? vec3(0.26,0.27,0.29) : vec3(0.88,0.88,0.90);
+          float yy = frc.y;
+          float sfw = fwidth(yy*6.0); float shelf = 0.86 + 0.14*smoothstep(0.35, 0.65, fract(yy*6.0 + sk*3.0)) * (1.0 - smoothstep(0.55, 0.62, yy)) * (1.0 - smoothstep(0.15, 0.45, sfw));
+          vec3 inner = inC * shelf * (0.50 + 0.50*smoothstep(0.05, 0.45, yy)) * mix(1.0, 0.6, smoothstep(0.66, 0.9, yy));
+          inner += vec3(1.0,0.97,0.9) * 0.35 * (1.0 - smoothstep(0.0, 0.025, abs(yy - 0.70))) * step(0.42, sk);
+          gcol = mix(gcol, inner, 0.85); gEm = inner * 0.30 * (sk < 0.88 && sk >= 0.70 ? 0.3 : 1.0);
+        }
+        diffuseColor.rgb = mix(tex.rgb, gcol, glassF);
+        // v48: 壁の汚れ・目地: 窓の下の雨だれの筋、柱間の境の細い目地、足元（1 階の下 0.5m ほど）を暗く
+        { float wallF = 1.0 - glassF;
+          float stk = fract(sin((cell.x*7.13 + floor(frc.x*20.0) + flr*3.1)*12.9898)*43758.5453);
+          diffuseColor.rgb *= 1.0 - wallF * smoothstep(0.6, 1.0, stk) * (1.0 - frc.y) * 0.12;
+          float jx = min(frc.x, 1.0 - frc.x); diffuseColor.rgb *= 1.0 - wallF * 0.09 * (1.0 - smoothstep(0.004, 0.012, jx));
+          if(flr < 0.5) diffuseColor.rgb *= mix(0.70, 1.0, smoothstep(0.0, 0.16, frc.y));
+          diffuseColor.rgb *= 0.94 + 0.08 * fract(sin((flr + bk*17.0)*78.233)*43758.5453) * wallF; }`)
       .replace("#include <color_fragment>", "diffuseColor.rgb *= mix(vColor, vec3(1.0), glassF);")
       .replace("#include <envmap_fragment>", `
         { vec3 vd = normalize(vViewPosition); vec3 rv = reflect(vd, normal);
@@ -275,7 +297,7 @@ function facadeMaterial(kind){
           float e = dot(rv, upv);
           vec3 sky = mix(uSkyHor, uSkyTop, clamp(e,0.0,1.0)); sky = mix(vec3(0.30,0.31,0.30), sky, smoothstep(-0.25,0.05,e));
           float fres = 0.28 + 0.55*pow(1.0 - clamp(dot(-vd, normal),0.0,1.0), 3.0);
-          outgoingLight = mix(outgoingLight, sky, glassF*fres); }`);
+          outgoingLight = mix(outgoingLight, sky, glassF * fres * (flr < 0.5 ? 0.4 : 0.85)) + gEm * glassF; }`);
   };
   return m;
 }
@@ -315,15 +337,33 @@ const DETAIL_TEX = (() => {
   g.putImageData(im, 0, 0);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy()); return t;
 })();
-const DETAIL_U = { uDetail: { value: DETAIL_TEX }, uDetailOn: { value: 1 }, uCamP: { value: camera.position } };   // r128 の Lambert には cameraPosition が送られないので自前で渡す
+/* v48: 岡山駅東口の駅前広場（路面電車の乗り入れに合わせて 2024 年から再整備。噴水は 2024 年に撤去）。
+   地面は航空写真（工事前の噴水・バス・植え込み）がにじんで見えていたので、広場の範囲（駅舎の前の線 〜 市役所筋、南北 240m）は
+   御影石風の平板（60×30cm の目地をずらした敷き方、3m ごとに濃い帯）で描く。道路・歩道・ホームは別の面なのでそのまま */
+const PAVE_TEX = (() => {
+  const N = 512, c = document.createElement("canvas"); c.width = c.height = N; const g = c.getContext("2d");   // 6m 四方 → 1 画素 ≈ 1.2cm
+  let sd = 11; const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  g.fillStyle = "#6f6c66"; g.fillRect(0, 0, N, N);                         // 目地
+  const rh = N / 20, rw = N / 10;                                         // 30cm × 60cm
+  for(let r = 0; r < 20; r++){
+    const off = (r % 2) * rw / 2, band = (r % 10 === 0);
+    for(let k = -1; k < 11; k++){
+      const x = k * rw + off, v = 0.9 + rnd() * 0.14, base = band ? [150, 147, 141] : [184, 180, 171];
+      g.fillStyle = `rgb(${base[0] * v | 0},${base[1] * v | 0},${base[2] * v | 0})`; g.fillRect(x + 1.5, r * rh + 1.5, rw - 3, rh - 3);
+      for(let i = 0; i < 40; i++){ const q = rnd(); g.fillStyle = `rgba(${q > 0.5 ? 255 : 0},${q > 0.5 ? 255 : 0},${q > 0.5 ? 255 : 0},${0.05 + rnd() * 0.06})`; g.fillRect(x + 2 + rnd() * (rw - 5), r * rh + 2 + rnd() * (rh - 5), 1.5, 1.5); }   // 御影石の粒
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy()); return t;
+})();
+const DETAIL_U = { uDetail: { value: DETAIL_TEX }, uDetailOn: { value: 1 }, uCamP: { value: camera.position }, uPave: { value: PAVE_TEX } };   // r128 の Lambert には cameraPosition が送られないので自前で渡す
 function groundDetail(m, scale){
   const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null, SC = (scale || 3).toFixed(2);
   m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|gdet2_" + SC;
   m.onBeforeCompile = (sh, r) => {
     if(prev) prev(sh, r);
-    sh.uniforms.uDetail = DETAIL_U.uDetail; sh.uniforms.uDetailOn = DETAIL_U.uDetailOn; sh.uniforms.uCamP = DETAIL_U.uCamP;
+    sh.uniforms.uDetail = DETAIL_U.uDetail; sh.uniforms.uDetailOn = DETAIL_U.uDetailOn; sh.uniforms.uCamP = DETAIL_U.uCamP; sh.uniforms.uPave = DETAIL_U.uPave;
     sh.vertexShader = "varying vec3 vGW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-    sh.fragmentShader = "uniform sampler2D uDetail; uniform float uDetailOn; uniform vec3 uCamP; varying vec3 vGW;\n" + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+    sh.fragmentShader = "uniform sampler2D uDetail; uniform float uDetailOn; uniform vec3 uCamP; uniform sampler2D uPave; varying vec3 vGW;\n" + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
       #ifdef USE_MAP
       { float dd = distance(vGW, uCamP), up = uCamP.y - vGW.y;
         float fade = uDetailOn * (1.0 - smoothstep(60.0, 170.0, dd)) * (1.0 - smoothstep(60.0, 140.0, up));
@@ -350,7 +390,12 @@ function groundDetail(m, scale){
           vec3 nearC = tone * (0.08 + 1.84 * det);
           diffuseColor.rgb = mix(photo, nearC, fade * 0.92);
         } }
-      #endif`);
+      #endif
+      { // v48: 駅前広場（多角形: 駅舎の前の斜めの線 A(-105,-160)→B(-190,80) の東、x < -28、-160 < z < 80、地面の高さ 7m 未満）
+        vec2 p = vGW.xz; float cr = (-85.0) * (p.y + 160.0) - 240.0 * (p.x + 105.0);
+        float inP = step(vGW.y, 7.0) * smoothstep(0.0, 300.0, -cr) * smoothstep(-28.0, -30.0, p.x) * smoothstep(-160.0, -158.0, p.y) * smoothstep(80.0, 78.0, p.y);
+        if(inP > 0.001){ vec2 dA = vec2(-0.3339, 0.9426); vec2 q = vec2(dot(p, dA), dot(p, vec2(-dA.y, dA.x)));   // 目地の向きを駅舎の正面に平行に
+          vec3 pv = texture2D(uPave, q / 6.0).rgb; diffuseColor.rgb = mix(diffuseColor.rgb, pv * 0.92, inP); } }`);
   };
   m.needsUpdate = true; return m;
 }
@@ -444,6 +489,225 @@ function leafShader(m){
       }`);
   };
   m.needsUpdate = true; return m;
+}
+/* ---------------- v48: 街路樹を画面側で作る（PLATEAU の位置・樹種・樹高・樹冠径から） ----------------
+   以前はパイプラインで多面体の塊を重ねた形で、遠目には風船、近くでは縁を雑音で抜いた形に見えていた。
+   ここでは、葉の房を描いた絵（canvas、すき間は透明）を貼った板を樹冠の形の中に多数置き、法線は樹冠の中心からの放射にする
+   （光が樹冠全体に丸く回り、縁はぎざぎざの葉）。内側に暗い芯（向こうが素通しに見えすぎない）、幹と太い枝。
+   形は 4 種類（卵形・縦長・横に広い・低木）× 3 通りを用意し、木ごとに 位置・向き・大きさ（樹高・樹冠径）・葉の色（樹種）を変えて並べる（インスタンス描画）。
+   根元の高さは走行格子（歩道・道路・地面の実際の高さ）に合わせる（データの根元の高さが無い木が浮いていた）。
+   樹種（PLATEAU のコード）: 15 クスノキ, 17 クロガネモチ, 24 シラカシ, 27 タイワンフウ, 37 ハナミズキ, 41 フジ, 47 ムクノキ, 50 モミジバフウ, 53 ユリノキ。その他は一般の広葉樹の形 */
+const V48T = window.__v48t = { trees: 0, fgv: 0, ntree: 0 };   // 試験用: 木・外壁の補正にかかった時間（ms）
+const Trees = (() => {
+  const active = true;
+  let D = null, Dp = null, tex = null, leafM = null, barkM = null, depthM = null;
+  const VAR = [];   // [shape*3 + k] = { crown: BufferGeometry, trunk: BufferGeometry }
+  const H0 = 10, R0 = 3;   // 形を作る基準の大きさ（樹高 10m・樹冠の半径 3m）。木ごとに縦横を伸び縮みさせる
+  const SHAPE = [   // 樹冠下端/樹高, 樹冠の高さの半分（基準）, 塊の数, 塊の横の広がり, 上ほど細く, 塊の縦のつぶれ, 板の数
+    { cb: 0.25, ry: 3.6, nl: 7, sp: 0.45, taper: 0.15, sq: 1.0, n: 190 },   // 0 卵形（シラカシ・クロガネモチ・不明の高木）
+    { cb: 0.28, ry: 3.6, nl: 7, sp: 0.38, taper: 0.45, sq: 1.0, n: 190 },   // 1 縦長（ユリノキ・フウ）
+    { cb: 0.33, ry: 2.6, nl: 8, sp: 0.58, taper: 0.10, sq: 0.78, n: 200 },  // 2 横に広い（クスノキ・ハナミズキ・ムクノキ）
+    { cb: 0.00, ry: 5.0, nl: 5, sp: 0.40, taper: 0.10, sq: 0.9, n: 70 },    // 3 低木・中木（根元から葉）
+  ];
+  const TINT = { 53:[1.04,1.03,0.86], 50:[0.94,0.97,0.86], 27:[0.96,0.98,0.86], 24:[0.74,0.82,0.78], 17:[0.72,0.80,0.76], 15:[1.0,1.02,0.84], 37:[1.0,0.98,0.88], 47:[0.94,0.98,0.88], 41:[0.96,1.0,0.88] };
+  const SHAPE_OF = { 53:1, 50:1, 27:1, 24:0, 17:0, 15:2, 37:2, 47:2, 41:2 };
+  function rng(seed){ let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+  // ---- 葉の房の絵（2×2 の 4 種類）。左上の隅の小さな四角は不透明（内側の芯に使う）。縮小（ミップマップ）でも葉が消えないよう、縮小した段ほど透明度のしきいを補正 ----
+  function leafTex(){
+    if(tex) return tex;
+    const S = 512, c = document.createElement("canvas"); c.width = c.height = S; const g = c.getContext("2d"); const r = rng(77);
+    g.clearRect(0, 0, S, S);
+    for(let q = 0; q < 4; q++){
+      const ox = (q % 2) * 256, oy = Math.floor(q / 2) * 256;
+      g.save(); g.beginPath(); g.rect(ox + 3, oy + 3, 250, 250); g.clip();
+      // 細い枝
+      g.strokeStyle = "rgba(70,58,42,0.9)"; g.lineWidth = 2;
+      for(let k = 0; k < 5; k++){ g.beginPath(); const a = r() * 6.283; g.moveTo(ox + 128, oy + 128); g.lineTo(ox + 128 + Math.cos(a) * 110, oy + 128 + Math.sin(a) * 110); g.stroke(); }
+      const N = 330;
+      for(let i = 0; i < N; i++){
+        // 中心ほど密（ガウス）。外側はまばら → 樹冠の縁がぎざぎざになる
+        let x, y; do { const a = r() * 6.283, d = Math.sqrt(-2 * Math.log(1 - r() * 0.999)) * 0.34; x = Math.cos(a) * d; y = Math.sin(a) * d; } while(Math.hypot(x, y) > 0.9);
+        const px = ox + 128 + x * 128, py = oy + 128 + y * 128, L = 13 + r() * 13, W = L * (0.36 + r() * 0.16), ang = r() * 6.283;
+        const hue = 88 + r() * 22, sat = 26 + r() * 18, lit = 15 + r() * 17 + (y < 0 ? 5 : 0);
+        g.save(); g.translate(px, py); g.rotate(ang);
+        g.fillStyle = `hsl(${hue},${sat}%,${lit}%)`; g.beginPath(); g.ellipse(0, 0, L / 2, W / 2, 0, 0, 6.283); g.fill();
+        g.fillStyle = `hsla(${hue + 6},${sat}%,${lit + 14}%,0.55)`; g.beginPath(); g.ellipse(-L * 0.08, -W * 0.12, L * 0.34, W * 0.22, 0, 0, 6.283); g.fill();   // 光の当たる面
+        g.strokeStyle = `hsla(${hue},${sat}%,${lit + 18}%,0.5)`; g.lineWidth = 1; g.beginPath(); g.moveTo(-L / 2, 0); g.lineTo(L / 2, 0); g.stroke();   // 葉脈
+        g.restore();
+      }
+      g.restore();
+    }
+    g.fillStyle = "hsl(98,26%,21%)"; g.fillRect(0, 0, 16, 16);   // 芯の色（不透明）
+    // ミップマップ: 縮小した段の透明度を、元の段と「不透明の割合」が同じになるよう伸ばす（遠くの木が透けて消えないように）
+    const mips = [c]; let src = c, s = S;
+    const cover = (cv) => { const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; let n = 0; for(let i = 3; i < d.length; i += 4) if(d[i] > 127) n++; return n / (d.length / 4); };
+    const c0 = cover(c);
+    while(s > 1){
+      s >>= 1; const m = document.createElement("canvas"); m.width = m.height = s; const mg = m.getContext("2d"); mg.imageSmoothingEnabled = true; mg.drawImage(src, 0, 0, s, s);
+      if(s >= 4){ const im = mg.getImageData(0, 0, s, s), d = im.data; let lo = 1, hi = 4;
+        for(let it = 0; it < 12; it++){ const k = (lo + hi) / 2; let n = 0; for(let i = 3; i < d.length; i += 4) if(d[i] * k > 127) n++; if(n / (d.length / 4) < c0) lo = k; else hi = k; }
+        const k = (lo + hi) / 2; for(let i = 3; i < d.length; i += 4) d[i] = Math.min(255, d[i] * k); mg.putImageData(im, 0, 0); }
+      mips.push(m); src = m;
+    }
+    tex = new THREE.CanvasTexture(c); tex.mipmaps = mips; tex.generateMipmaps = false; tex.minFilter = THREE.LinearMipmapLinearFilter;
+    tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy()); return tex;
+  }
+  function mats(){
+    if(leafM) return;
+    leafM = new THREE.MeshLambertMaterial({ map: leafTex(), vertexColors: true, alphaTest: 0.5, side: THREE.DoubleSide });
+    // 両面の板でも、光は樹冠の外向きの法線で決める（裏面を暗くしない）。葉の裏から日が透ける分を少し足す
+    leafM.customProgramCacheKey = () => "tree48";
+    leafM.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace("( gl_FrontFacing ) ? vLightFront : vLightBack", "vLightFront").replace("( gl_FrontFacing ) ? vIndirectFront : vIndirectBack", "vIndirectFront");
+    };
+    Env.patch(leafM, "leaf");
+    depthM = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: leafTex(), alphaTest: 0.5, side: THREE.DoubleSide });
+    barkM = new THREE.MeshLambertMaterial({ vertexColors: true }); Env.patch(barkM, "color");
+  }
+  // ---- 形（基準の大きさ）を作る ----
+  function ico(){   // 正二十面体（芯）
+    const t = (1 + Math.sqrt(5)) / 2, v = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]].map(p => { const l = Math.hypot(...p); return p.map(a => a / l); });
+    const f = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]];
+    return f.map(tr => tr.map(i => v[i]));
+  }
+  const ICO = ico();
+  function build(shape, k){
+    const P = SHAPE[shape], r = rng(1000 + shape * 17 + k * 131), pos = [], nrm = [], uv = [], col = [];
+    const ry = P.ry, cy = H0 - ry, cBase = H0 * P.cb;
+    const blobs = [];
+    for(let i = 0; i < P.nl; i++){
+      const a = r() * 6.283, rr = i ? R0 * P.sp * (0.5 + r() * 0.5) : 0, oy = i ? ry * (r() * 0.7 - 0.35) : 0;
+      const hf = (oy / ry + 0.5);   // 0（下）〜 1（上）
+      const s = (i ? 0.55 + r() * 0.2 : 0.8) * (1 - P.taper * Math.max(0, hf - 0.4));
+      blobs.push({ c: [Math.cos(a) * rr, cy + oy, Math.sin(a) * rr], s: [R0 * s, ry * s * P.sq, R0 * s] });
+    }
+    const cC = [0, cy, 0];
+    const push = (p, n, u, v, b) => { pos.push(p[0], p[1], p[2]); nrm.push(n[0], n[1], n[2]); uv.push(u, v); col.push(b, b, b); };
+    const radN = (p) => { const d = [(p[0] - cC[0]) / R0, (p[1] - cC[1]) / ry + 0.35, (p[2] - cC[2]) / R0], l = Math.hypot(...d) || 1; return d.map(a => a / l); };
+    // 内側の暗い芯（樹冠の塊ごと。小さめ）
+    for(const B of blobs){ const sc = 0.5;
+      for(const tr of ICO) for(const v of tr){ const p = [B.c[0] + v[0] * B.s[0] * sc, Math.max(cBase + 0.2, B.c[1] + v[1] * B.s[1] * sc), B.c[2] + v[2] * B.s[2] * sc]; push(p, radN(p), 0.01, 0.99, 0.8); } }
+    // 葉の房の板
+    for(let i = 0; i < P.n; i++){
+      const B = blobs[Math.floor(r() * blobs.length)];
+      let u; do { u = [r() * 2 - 1, r() * 2 - 1, r() * 2 - 1]; } while(Math.hypot(...u) > 1 || Math.hypot(...u) < 0.05);
+      const ul = Math.hypot(...u), d = Math.pow(ul, 0.45);   // 外側の殻に寄せる
+      const c = [B.c[0] + u[0] / ul * d * B.s[0] * 0.92, Math.max(cBase + 0.35, B.c[1] + u[1] / ul * d * B.s[1] * 0.92), B.c[2] + u[2] / ul * d * B.s[2] * 0.92];
+      // 板の向き: 外向き（放射）と乱数の混ぜ
+      const rad = radN(c); let n = [rad[0] + (r() * 2 - 1) * 0.9, rad[1] + (r() * 2 - 1) * 0.9, rad[2] + (r() * 2 - 1) * 0.9]; const nl = Math.hypot(...n); n = n.map(a => a / nl);
+      let t = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+      let a1 = [n[1] * t[2] - n[2] * t[1], n[2] * t[0] - n[0] * t[2], n[0] * t[1] - n[1] * t[0]]; const al = Math.hypot(...a1); a1 = a1.map(x => x / al);
+      let a2 = [n[1] * a1[2] - n[2] * a1[1], n[2] * a1[0] - n[0] * a1[2], n[0] * a1[1] - n[1] * a1[0]];
+      const rot = r() * 6.283, cr = Math.cos(rot), sr = Math.sin(rot); const b1 = a1.map((x, j) => x * cr + a2[j] * sr), b2 = a1.map((x, j) => -x * sr + a2[j] * cr);
+      const hs = (0.42 + r() * 0.18) * (B.s[0] + B.s[1]) / 2 * (shape === 3 ? 1.05 : 1);
+      const q = Math.floor(r() * 4), u0 = (q % 2) * 0.5, v0 = Math.floor(q / 2) * 0.5;
+      const hf = Math.min(1, Math.max(0, (c[1] - cBase) / (H0 - cBase)));
+      const outer = Math.min(1, d), br = Math.min(1.08, (0.70 + 0.26 * outer + 0.12 * hf) * (0.92 + r() * 0.14));
+      const cn = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([sx, sy]) => [c[0] + (b1[0] * sx + b2[0] * sy) * hs, c[1] + (b1[1] * sx + b2[1] * sy) * hs, c[2] + (b1[2] * sx + b2[2] * sy) * hs]);
+      const uvs = [[u0 + 0.01, v0 + 0.01], [u0 + 0.49, v0 + 0.01], [u0 + 0.49, v0 + 0.49], [u0 + 0.01, v0 + 0.49]];
+      for(const j of [0, 1, 2, 0, 2, 3]){ const p = cn[j]; push(p, radN(p), uvs[j][0], uvs[j][1], br * (p[1] < cBase + 0.6 ? 0.8 : 1)); }
+    }
+    const crown = new THREE.BufferGeometry();
+    crown.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); crown.setAttribute("normal", new THREE.Float32BufferAttribute(nrm, 3));
+    crown.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2)); crown.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+    // 幹と太い枝（6 角の筒。根元は太く）
+    const tp = [], tn = [], tc = [];
+    const tube = (a, b, r0, r1, colr) => { const ax = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...ax), z = ax.map(x => x / L);
+      let t = Math.abs(z[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]; let x = [z[1] * t[2] - z[2] * t[1], z[2] * t[0] - z[0] * t[2], z[0] * t[1] - z[1] * t[0]]; const xl = Math.hypot(...x); x = x.map(v => v / xl);
+      const y = [z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]];
+      for(let i = 0; i < 6; i++){ const a0 = i / 6 * 6.283, a1 = (i + 1) / 6 * 6.283;
+        const d0 = x.map((v, j) => v * Math.cos(a0) + y[j] * Math.sin(a0)), d1 = x.map((v, j) => v * Math.cos(a1) + y[j] * Math.sin(a1));
+        const P0 = a.map((v, j) => v + d0[j] * r0), P1 = a.map((v, j) => v + d1[j] * r0), Q0 = b.map((v, j) => v + d0[j] * r1), Q1 = b.map((v, j) => v + d1[j] * r1);
+        for(const [p, d] of [[P0, d0], [Q0, d0], [P1, d1], [P1, d1], [Q0, d0], [Q1, d1]]){ tp.push(...p); tn.push(...d); tc.push(...colr); } } };
+    if(shape !== 3){
+      const bark = [0.34, 0.29, 0.24], top = cBase + ry * 0.7;
+      tube([0, 0, 0], [0, top, 0], 0.26, 0.12, bark);
+      const nb = 4 + Math.floor(r() * 2);
+      for(let i = 0; i < nb; i++){ const a = r() * 6.283, y0 = cBase * (0.85 + r() * 0.2), L = R0 * (0.45 + r() * 0.35);
+        tube([0, y0, 0], [Math.cos(a) * L, y0 + ry * (0.5 + r() * 0.5), Math.sin(a) * L], 0.11, 0.04, [0.37, 0.32, 0.26]); }
+    } else {
+      for(let i = 0; i < 3; i++){ const a = r() * 6.283; tube([0, 0, 0], [Math.cos(a) * 0.8, 2.6, Math.sin(a) * 0.8], 0.10, 0.05, [0.33, 0.29, 0.23]); }
+    }
+    const trunk = new THREE.BufferGeometry();
+    trunk.setAttribute("position", new THREE.Float32BufferAttribute(tp, 3)); trunk.setAttribute("normal", new THREE.Float32BufferAttribute(tn, 3)); trunk.setAttribute("color", new THREE.Float32BufferAttribute(tc, 3));
+    return { crown, trunk };
+  }
+  function variant(shape, k){ const i = shape * 3 + k; return VAR[i] || (VAR[i] = build(shape, k)); }
+  function data(){ if(!Dp) Dp = fetch("data/trees.json").then(r => r.ok ? r.json() : null).then(j => (D = j)).catch(() => null); return Dp; }
+  // 1 本の木の形・大きさ・色。木ごとの乱数は位置から決める（読み直しても同じ形）
+  function place(t){
+    const x = t[0] / 10, z = t[1] / 10, sp = t[6], cls = t[7];
+    const r = rng(((t[0] * 73856093) ^ (t[1] * 19349663)) >>> 0);
+    let h = t[3] > 0 ? t[3] / 10 : (cls === 2 ? 2.0 : cls === 1 ? 7.0 : 3.0) * (0.85 + r() * 0.3);
+    let R = t[4] > 0 ? t[4] / 20 : (cls === 2 ? h * 0.38 : Math.min(3.2, Math.max(1.2, h * 0.3)));
+    if(h >= 3) R = Math.max(R, 0.22 * h); R = Math.min(R, cls === 2 ? h * 0.9 : h * 0.6);
+    let shape = cls === 2 || h < 3 ? 3 : (SHAPE_OF[sp] !== undefined ? SHAPE_OF[sp] : (r() < 0.7 ? 0 : 2));
+    const yr = t[2] > -99999 ? t[2] / 100 : undefined; let y = Car.hAt(x, z, yr);
+    if(!Number.isFinite(y) || (yr !== undefined && Math.abs(y - yr) > 2.5)) y = yr !== undefined ? yr : (Number.isFinite(y) ? y : 0);
+    const tint = TINT[sp] || [0.88 + r() * 0.12, 0.94 + r() * 0.08, 0.80 + r() * 0.1], b = 0.88 + r() * 0.2;
+    // 樹冠の縦の伸び: 形の基準の樹冠の高さ（ry×2）と、実際の樹冠（樹高 −下端）の比
+    return { x, y: y - 0.05, z, rot: r() * 6.283, sy: h / H0, sxz: R / R0, shape, k: Math.floor(r() * 3), col: [tint[0] * b, tint[1] * b, tint[2] * b] };
+  }
+  const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _c = new THREE.Color(), _ax = new THREE.Vector3(0, 1, 0);
+  // タイル 1 枚ぶんの木を world に足す（Stream が veg@タイル を読んだ時。外した時は Stream がまとめて外す）
+  function addTile(tk){
+    if(!active || !D || !D.tiles[tk]) return; const _t0 = performance.now(); try { addTile1(tk); } finally { V48T.trees += performance.now() - _t0; }
+  }
+  function addTile1(tk){
+    mats();
+    const L = D.tiles[tk].map(place), groups = new Map(); V48T.ntree += L.length;
+    for(const p of L){ const key = p.shape * 3 + p.k; if(!groups.has(key)) groups.set(key, []); groups.get(key).push(p); }
+    const T = S.scene.tiles[tk], cx = T.x0 + T.size / 2, cz = T.z0 + T.size / 2;
+    for(const [key, arr] of groups){
+      const V = variant(Math.floor(key / 3), key % 3);
+      let ymin = 1e9, ymax = -1e9; for(const p of arr){ ymin = Math.min(ymin, p.y); ymax = Math.max(ymax, p.y + H0 * p.sy); }
+      const bs = new THREE.Sphere(new THREE.Vector3(cx, (ymin + ymax) / 2, cz), Math.hypot(T.size * 0.75, (ymax - ymin) / 2 + 20));
+      for(const part of ["crown", "trunk"]){
+        const g = new THREE.BufferGeometry(); for(const a in V[part].attributes) g.setAttribute(a, V[part].attributes[a]); g.boundingSphere = bs;   // 形の配列は共有（GPU にも 1 回）。範囲だけタイルごと
+        const m = new THREE.InstancedMesh(g, part === "crown" ? leafM : barkM, arr.length);
+        arr.forEach((p, i) => { _q.setFromAxisAngle(_ax, p.rot); _s.set(p.sxz, p.sy, p.sxz); _p.set(p.x, p.y, p.z); _m.compose(_p, _q, _s); m.setMatrixAt(i, _m);
+          if(part === "crown") m.setColorAt(i, _c.setRGB(p.col[0], p.col[1], p.col[2])); });
+        m.instanceMatrix.needsUpdate = true; if(m.instanceColor) m.instanceColor.needsUpdate = true;
+        m.castShadow = true; m.receiveShadow = true; if(part === "crown") m.customDepthMaterial = depthM;
+        m.name = "veg"; m.userData.shared = true; m.userData.trees = arr.length; m.matrixAutoUpdate = false; m.updateMatrix();
+        world.add(m);
+      }
+    }
+  }
+  return { get active(){ return active; }, addTile, data, get D(){ return D; } };
+})();
+/* v48: 植え込み（PLATEAU の植栽の面。生け垣・低木の植え込みが箱の形）を、葉の絵を世界座標で 3 方向から貼る材質で描く（以前は雑音の緑で、苔むした箱に見えた）。
+   葉の絵は 1.2m 四方で繰り返し。上面は明るく、側面の下ほど暗い（株元の影）。縁は少し欠く（刈り込んだ葉の不揃い） */
+const HEDGE_TEX = (() => {
+  const N = 512, c = document.createElement("canvas"); c.width = c.height = N; const g = c.getContext("2d");
+  let sd = 5; const r = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+  g.fillStyle = "#1d2a16"; g.fillRect(0, 0, N, N);
+  for(let i = 0; i < 2600; i++){
+    const x = r() * N, y = r() * N, L = 12 + r() * 12, W = L * (0.42 + r() * 0.15), a = r() * 6.283, hue = 86 + r() * 26, sat = 28 + r() * 20, lit = 14 + r() * 20;
+    for(const [dx, dy] of [[0, 0], [N, 0], [-N, 0], [0, N], [0, -N]]){
+      if(x + dx < -30 || x + dx > N + 30 || y + dy < -30 || y + dy > N + 30) continue;
+      g.save(); g.translate(x + dx, y + dy); g.rotate(a); g.fillStyle = `hsl(${hue},${sat}%,${lit}%)`; g.beginPath(); g.ellipse(0, 0, L / 2, W / 2, 0, 0, 6.283); g.fill();
+      g.fillStyle = `hsla(${hue + 5},${sat}%,${lit + 13}%,0.5)`; g.beginPath(); g.ellipse(-L * 0.1, -W * 0.12, L * 0.3, W * 0.2, 0, 0, 6.283); g.fill(); g.restore(); }
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); return t;
+})();
+let _hedgeM = null;
+function hedgeMat(){
+  if(_hedgeM) return _hedgeM;
+  const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+  m.customProgramCacheKey = () => "hedge48";
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uHT = { value: HEDGE_TEX };
+    sh.vertexShader = "varying vec3 vHW; varying vec3 vHN;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vHW = (modelMatrix * vec4(transformed, 1.0)).xyz; vHN = normalize(mat3(modelMatrix) * objectNormal);");
+    sh.fragmentShader = "uniform sampler2D uHT; varying vec3 vHW; varying vec3 vHN;\n" + sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
+      { vec3 bw = pow(abs(vHN), vec3(4.0)); bw /= (bw.x + bw.y + bw.z + 1e-4);
+        vec3 tx = texture2D(uHT, vHW.zy / 1.2).rgb * bw.x + texture2D(uHT, vHW.xz / 1.2).rgb * bw.y + texture2D(uHT, vHW.xy / 1.2).rgb * bw.z;
+        float lum = dot(tx, vec3(0.3, 0.59, 0.11));
+        diffuseColor.rgb = tx * 1.95 * mix(vec3(1.0), diffuseColor.rgb / max(0.25, dot(diffuseColor.rgb, vec3(0.33))) * 0.5, 0.25);
+        diffuseColor.rgb *= mix(0.78, 1.08, clamp(vHN.y * 0.5 + 0.5, 0.0, 1.0));
+      }`);
+  };
+  Env.patch(m, "leaf"); return (_hedgeM = m);
 }
 const OrthoPages = (() => {
   let ovTex = null, OV = null, active = false;
@@ -736,7 +1000,7 @@ const Env = (() => {
   const NWIN_FAC = `
         if(uNight > 0.01 && uTyp > -0.5 && glassF > 0.01){
           float n = uNight;
-          float rowKey = vColor.r*91.7 + vColor.b*57.3;
+          float rowKey = vq.r*91.7 + vq.b*57.3;
           float r1 = fract(hh*37.7), r2 = fract(hh*91.3 + 0.31), r3 = fract(hh*53.9 + 0.77);
           float rowh = nH(vec2(cell.y, rowKey));
           float typ = uTyp, lit;
@@ -787,6 +1051,8 @@ const Env = (() => {
     if(lamps || !Traffic.ready) return;
     // v36: 街灯は「小さく鋭い光源 + 弱いにじみ」。両方向の車線で重なる分は 7m 以内で1本にまとめる。色は LED の白 6割・ナトリウム灯の橙 4割
     const raw = Traffic.segsForLamps(), seen = new Set(), pts = [], cols = [];
+    // v48: 駅前広場（車線の無い所）にも 20m おきに照明（夜に広場だけ真っ暗だった）。範囲は地面の平板と同じ多角形
+    for(let x = -150; x <= -36; x += 20) for(let z = -150; z <= 70; z += 20){ if(-85 * (z + 160) - 240 * (x + 105) > -600) continue; raw.push(x, Car.hAt(x, z) + 8.0, z); }
     for(let i=0;i<raw.length;i+=3){
       const kx = Math.round(raw[i]/7), kz = Math.round(raw[i+2]/7), key = kx*100003 + kz;
       if(seen.has(key)) continue; seen.add(key);
@@ -1055,17 +1321,19 @@ const Stream = (() => {
   async function load(fk){
     const f = S.scene.files[fk]; if(!f) return;
     const buf = await fetchPacked(f.file);
+    if(fk.startsWith("veg@") && Trees.active) await Trees.data();   // v48: 街路樹の一覧（画面側で木を作る）
     const chunks = S.scene.chunks.filter(c=>c.file===fk);
     const pages = [...new Set(chunks.filter(c=>c.page!==undefined && c.mat==="tex").map(c=>c.page))];
     if(pages.length) await loadPages(pages);
     const before = world.children.length;
     buildChunks(chunks, {[fk]:buf}, S._atlas, S._ortho);
+    if(fk.startsWith("veg@")) Trees.addTile(fk.slice(4));
     const meshes = world.children.slice(before);
     loaded.set(fk, {meshes, pages});
   }
   function unload(fk){
     const e = loaded.get(fk); if(!e) return;
-    for(const m of e.meshes){ world.remove(m); m.geometry.dispose(); OrthoPages.unreg(m); }
+    for(const m of e.meshes){ world.remove(m); if(!m.userData.shared) m.geometry.dispose(); else if(m.isInstancedMesh) m.dispatchEvent({ type: "dispose" }); OrthoPages.unreg(m); }   // v48: 木は形を共有（捨てない）
     if(e.pages.length) releasePages(e.pages);
     loaded.delete(fk);
   }
@@ -2504,8 +2772,32 @@ function mat(c, atlas, ortho){
   Env.patch(m, c.mat); MATS[key]=m; if(MWMASK.tex && MWMASK_KINDS.has(c.mat)) mwMaskPatch(m); return m;
 }
 const MarkFix = { n: 0 };   // v43: 潰した標示の三角形の数（確認用）
+/* v48: 窓割りの外壁の「階」（UV の v、1 = 1 階分）は、パイプラインで PLATEAU の建物の基準の高さから数えている。
+   その基準が、画面の地面（歩道）より 0.5〜1.4 階分ほど低い建物がほとんどで、1 階（店・入口）が地面の下に埋まり、
+   地面の所に 1 階の上端の白い帯やガラスの上の端が細く出ていた（地上から見ると足元が光る筋）。
+   建物ごと（外壁の色が同じ・60m の区画）に、地面から 0.35m 以内にある頂点の v の中央値を求め、その建物の v から引く（1 階が地面から始まる）。
+   ファイルの配列をその場で書き換えるので、同じ配列に 2 度かけない */
+const _fgvDone = new WeakMap();
+function facadeGroundV(c, buf, q){
+  if(!Car.G) return; const _t0 = performance.now(); try { facadeGroundV1(c, buf, q); } finally { V48T.fgv += performance.now() - _t0; }
+}
+function facadeGroundV1(c, buf, q){
+  let done = _fgvDone.get(buf); if(!done){ done = new Set(); _fgvDone.set(buf, done); } if(done.has(c.uvi)) return; done.add(c.uvi);
+  const U = new Int16Array(buf, c.uvi, c.count * 2), C = new Uint8Array(buf, c.col, c.count * 4), sc = c.scale, o = c.origin;
+  const keys = new Int32Array(c.count), acc = new Map();
+  for(let i = 0; i < c.count; i++){
+    const x = o[0] + q[i * 3] * sc, y = o[1] + q[i * 3 + 1] * sc, z = o[2] + q[i * 3 + 2] * sc;
+    const k = ((C[i * 4] * 65536 + C[i * 4 + 1] * 256 + C[i * 4 + 2]) * 977 + Math.floor(x / 60) * 131 + Math.floor(z / 60) * 7919) | 0; keys[i] = k;
+    const g = Car.hAt(x, z); if(Math.abs(y - g) > 0.35) continue;
+    let a = acc.get(k); if(!a){ a = []; acc.set(k, a); } if(a.length < 64) a.push(U[i * 2 + 1]);
+  }
+  const off = new Map(); for(const [k, a] of acc){ a.sort((p, r) => p - r); const m = a[a.length >> 1]; if(m > 15 && m < 260) off.set(k, m); }   // 0.15〜2.6 階分のずれだけ直す
+  if(!off.size) return;
+  for(let i = 0; i < c.count; i++){ const m = off.get(keys[i]); if(m !== undefined) U[i * 2 + 1] = U[i * 2 + 1] - m; }
+}
 function buildChunks(chunks, bufs, atlas, ortho){
   for(const c of chunks){
+    if(c.layer==="veg" && Trees.active && (c.nrm!==undefined || c.mat==="color")) continue;   // v48: 木の樹冠・幹は画面側で作る（Trees）。植え込み（cover）だけ使う
     if(c.layer==="signal") continue;   // v19: 信号機は車線の信号データから画面側で作る（buildSignalsFromTraffic）
     const buf=bufs[c.file]; if(!buf) continue; const geo=new THREE.BufferGeometry();
     const q=new Int16Array(buf, c.pos, c.count*3);
@@ -2520,6 +2812,7 @@ function buildChunks(chunks, bufs, atlas, ortho){
       }
       if(nb) MarkFix.n+=nb; }
     geo.setAttribute("position", new THREE.BufferAttribute(q,3));
+    if(c.mat.startsWith("facade_") && c.uvi!==undefined && c.col!==undefined) facadeGroundV(c, buf, q);   // v48
     const tm = TEX_SCALE[c.mat];
     if(c.uvi!==undefined) geo.setAttribute("uv", new THREE.BufferAttribute(new Int16Array(buf,c.uvi,c.count*2),2,false));
     else if(c.uv!==undefined) geo.setAttribute("uv", new THREE.BufferAttribute(new Uint16Array(buf,c.uv,c.count*2),2,true));
@@ -2539,7 +2832,7 @@ function buildChunks(chunks, bufs, atlas, ortho){
         if(names.includes("uv")){ const uv=new Float32Array(c.count*2); for(let i=0;i<c.count;i++){ uv[i*2]=(c.origin[0]+q[i*3]*c.scale)/tm; uv[i*2+1]=(c.origin[2]+q[i*3+2]*c.scale)/tm; } out.uv = uv; }
         return out; }); }
     const OPG = c.mat==="ortho" && OrthoPages.active;   // v29: 屋根の写真はページの読み込みに合わせて差し替える
-    const mesh=new THREE.Mesh(geo, OPG ? OrthoPages.mat(c.page, "roof") : mat(c,atlas,ortho));
+    const mesh=new THREE.Mesh(geo, OPG ? OrthoPages.mat(c.page, "roof") : (c.layer==="veg" && c.mat==="leaf" && c.nrm===undefined && Trees.active) ? hedgeMat() : mat(c,atlas,ortho));   // v48: 植え込みは葉の絵の材質
     if(OPG) OrthoPages.reg(mesh, c.page, "roof");
     mesh.position.set(c.origin[0],c.origin[1],c.origin[2]); mesh.scale.setScalar(c.scale);
     mesh.matrixAutoUpdate=false; mesh.updateMatrix(); mesh.name=c.layer; mesh.userData.file=c.file;
@@ -6479,6 +6772,15 @@ const Peds = (() => {
   function init(J){
     if(!J || !J.nodes) return;
     NODE = J.nodes; ADJ = NODE.map(() => []);
+    // v48: 駅前広場へ延ばした軌道（芝生の軌道敷）の上を、工事前の歩道の線に沿って人が歩いていた。軌道の中心から 2.2m 以内を 4m 以上続けて通る辺は使わない（横断は短いので残る）
+    const TRK = new Set(); if(S.routes) for(const k of ["higashi", "seiki", "higashi_r", "seiki_r"]){ const t = S.routes[k] && S.routes[k].track; if(!t) continue;
+      for(let i = 1; i < t.length; i++){ const a = t[i - 1], b = t[i]; if(a[0] > -4 && b[0] > -4) continue; const L = Math.hypot(b[0] - a[0], b[2] - a[2]), n = Math.max(1, Math.ceil(L));
+        for(let j = 0; j <= n; j++){ const x = a[0] + (b[0] - a[0]) * j / n, z = a[2] + (b[2] - a[2]) * j / n; for(let dx = -1; dx <= 1; dx++) for(let dz = -1; dz <= 1; dz++) TRK.add(Math.floor(x + dx * 1.1) + "," + Math.floor(z + dz * 1.1)); } } }
+    const onTrk = (e) => { if(!TRK.size) return false; const P = e[8]; let run = 0;
+      for(let k = 1; k < P.length / 2; k++){ const x0 = P[2*k-2], z0 = P[2*k-1], x1 = P[2*k], z1 = P[2*k+1], L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(L));
+        for(let j = 0; j < n; j++){ const x = x0 + (x1 - x0) * j / n, z = z0 + (z1 - z0) * j / n; if(TRK.has(Math.floor(x) + "," + Math.floor(z))){ if(++run >= 4) return true; } else run = 0; } }
+      return false; };
+    const nE0 = J.edges.length; J.edges = J.edges.filter(e => !onTrk(e)); if(J.edges.length < nE0) console.log("peds: dropped edges on the plaza tracks", nE0 - J.edges.length);
     E = J.edges.map((e, i) => {
       const P = new Float32Array(e[8]), n = P.length / 2, cum = new Float32Array(n);
       for(let k = 1; k < n; k++) cum[k] = cum[k - 1] + Math.hypot(P[2*k] - P[2*k-2], P[2*k+1] - P[2*k-1]);
