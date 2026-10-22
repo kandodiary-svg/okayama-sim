@@ -256,12 +256,16 @@ const FACADE_UNIFORMS = { uSkyTop:{value:new THREE.Color(0x7fa7cf)}, uSkyHor:{va
    値: [type, 板の幅 m, 階の高さ m, 低層部の高さ m] [壁の色, 建物の高さ m] [差し色, 上の帯の高さ m] [ガラスの色, 窓の幅の割合]
    店名・看板の文字は入れない（看板は色の帯だけ） */
 const LANDMARKS = [
+  { id:84, name:"濃い灰色のガラスの塔（本町、屋上に BANK の看板）：暗い反射ガラス", poly:[[15.7, 41.9], [21.9, 42.0], [21.9, 21.4], [15.9, 21.4]], v:[[2,1.50,3.60,5.0],[0.30,0.31,0.33,30.0],[0.36,0.37,0.39,2.5],[0.16,0.19,0.22,0.00]] },
+  { id:282, name:"白い壁の中層ビル（本町、屋上に大型ビジョン）", poly:[[0.4, 41.8], [10.3, 42.0], [10.3, 21.9], [0.4, 21.9]], v:[[4,2.80,3.40,4.5],[0.88,0.88,0.86,27.0],[0.70,0.70,0.68,0.0],[0.12,0.15,0.18,0.48]] },
+  { id:339, name:"白い壁に窓の並ぶビル（本町、駅前の角）", poly:[[-20.5, 29.5], [-9.8, 41.9], [1.1, 41.9], [1.1, 21.1], [-11.2, 20.7]], v:[[4,2.40,3.30,4.5],[0.86,0.86,0.84,30.0],[0.66,0.66,0.64,0.0],[0.12,0.16,0.20,0.55]] },
+  { id:152, name:"ちゅうぎん駅前ビル（本町2-5）：石張りの縦のひれと青いガラス", poly:[[85.0, 22.8], [85.3, 54.1], [116.2, 53.9], [116.2, 42.1], [117.5, 42.1], [117.3, 22.7], [112.5, 22.7], [112.5, 21.6], [95.0, 21.6], [95.0, 22.8]], v:[[6,1.80,3.60,7.0],[0.80,0.79,0.76,31.0],[0.70,0.70,0.68,0.0],[0.22,0.32,0.46,0.00]] },
   { id:67, name:"新光ビル岡山（駅前町1-8-1）：青い反射ガラスのカーテンウォール、屋上に白い塔", poly:[[98.3, -48.8], [98.5, -28.1], [118.9, -28.1], [118.9, -48.8]], v:[[2,1.60,3.80,4.5],[0.90,0.90,0.89,38.0],[0.72,0.75,0.78,7.0],[0.20,0.40,0.64,0.40]] },
   { id:234, name:"朝日生命岡山桃太郎大通ビル（野田屋町1-1-15）：ベージュの壁に小さな窓", poly:[[323.6, -52.7], [323.7, -30.5], [351.0, -31.3], [350.9, -52.8]], v:[[4,3.20,3.40,4.0],[0.70,0.64,0.52,34.0],[0.55,0.50,0.41,0.0],[0.12,0.15,0.18,0.30]] },
   { id:276, name:"明治安田生命岡山ビル（駅前町1-9-15）：白い壁に奥まった四角い窓", poly:[[220.9, -44.9], [220.9, -34.0], [222.1, -33.9], [222.1, -29.2], [250.8, -29.3], [256.4, -33.4], [256.4, -50.2], [222.0, -50.1], [222.1, -45.1]], v:[[4,3.00,3.60,4.5],[0.90,0.90,0.88,44.0],[0.66,0.66,0.64,0.0],[0.10,0.13,0.16,0.42]] },
   { id:264, name:"リベールタワー（平和町1-1）：白いバルコニーの住宅の塔、低層は青緑のガラス", poly:[[299.0, 30.9], [299.6, 51.8], [301.7, 51.8], [301.8, 54.3], [320.3, 53.8], [320.1, 47.1], [324.1, 47.0], [324.3, 53.5], [339.0, 53.0], [338.8, 46.7], [339.9, 46.4], [339.4, 28.6], [337.6, 28.7], [337.4, 20.5], [334.6, 20.6], [334.5, 19.0], [309.9, 19.7], [307.2, 23.1], [305.1, 23.4], [305.1, 25.4], [302.9, 25.4], [302.9, 28.1], [301.7, 28.1]], v:[[5,3.40,3.00,16.0],[0.93,0.93,0.92,77.0],[0.72,0.77,0.80,0.0],[0.18,0.34,0.40,0.00]] },
   { id:114, name:"ワシントンホテルプラザ・桃太郎プラザ（本町3-6）：白いタイルの壁に小さな四角い窓、最上部は横長の窓", poly:[[189.4, 20.3], [189.7, 55.0], [227.8, 55.1], [227.8, 54.2], [241.0, 54.0], [240.9, 49.2], [242.6, 49.1], [242.5, 27.4], [240.7, 27.3], [240.7, 19.8]], v:[[4,2.60,3.00,8.5],[0.90,0.89,0.86,46.0],[0.62,0.62,0.60,5.5],[0.16,0.22,0.30,0.36]] },
-  { id:255, name:"成通岡山ビル（駅前町1-1-1）：青の濃淡のガラス板のカーテンウォール、屋上に白い看板の箱", poly:[[-29.7, -47.9], [-13.5, -27.8], [48.4, -27.8], [48.1, -49.1], [42.2, -48.9], [41.8, -69.5], [-25.5, -68.1]], v:[[1,1.40,1.75,5.0],[0.94,0.94,0.93,51.0],[0.80,0.13,0.13,13.0],[0.20,0.42,0.72,1.00]] },
+  { id:255, name:"成通岡山ビル（駅前町1-1-1）：青の濃淡のガラス板のカーテンウォール、屋上に白い看板の箱", poly:[[-29.7, -47.9], [-13.5, -27.8], [48.4, -27.8], [48.1, -49.1], [42.2, -48.9], [41.8, -69.5], [-25.5, -68.1]], v:[[1,1.40,1.75,5.0],[0.94,0.94,0.93,51.0],[0.80,0.13,0.13,13.0],[0.20,0.42,0.72,22.00]] },
   { id:41, name:"ICOTNICOT（旧ドレミの街、駅前町1-8-18）：明るい灰色の横ルーバー、上に黒い帯、低層は店の入口", poly:[[99.2, -67.0], [99.3, -47.8], [119.2, -47.8], [119.2, -28.1], [212.4, -28.3], [212.4, -64.0], [210.9, -64.0], [210.9, -70.8], [103.5, -70.6]], v:[[3,2.40,0.32,7.0],[0.84,0.85,0.86,43.0],[0.12,0.12,0.13,3.5],[0.10,0.12,0.13,0.00]] },
 ];
 LANDMARKS.forEach(L => { let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9; for(const [x, z] of L.poly){ x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } L.bb = [x0, z0, x1, z1]; });
@@ -339,7 +343,18 @@ function facadeMaterial(kind){
           #define LINE(c, w, aa) (1.0 - smoothstep(w, w + aa, c))
           vec3 col = Bw.rgb; float gl = 0.0;
           float dxm = min(lf.x, 1.0 - lf.x) * A.y, dym = min(lf.y, 1.0 - lf.y) * A.z;
-          if(ty < 1.5){            // 1: 色の違うガラス板を並べたカーテンウォール（青の濃淡のモザイク）
+          if(ty < 1.5 && Dg.w > 1.5 && wn.z > 0.6){   // 1b: 南面（大通り側）: 上は灰青のガラスの格子、下（Dg.w m まで）は白い菱形の格子の外装（v51: 街の写真を参考）
+            if(hg < Dg.w){
+              vec3 bk2 = vec3(0.70, 0.73, 0.75) * (0.92 + 0.1 * fract(sin(dot(floor(vec2(al / 1.2, hg / 1.2)), vec2(12.9, 78.2))) * 437.5));
+              float u1 = fract((al + hg) / 2.4), u2 = fract((al - hg) / 2.4);
+              float dl = min(min(u1, 1.0 - u1), min(u2, 1.0 - u2)) * 2.4 * 0.707;
+              float lat = 1.0 - smoothstep(0.07, 0.07 + max(aw, ah), dl);
+              col = mix(bk2, vec3(0.93, 0.93, 0.92), lat); gl = 0.5 * (1.0 - lat);
+            } else {
+              col = vec3(0.42, 0.48, 0.53) * (0.9 + 0.2 * r1); gl = 0.7;
+              float mul = max(LINE(dxm, 0.05, aw), LINE(dym, 0.06, ah)); col = mix(col, vec3(0.72, 0.74, 0.76), mul); gl *= 1.0 - mul;
+            }
+          } else if(ty < 1.5){            // 1: 色の違うガラス板を並べたカーテンウォール（青の濃淡のモザイク）
             // 写真では 濃紺・青・水色 の 3 段の板がばらばらに並ぶ
             col = r1 < 0.36 ? Dg.rgb * vec3(0.38, 0.45, 0.55) : r1 < 0.72 ? Dg.rgb : mix(Dg.rgb, vec3(0.62, 0.76, 0.9), 0.55);
             col *= 0.92 + 0.16 * fract(r1 * 7.1); gl = 0.55;
@@ -368,6 +383,13 @@ function facadeMaterial(kind){
             vec3 gw = Dg.rgb * (0.8 + 0.5 * r1); gw = mix(gw, vec3(0.62, 0.58, 0.5), step(0.85, r1));
             col = mix(col, gw, win); gl = win;
             if(Cc.w > 0.0 && hg > H - Cc.w){ float rib = step(abs(lf.y - 0.5) * 2.0, 0.55); col = mix(Bw.rgb, Dg.rgb * 1.1, rib); gl = rib; }
+          } else if(ty > 5.5){     // 6: 石張りの縦のひれ（A.y m おき）と青いガラス、低層部は石の柱とガラス（ちゅうぎん駅前ビル。v51: 街の写真を参考）
+            float fx = fract(al / A.y), fw = 0.55 / A.y;
+            float fin = 1.0 - smoothstep(fw, fw + aw / A.y, min(fx, 1.0 - fx) * 2.0);
+            vec3 gls = Dg.rgb * (0.85 + 0.3 * fract(sin(lc.y * 5.1 + floor(al / A.y) * 1.7) * 437.5));
+            gls = mix(gls, gls * 0.6, LINE(dym, 0.08, ah));
+            float sh = smoothstep(0.5, 1.0, fx) * 0.12;   // ひれの片側の陰
+            col = mix(gls * (1.0 - sh), Bw.rgb * (0.95 + 0.05 * fx), fin); gl = 1.0 - fin;
           } else {                 // 5: 住宅の塔（各階のバルコニー: 白い床の縁・すりガラスの手すり・奥の窓）
             if(hg < A.w){ col = Dg.rgb * (0.8 + 0.4 * r1); gl = 1.0; float mul = max(LINE(dxm, 0.05, aw), LINE(dym, 0.05, ah)); col = mix(col, vec3(0.7, 0.74, 0.76), mul); gl *= 1.0 - mul; }
             else {
@@ -815,6 +837,105 @@ function hedgeMat(){
   };
   Env.patch(m, "leaf"); return (_hedgeM = m);
 }
+/* ---------------- v51: 駅前の通りの小物（街の写真を参考に、見て形を合わせた。写真そのものは使っていない） ----------------
+   ・旧 岡山駅前電停（大通りの中央、x −6.8〜27.7）の上屋: 赤いアーチの屋根と「路面電車 Street Car」の帯（以前の茶色の平らな屋根は buildChunks で消す）
+   ・その東の端の中央分離帯の花壇（石の縁・刈り込みの植え込み・ツツジ・オレンジの木の枠の植木鉢）
+   ・南側のビルの屋上の看板の鉄骨（2 か所）と大型ビジョン */
+const StreetProps = (() => {
+  const SHEL = { x0: -3.0, x1: 13.0, z0: -4.45, z1: -1.75, top: 3.16 };   // ホーム面の高さ = 基準 2.91 + 0.25
+  function hideOldRoof(c, q){   // 旧 岡山駅前電停の平らな上屋と電停名の板（ホーム面 +2.3m より上）を潰す
+    if(c.layer !== "stop") return;
+    const sc = c.scale, o = c.origin; let n = 0;
+    for(let t = 0; t + 8 < c.count * 3; t += 9){
+      const cx = o[0] + (q[t] + q[t + 3] + q[t + 6]) / 3 * sc, cy = o[1] + (q[t + 1] + q[t + 4] + q[t + 7]) / 3 * sc, cz = o[2] + (q[t + 2] + q[t + 5] + q[t + 8]) / 3 * sc;
+      const inA = cx > SHEL.x0 - 0.5 && cx < SHEL.x1 + 0.5;   // アーチの外では柱も消す（屋根の無いホーム）
+      if(cx > -8 && cx < 29 && cz > -5.6 && cz < -0.6 && cy < SHEL.top + 4 && (cy > SHEL.top + 2.3 || (!inA && cy > SHEL.top + 1.3))){ for(let k = 3; k < 9; k++) q[t + k] = q[t + (k % 3)]; n++; }
+    }
+    return n;
+  }
+  function textTex(lines, w, h, bg, fg){
+    return canvasTex(w, h, (g) => { g.fillStyle = bg; g.fillRect(0, 0, w, h); g.fillStyle = fg; g.textAlign = "center"; g.textBaseline = "middle";
+      lines.forEach(([t, x, y, fs]) => { g.font = "bold " + fs + "px 'Hiragino Sans','Noto Sans JP','Noto Sans CJK JP','Yu Gothic',Arial,sans-serif"; g.fillText(t, x, y); }); });
+  }
+  function shelter(G){
+    const S = SHEL, L = S.x1 - S.x0, W = S.z1 - S.z0, cz = (S.z0 + S.z1) / 2, y0 = S.top + 2.45, rise = 0.95, seg = 14;
+    // アーチの屋根（上面: 赤、下面: 明るい灰）
+    const pos = [], col = [];
+    const red = [0.70, 0.13, 0.14], under = [0.80, 0.78, 0.74];
+    const P = (i) => { const a = i / seg * Math.PI; return [cz - Math.cos(a) * W / 2 * 1.08, y0 + Math.sin(a) * rise]; };
+    for(let i = 0; i < seg; i++){
+      const [za, ya] = P(i), [zb, yb] = P(i + 1);
+      for(const [yo, c, flip] of [[0, red, false], [-0.06, under, true]]){
+        const q = [[S.x0, ya + yo, za], [S.x1, ya + yo, za], [S.x1, yb + yo, zb], [S.x0, ya + yo, za], [S.x1, yb + yo, zb], [S.x0, yb + yo, zb]];
+        const ord = flip ? [0, 2, 1, 3, 5, 4] : [0, 1, 2, 3, 4, 5]; for(const k of ord){ pos.push(...q[k]); col.push(...c); } }
+    }
+    // 妻（両端のアーチ形の板）
+    for(const x of [S.x0, S.x1]) for(let i = 0; i < seg; i++){ const [za, ya] = P(i), [zb, yb] = P(i + 1); const tri = [[x, y0 - 0.45, cz], [x, ya, za], [x, yb, zb]];
+      for(const v of (x === S.x0 ? [tri[0], tri[2], tri[1]] : tri)){ pos.push(...v); col.push(...red); } }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
+    const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }); Env.patch(m, "color");
+    const roof = new THREE.Mesh(g, m); roof.castShadow = true; roof.receiveShadow = true; G.add(roof);
+    // 長い辺の帯（赤地に白い文字）
+    const tx = textTex([["路面電車  Street Car", 1024, 32, 40], ["岡山駅前", 260, 32, 40]], 2048, 64, "#b3241f", "#ffffff"); tx.wrapS = THREE.ClampToEdgeWrapping;
+    const fm = new THREE.MeshLambertMaterial({ map: tx, emissive: 0x2a2a2a, emissiveMap: tx }); Env.patch(fm, "signs");
+    for(const [z, ry] of [[S.z0 - W * 0.04 - 0.02, Math.PI], [S.z1 + W * 0.04 + 0.02, 0]]){
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(L, 0.45), fm); f.position.set((S.x0 + S.x1) / 2, y0 - 0.2, z); f.rotation.y = ry; G.add(f); }
+  }
+  function planter(G, x0, x1, z){
+    const L = x1 - x0, cx = (x0 + x1) / 2, Wd = 2.5, y = Car.hAt(cx, z);
+    const sh = new THREE.Shape(); const r = Wd / 2; sh.moveTo(-L / 2 + r, -r); sh.lineTo(L / 2 - r, -r); sh.absarc(L / 2 - r, 0, r, -Math.PI / 2, Math.PI / 2); sh.lineTo(-L / 2 + r, r); sh.absarc(-L / 2 + r, 0, r, Math.PI / 2, Math.PI * 1.5);
+    const curb = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 0.38, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.04, bevelSegments: 2 }), new THREE.MeshLambertMaterial({ color: 0x8f8d88 }));
+    curb.rotation.x = -Math.PI / 2; curb.position.set(cx, y, z); curb.receiveShadow = true; G.add(curb);
+    const soil = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshLambertMaterial({ color: 0x4a3a2a })); soil.rotation.x = -Math.PI / 2; soil.position.set(cx, y + 0.36, z); G.add(soil);
+    // 植え込み（刈り込んだ緑）とツツジ（ピンク）: 葉の材質の丸い塊
+    const hm = hedgeMat();
+    const blob = (x, zz, sx, sy, sz, tint) => { const gg = new THREE.SphereGeometry(1, 14, 10); const cc = new Float32Array(gg.attributes.position.count * 3); for(let i = 0; i < cc.length; i += 3){ cc[i] = tint[0]; cc[i + 1] = tint[1]; cc[i + 2] = tint[2]; } gg.setAttribute("color", new THREE.BufferAttribute(cc, 3));
+      const b = new THREE.Mesh(gg, tint[3] ? new THREE.MeshLambertMaterial({ vertexColors: true, map: AZALEA_TEX }) : hm); b.scale.set(sx, sy, sz); b.position.set(x, y + 0.36 + sy * 0.6, zz); b.castShadow = true; G.add(b); };
+    blob(cx - L * 0.12, z, L * 0.3, 0.75, Wd * 0.42, [0.6, 0.75, 0.5, 0]);
+    blob(cx + L * 0.28, z - 0.3, L * 0.16, 0.5, Wd * 0.3, [1, 1, 1, 1]);
+    blob(cx + L * 0.2, z + 0.5, L * 0.14, 0.45, Wd * 0.25, [1, 1, 1, 1]);
+    blob(cx - L * 0.36, z + 0.3, L * 0.1, 0.4, Wd * 0.22, [1, 1, 1, 1]);
+    // オレンジの木の枠（縦の板を並べた円筒）
+    const box = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.75, 24, 1, true), new THREE.MeshLambertMaterial({ map: SLAT_TEX, side: THREE.DoubleSide }));
+    box.position.set(cx + 0.4, y + 0.36 + 0.37, z + 0.25); G.add(box);
+  }
+  const AZALEA_TEX = canvasTex(128, 128, (g, w, h) => { g.fillStyle = "#3d5a2a"; g.fillRect(0, 0, w, h); for(let i = 0; i < 700; i++){ const v = Math.random(); g.fillStyle = v < 0.7 ? `hsl(${330 + Math.random() * 15},${60 + Math.random() * 20}%,${62 + Math.random() * 18}%)` : `hsl(100,35%,${22 + Math.random() * 15}%)`; g.beginPath(); g.arc(Math.random() * w, Math.random() * h, 2 + Math.random() * 3, 0, 6.3); g.fill(); } });
+  const SLAT_TEX = canvasTex(256, 64, (g, w, h) => { for(let i = 0; i < 24; i++){ g.fillStyle = `hsl(28,${70 + Math.random() * 10}%,${42 + Math.random() * 8}%)`; g.fillRect(i * w / 24, 0, w / 24 - 2, h); g.fillStyle = "#3a2414"; g.fillRect(i * w / 24 + w / 24 - 2, 0, 2, h); } g.fillStyle = "#2a1a10"; g.fillRect(0, h * 0.45, w, 3); });
+  // 屋上の看板の鉄骨（x: 線の位置、z0〜z1 の長さ、y: 屋上、H: 高さ）。部材は 1 つの InstancedMesh
+  function frames(G, list){
+    const mats = []; const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _p = new THREE.Vector3(), _e = new THREE.Euler();
+    const bar = (a, b, t) => { const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz);
+      _p.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); _q.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx / L, dy / L, dz / L)); _s.set(t, L, t); mats.push(_m.compose(_p, _q, _s).clone()); };
+    for(const F of list){
+      const nV = Math.max(2, Math.round((F.z1 - F.z0) / 2.4)), nH = Math.max(2, Math.round(F.H / 1.8));
+      for(const dx of [-0.6, 0.6]){ const x = F.x + dx;
+        for(let i = 0; i <= nV; i++){ const z = F.z0 + (F.z1 - F.z0) * i / nV; bar([x, F.y, z], [x, F.y + F.H, z], 0.16); }
+        for(let j = 0; j <= nH; j++){ const y = F.y + F.H * j / nH; bar([x, y, F.z0], [x, y, F.z1], 0.1); }
+        for(let i = 0; i < nV; i++) for(let j = 0; j < nH; j++){ const za = F.z0 + (F.z1 - F.z0) * i / nV, zb = F.z0 + (F.z1 - F.z0) * (i + 1) / nV, ya = F.y + F.H * j / nH, yb = F.y + F.H * (j + 1) / nH; bar([x, ya, (i + j) % 2 ? za : zb], [x, yb, (i + j) % 2 ? zb : za], 0.05); } }
+      for(let i = 0; i <= nV; i += 2) for(let j = 0; j <= nH; j += 2){ const z = F.z0 + (F.z1 - F.z0) * i / nV, y = F.y + F.H * j / nH; bar([F.x - 0.6, y, z], [F.x + 0.6, y, z], 0.06); }
+      for(let i = 0; i <= nV; i += 2){ const z = F.z0 + (F.z1 - F.z0) * i / nV; bar([F.x - 0.6, F.y + 0.05, z], [F.x - 2.2, F.y + 0.05, z], 0.12); bar([F.x - 2.2, F.y + 0.05, z], [F.x - 0.6, F.y + F.H * 0.45, z], 0.08); }   // 控え（斜めの支え）
+    }
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x8a8681 }), mats.length);
+    mats.forEach((m, i) => im.setMatrixAt(i, m)); im.instanceMatrix.needsUpdate = true; im.castShadow = true; G.add(im);
+  }
+  function screen(G, x, z, y, w, h){
+    const t = canvasTex(512, 384, (g, W, H) => { const gr = g.createLinearGradient(0, 0, W, H); gr.addColorStop(0, "#14243a"); gr.addColorStop(0.5, "#24456a"); gr.addColorStop(1, "#101820"); g.fillStyle = gr; g.fillRect(0, 0, W, H);
+      g.fillStyle = "rgba(255,255,255,0.08)"; for(let i = 0; i < H; i += 4) g.fillRect(0, i, W, 1); g.fillStyle = "rgba(255,210,120,0.35)"; g.fillRect(W * 0.08, H * 0.62, W * 0.5, H * 0.12); g.fillStyle = "rgba(255,255,255,0.3)"; g.fillRect(W * 0.08, H * 0.2, W * 0.7, H * 0.28); });
+    const m = new THREE.MeshLambertMaterial({ map: t, emissive: 0x2a2a2a, emissiveMap: t }); Env.patch(m, "signs");
+    const sc = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m); sc.position.set(x, y, z); sc.rotation.y = Math.PI; G.add(sc);
+    const bx = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, h + 0.4, 0.5), new THREE.MeshLambertMaterial({ color: 0x2c2e31 })); bx.position.set(x, y, z + 0.3); bx.castShadow = true; G.add(bx);
+  }
+  let made = false;
+  function build(){
+    if(made) return; made = true;
+    const G = new THREE.Group(); G.name = "streetprops";
+    shelter(G); planter(G, 29.2, 36.6, -3.1);
+    frames(G, [{ x: 28.0, z0: 24.0, z1: 39.0, y: 36.9, H: 11.0 }, { x: 82.0, z0: 23.5, z1: 37.5, y: 25.1, H: 10.0 }]);
+    screen(G, 5.5, 21.75, 30.6, 8.0, 5.6);
+    scene.add(G);
+  }
+  return { build, hideOldRoof };
+})();
 /* ---------------- v50: 店名・看板（data/signs.json。pipeline/signs_place.py で PLATEAU の壁に合わせて位置を決めた） ----------------
    内容は写真資料（Wikimedia Commons のライセンス写真・調査ガイド）で確かめられたものだけ。文字は一般の書体で書く（ロゴのマーク・独自の字形は写さない）。
    bg の無い看板は壁に付けた切り文字（透明の地）。glow の看板は夜に内側から光る（Env の "signs" と同じ扱い）。袖看板（blade）は両面 */
@@ -1352,6 +1473,7 @@ async function loadAll(){
   await _memlog("signals");
   try { const pj = await JP.peds; if(pj) Peds.init(pj); } catch(e){ console.warn("peds", e); }
   ShopSigns.build().catch(e => console.warn("signs", e));   // v50: 店名・看板
+  try { StreetProps.build(); } catch(e){ console.warn("props", e); }   // v51: 電停の上屋・花壇・屋上の鉄骨・大型ビジョン
   await _memlog("peds");
   try { const jj = await JP.jr; if(jj){ JR.init(jj); buildJRPicker(); } } catch(e){ console.warn("jr", e); }
   await _memlog("jr");
@@ -2956,7 +3078,8 @@ function facadeGroundV1(c, buf, q){
 function buildChunks(chunks, bufs, atlas, ortho){
   for(const c of chunks){
     if(c.layer==="veg" && Trees.active && (c.nrm!==undefined || c.mat==="color")) continue;   // v48: 木の樹冠・幹は画面側で作る（Trees）。植え込み（cover）だけ使う
-    if(c.layer==="signal") continue;   // v19: 信号機は車線の信号データから画面側で作る（buildSignalsFromTraffic）
+    if(c.layer==="signal") continue;   // v19
+    if(c.layer==="stop" && typeof StreetProps!=="undefined" && bufs[c.file]) StreetProps.hideOldRoof(c, new Int16Array(bufs[c.file], c.pos, c.count*3));   // v51: 信号機は車線の信号データから画面側で作る（buildSignalsFromTraffic）
     const buf=bufs[c.file]; if(!buf) continue; const geo=new THREE.BufferGeometry();
     const q=new Int16Array(buf, c.pos, c.count*3);
     // v43: 路面の標示（白線など）で、頂点の一部が上の段（立体交差の上の道・トンネルの上の地面）の高さを拾って
