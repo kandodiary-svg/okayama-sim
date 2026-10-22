@@ -2093,6 +2093,57 @@ function hedgeMat(){
   };
   Env.patch(m, "leaf"); return (_hedgeM = m);
 }
+/* ---------------- v50: 店名・看板（data/signs.json。pipeline/signs_place.py で PLATEAU の壁に合わせて位置を決めた） ----------------
+   内容は写真資料（Wikimedia Commons のライセンス写真・調査ガイド）で確かめられたものだけ。文字は一般の書体で書く（ロゴのマーク・独自の字形は写さない）。
+   bg の無い看板は壁に付けた切り文字（透明の地）。glow の看板は夜に内側から光る（Env の "signs" と同じ扱い）。袖看板（blade）は両面 */
+const ShopSigns = (() => {
+  let made = false;
+  const FONT_JA = "'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP','Noto Sans CJK JP','Yu Gothic','Meiryo',sans-serif";
+  function tex(S){
+    const ppm = 96, W = Math.max(64, Math.min(2048, Math.round(S.w * ppm))), H = Math.max(64, Math.min(2048, Math.round(S.h * ppm)));
+    return canvasTex(W, H, (g, w, h) => {
+      g.clearRect(0, 0, w, h);
+      if(S.bg){ g.fillStyle = S.bg; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(0,0,0,0.18)"; g.lineWidth = Math.max(2, h * 0.02); g.strokeRect(1, 1, w - 2, h - 2); }
+      g.fillStyle = S.fg; g.textAlign = "center"; g.textBaseline = "middle";
+      const latin = /^[\x20-\x7e]+$/.test(S.text), fam = latin ? "'Helvetica Neue',Arial," + FONT_JA : FONT_JA;
+      if(S.vert){   // 縦書き（1 字ずつ上から）
+        const n = [...S.text].length, fs = Math.min(w * 0.72, h * 0.86 / n); g.font = "bold " + Math.floor(fs) + "px " + fam;
+        [...S.text].forEach((ch, i) => g.fillText(ch, w / 2, h / 2 + (i - (n - 1) / 2) * fs * 1.08));
+        return; }
+      const lines = S.sub ? [[S.text, 0.56], [S.sub, 0.26]] : [[S.text, 0.74]];
+      let y = h * (S.sub ? 0.40 : 0.53);
+      for(const [t, k] of lines){
+        let fs = h * k; g.font = "bold " + Math.floor(fs) + "px " + fam;
+        const mw = g.measureText(t).width; if(mw > w * 0.9){ fs *= w * 0.9 / mw; g.font = "bold " + Math.floor(fs) + "px " + fam; }
+        g.fillText(t, w / 2, y); y += h * (S.sub ? 0.38 : 0); }
+    });
+  }
+  async function build(){
+    if(made) return; made = true;
+    let L = null; try { L = await getJSON("data/signs.json"); } catch(e){ return; }
+    if(!L) return;
+    const grp = new THREE.Group(); grp.name = "shopsigns";
+    for(const S of L){
+      const t = tex(S);
+      const m = new THREE.MeshLambertMaterial({ map: t, transparent: !S.bg, alphaTest: S.bg ? 0 : 0.4, side: S.blade ? THREE.DoubleSide : THREE.FrontSide,
+        emissive: S.glow ? 0x2a2a2a : 0x000000, emissiveMap: S.glow ? t : null, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+      if(S.glow) Env.patch(m, "signs");
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(S.w, S.h), m);
+      mesh.position.set(S.c[0], S.c[1], S.c[2]); mesh.rotation.y = Math.atan2(S.n[0], S.n[1]);
+      mesh.castShadow = !!S.bg; mesh.receiveShadow = true; mesh.userData.sign = S.text;
+      grp.add(mesh);
+      if(S.bg && !S.blade){   // 箱の看板は厚みを付ける（横から見て紙にならないよう）
+        const box = new THREE.Mesh(new THREE.BoxGeometry(S.w, S.h, 0.2), new THREE.MeshLambertMaterial({ color: 0x8c8f92 }));
+        box.position.set(S.c[0] - S.n[0] * 0.11, S.c[1], S.c[2] - S.n[1] * 0.11); box.rotation.y = mesh.rotation.y; grp.add(box); }
+      if(S.blade){   // 袖看板の腕（壁と看板をつなぐ 2 本）
+        for(const dy of [-0.4, 0.4]){ const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.5), new THREE.MeshLambertMaterial({ color: 0x55585b }));
+          const nx = S.n[1], nz = -S.n[0];   // 壁の外向き（看板の面と直角）
+          arm.position.set(S.c[0] - nx * (S.w / 2 + 0.12), S.c[1] + dy * S.h, S.c[2] - nz * (S.w / 2 + 0.12)); arm.rotation.y = Math.atan2(nx, nz); grp.add(arm); } }
+    }
+    scene.add(grp);
+  }
+  return { build };
+})();
 const OrthoPages = (() => {
   let ovTex = null, OV = null, active = false;
   const tex = [], loading = new Set(), regs = new Map(), pmats = new Map(), omats = new Map();
@@ -2578,6 +2629,7 @@ async function loadAll(){
   try { const sj = await JP.signals; buildSignals(sj, rt); } catch(e){ console.warn("signals", e); }
   await _memlog("signals");
   try { const pj = await JP.peds; if(pj) Peds.init(pj); } catch(e){ console.warn("peds", e); }
+  ShopSigns.build().catch(e => console.warn("signs", e));   // v50: 店名・看板
   await _memlog("peds");
   try { const jj = await JP.jr; if(jj){ JR.init(jj); buildJRPicker(); } } catch(e){ console.warn("jr", e); }
   await _memlog("jr");
@@ -11385,5 +11437,5 @@ applyMenu();
 (PAGE==="menu" ? menuBoot() : loadAll()).catch(e=>{ console.error(e); Boot.fail("データの読み込みに失敗しました。通信の状態を確認して、もう一度お試しください。", e, true); });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__MarkFix = MarkFix; window.__CityTun = CityTun; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
-window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream; window.__Stamps = Stamps;
+window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream; window.__Stamps = Stamps; window.__ShopSigns = ShopSigns;
 })();
