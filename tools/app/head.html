@@ -531,9 +531,9 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
 
 /* 出発地・選択肢（小さいボタン） */
 .hstarts{ display:flex; flex-wrap:wrap; gap:8px; }
-#menu .hstart-opt, #menu .cstart-opt, #menu .cstart-dir, #menu .time-opt, #menu .rain-opt, #menu .look-opt, #menu .shadow-opt{ padding:9px 15px; border:2px solid var(--rule); border-radius:999px; background:#fff; color:var(--ink); font-size:14px; font-weight:700; cursor:pointer; }
-#menu .hstart-opt:hover, #menu .cstart-opt:hover, #menu .cstart-dir:hover, #menu .time-opt:hover, #menu .rain-opt:hover, #menu .look-opt:hover, #menu .shadow-opt:hover{ border-color:#aeb8c6; }
-#menu .hstart-opt.on, #menu .cstart-opt.on, #menu .cstart-dir.on, #menu .time-opt.on, #menu .rain-opt.on, #menu .look-opt.on, #menu .shadow-opt.on{ background:var(--lc); border-color:var(--lc); color:#fff; }
+#menu .hstart-opt, #menu .cstart-opt, #menu .cstart-dir, #menu .time-opt, #menu .rain-opt, #menu .look-opt, #menu .shadow-opt, #menu .post-opt{ padding:9px 15px; border:2px solid var(--rule); border-radius:999px; background:#fff; color:var(--ink); font-size:14px; font-weight:700; cursor:pointer; }
+#menu .hstart-opt:hover, #menu .cstart-opt:hover, #menu .cstart-dir:hover, #menu .time-opt:hover, #menu .rain-opt:hover, #menu .look-opt:hover, #menu .shadow-opt:hover, #menu .post-opt:hover{ border-color:#aeb8c6; }
+#menu .hstart-opt.on, #menu .cstart-opt.on, #menu .cstart-dir.on, #menu .time-opt.on, #menu .rain-opt.on, #menu .look-opt.on, #menu .shadow-opt.on, #menu .post-opt.on{ background:var(--lc); border-color:var(--lc); color:#fff; }
 #mw-start-sel{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }
 #mw-place{ min-width:240px; padding:9px 12px; border:2px solid var(--rule); border-radius:12px; background:#fff; color:var(--ink); font-size:14px; }
 
@@ -771,6 +771,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
             <button type="button" class="look-opt" data-look="photo" title="PLATEAU の実際の外壁写真（解像度が低く、近くではぼやけます）">建物: 実写</button>
             <button type="button" class="look-opt" data-look="crisp" title="窓割りのある外壁（色は写真から推定）。軽い">建物: 窓割り</button>
             <button type="button" class="shadow-opt on" data-shadow="1">影: あり</button>
+            <button type="button" class="post-opt on" title="最高 = 物が接する所の陰り・夜の光のにじみ・色の仕上げを足す（PC 向け）。標準 = 以前の描き方（軽い）">画質: 最高</button>
             <button type="button" class="ctl-opt" data-ctl="auto" title="画面のハンドル・ペダル・操作ボタン。自動 = タッチ画面のときだけ出す">操作ボタン: 自動</button>
           </div></details>
           <button type="button" class="dia-opt on" hidden tabindex="-1" aria-hidden="true">ダイヤ運行: あり</button>

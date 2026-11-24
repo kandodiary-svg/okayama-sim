@@ -118,6 +118,133 @@ function updateSun(){
   sun.target.position.copy(c); sun.position.copy(c).addScaledVector(SUN_DIR, 1200); sun.target.updateMatrixWorld();
 }
 function setShadows(on){ renderer.shadowMap.enabled=on; sun.castShadow=on; scene.traverse(o=>{ if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.needsUpdate=true); } }); }
+/* v54: 映像の仕上げ（Post）。街を一度 画面外の画像（4 倍のアンチエイリアス・HDR）に描き、そこから
+   ・物が接する所・隅の陰り（SSAO: 深度から 12 方向を調べる。半分の解像度で計算し、深度を見ながらぼかす。遠く〔霧の中〕は弱める）
+   ・明るい所の光のにじみ（ブルーム: 夜の街灯・看板・前照灯、昼は太陽の周りだけ。5 段の縮小・拡大）
+   ・明るい所の白飛びをなめらかに（0.8 までの色は元のまま）・外壁写真の輪郭を少しくっきり・画面の端をわずかに暗く・空の縞を消す細かい揺らぎ
+   を足して画面に出す。運転台・ミラーは今まで通りその上に重ねる。設定の「画質: 最高／標準」で切り替え（標準 = v53 までと同じ描き方）。
+   WebGL2 が無い・画面外の画像が作れない時は自動で標準 */
+const Post = (() => {
+  const gl2 = renderer.capabilities.isWebGL2;
+  let want = true; try { const j = JSON.parse(localStorage.getItem("okaden.v1") || "null"); if(j && j.misc && j.misc.post === false) want = false; } catch(e){}
+  let ok = gl2, rt = null, aoA = null, aoB = null, bl = [], W = 0, H = 0, failed = false;
+  const qcam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), qscene = new THREE.Scene();
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), null); quad.frustumCulled = false; qscene.add(quad);
+  const VS = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
+  const mk = (u, fs) => new THREE.ShaderMaterial({ uniforms: u, vertexShader: VS, fragmentShader: fs, depthTest: false, depthWrite: false });
+  const DEPTH = `uniform sampler2D tDepth; uniform float uNear, uFar; uniform vec2 uTan;
+    float vZ(vec2 uv){ float d = texture2D(tDepth, uv).x; return (uNear * uFar) / ((uFar - uNear) * d - uFar); }
+    vec3 vP(vec2 uv, float z){ return vec3((uv * 2.0 - 1.0) * uTan * (-z), z); }`;
+  const aoM = mk({ tDepth: { value: null }, uNear: { value: 0.3 }, uFar: { value: 3500 }, uTan: { value: new THREE.Vector2(1, 1) }, uPx: { value: new THREE.Vector2(1, 1) }, uR: { value: 2.2 }, uF0: { value: 120 }, uF1: { value: 330 } },
+    DEPTH + `uniform vec2 uPx; uniform float uR, uF0, uF1; varying vec2 vUv;
+    void main(){
+      float d = texture2D(tDepth, vUv).x; if(d >= 0.99999){ gl_FragColor = vec4(1.0); return; }
+      float z = vZ(vUv), dist = -z; float fade = 1.0 - smoothstep(uF0, uF1, dist);
+      if(fade <= 0.0){ gl_FragColor = vec4(1.0); return; }
+      vec3 P = vP(vUv, z);
+      vec2 ox = vec2(uPx.x, 0.0), oy = vec2(0.0, uPx.y);
+      vec3 Pr = vP(vUv + ox, vZ(vUv + ox)), Pl = vP(vUv - ox, vZ(vUv - ox)), Pu = vP(vUv + oy, vZ(vUv + oy)), Pd = vP(vUv - oy, vZ(vUv - oy));
+      vec3 dx = abs(Pr.z - P.z) < abs(P.z - Pl.z) ? Pr - P : P - Pl;
+      vec3 dy = abs(Pu.z - P.z) < abs(P.z - Pd.z) ? Pu - P : P - Pd;
+      vec3 N = normalize(cross(dx, dy)); if(dot(N, P) > 0.0) N = -N;
+      float R = uR * (1.0 + dist * 0.004);
+      float sr = min(R / (dist * uTan.y * 2.0), 0.10); float asp = uTan.x / uTan.y;
+      float ang = 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      float occ = 0.0, bias = 0.06 + dist * 0.0006;
+      for(int i = 0; i < 12; i++){
+        float t = (float(i) + 0.5) / 12.0; float a = ang + float(i) * 2.3999632;
+        vec2 suv = vUv + vec2(cos(a) / asp, sin(a)) * (t * t * 0.85 + 0.15) * sr;
+        if(suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
+        vec3 v = vP(suv, vZ(suv)) - P; float vv = dot(v, v);
+        float fo = max(0.0, 1.0 - vv / (R * R));
+        occ += fo * max(0.0, dot(v, N) * inversesqrt(vv + 1e-4) - bias);
+      }
+      float ao = clamp(1.0 - occ / 12.0 * 1.8, 0.0, 1.0);
+      gl_FragColor = vec4(mix(1.0, ao, fade), 1.0, 1.0, 1.0);
+    }`);
+  const blurM = mk({ tAO: { value: null }, tDepth: { value: null }, uNear: { value: 0.3 }, uFar: { value: 3500 }, uTan: { value: new THREE.Vector2(1, 1) }, uDir: { value: new THREE.Vector2(1, 0) } },
+    DEPTH + `uniform sampler2D tAO; uniform vec2 uDir; varying vec2 vUv;
+    void main(){
+      float z0 = vZ(vUv), s = 0.0, w = 0.0;
+      for(int i = -3; i <= 3; i++){ vec2 uv = vUv + uDir * float(i);
+        float g = exp(-float(i * i) / 8.0) * exp(-abs(vZ(uv) - z0) / (0.03 * abs(z0) + 0.05));
+        s += texture2D(tAO, uv).r * g; w += g; }
+      gl_FragColor = vec4(s / w, 1.0, 1.0, 1.0);
+    }`);
+  const brightM = mk({ tColor: { value: null }, uTh: { value: 1.0 }, uPx: { value: new THREE.Vector2() } }, `uniform sampler2D tColor; uniform float uTh; uniform vec2 uPx; varying vec2 vUv;
+    void main(){ vec3 c = (texture2D(tColor, vUv + uPx * vec2(-0.5, -0.5)).rgb + texture2D(tColor, vUv + uPx * vec2(0.5, -0.5)).rgb + texture2D(tColor, vUv + uPx * vec2(-0.5, 0.5)).rgb + texture2D(tColor, vUv + uPx * vec2(0.5, 0.5)).rgb) * 0.25;
+      float l = max(c.r, max(c.g, c.b)); float k = smoothstep(uTh, uTh + 0.35, l) * (1.0 + max(l - 1.0, 0.0)); gl_FragColor = vec4(min(c * k, vec3(8.0)), 1.0); }`);
+  const downM = mk({ t: { value: null }, uPx: { value: new THREE.Vector2() } }, `uniform sampler2D t; uniform vec2 uPx; varying vec2 vUv;
+    void main(){ vec3 s = texture2D(t, vUv).rgb * 4.0 + texture2D(t, vUv + uPx * vec2(-1.0, -1.0)).rgb + texture2D(t, vUv + uPx * vec2(1.0, -1.0)).rgb + texture2D(t, vUv + uPx * vec2(-1.0, 1.0)).rgb + texture2D(t, vUv + uPx * vec2(1.0, 1.0)).rgb; gl_FragColor = vec4(s / 8.0, 1.0); }`);
+  const upM = mk({ t: { value: null }, tAdd: { value: null }, uPx: { value: new THREE.Vector2() }, uW: { value: 0.6 } }, `uniform sampler2D t, tAdd; uniform vec2 uPx; uniform float uW; varying vec2 vUv;
+    void main(){ vec3 s = vec3(0.0);
+      s += texture2D(t, vUv + uPx * vec2(-2.0, 0.0)).rgb + texture2D(t, vUv + uPx * vec2(2.0, 0.0)).rgb + texture2D(t, vUv + uPx * vec2(0.0, -2.0)).rgb + texture2D(t, vUv + uPx * vec2(0.0, 2.0)).rgb;
+      s += (texture2D(t, vUv + uPx * vec2(-1.0, -1.0)).rgb + texture2D(t, vUv + uPx * vec2(1.0, -1.0)).rgb + texture2D(t, vUv + uPx * vec2(-1.0, 1.0)).rgb + texture2D(t, vUv + uPx * vec2(1.0, 1.0)).rgb) * 2.0;
+      gl_FragColor = vec4(s / 12.0 * 1.15 + texture2D(tAdd, vUv).rgb * uW, 1.0); }`);
+  const compM = mk({ tColor: { value: null }, tAO: { value: null }, tBloom: { value: null }, uPx: { value: new THREE.Vector2() }, uAO: { value: 0.85 }, uBloom: { value: 0.2 }, uSharp: { value: 0.22 }, uVig: { value: 0.16 }, uSat: { value: 1.04 }, uDbg: { value: 0 } },
+    `uniform sampler2D tColor, tAO, tBloom; uniform vec2 uPx; uniform float uAO, uBloom, uSharp, uVig, uSat, uDbg; varying vec2 vUv;
+    float sh1(float x){ return x <= 0.8 ? x : 0.8 + 0.2 * (1.0 - exp(-(x - 0.8) / 0.2)); }
+    void main(){
+      vec3 c = texture2D(tColor, vUv).rgb;
+      vec3 nb = (texture2D(tColor, vUv + vec2(uPx.x, 0.0)).rgb + texture2D(tColor, vUv - vec2(uPx.x, 0.0)).rgb + texture2D(tColor, vUv + vec2(0.0, uPx.y)).rgb + texture2D(tColor, vUv - vec2(0.0, uPx.y)).rgb) * 0.25;
+      vec3 dif = c - nb; c += clamp(dif, -0.08, 0.08) * uSharp * 4.0 * (1.0 - smoothstep(0.08, 0.3, length(dif)));
+      c *= mix(1.0, texture2D(tAO, vUv).r, uAO);
+      c += texture2D(tBloom, vUv).rgb * uBloom;
+      c = max(c, 0.0); c = vec3(sh1(c.r), sh1(c.g), sh1(c.b));
+      float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = max(mix(vec3(l), c, uSat), 0.0);
+      vec2 q = vUv - 0.5; c *= 1.0 - uVig * smoothstep(0.25, 0.85, dot(q, q) * 2.2);
+      c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
+      if(uDbg > 0.5) c = uDbg > 1.5 ? texture2D(tBloom, vUv).rgb : vec3(texture2D(tAO, vUv).r);   // 確認用（window.__Post._m.compM.uniforms.uDbg: 1 = 陰りだけ、2 = にじみだけ）
+      gl_FragColor = vec4(c, 1.0);
+    }`);
+  function rtOpt(type){ return { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type, depthBuffer: false, stencilBuffer: false }; }
+  let fType = THREE.HalfFloatType;
+  function alloc(){
+    const v = new THREE.Vector2(); renderer.getDrawingBufferSize(v); const w = Math.max(2, v.x | 0), h = Math.max(2, v.y | 0);
+    if(rt && w === W && h === H) return; W = w; H = h; free();
+    if(!renderer.extensions.has("EXT_color_buffer_float") && !renderer.extensions.has("EXT_color_buffer_half_float")) fType = THREE.UnsignedByteType;
+    rt = new THREE.WebGLMultisampleRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, type: fType, depthBuffer: true, stencilBuffer: false });
+    rt.samples = 4; rt.depthTexture = new THREE.DepthTexture(w, h, THREE.UnsignedIntType); rt.depthTexture.minFilter = rt.depthTexture.magFilter = THREE.NearestFilter;
+    const hw = Math.max(1, w >> 1), hh = Math.max(1, h >> 1);
+    aoA = new THREE.WebGLRenderTarget(hw, hh, rtOpt(THREE.UnsignedByteType)); aoB = new THREE.WebGLRenderTarget(hw, hh, rtOpt(THREE.UnsignedByteType));
+    bl = []; let bw = hw, bh = hh;
+    for(let i = 0; i < 6; i++){ bl.push({ d: new THREE.WebGLRenderTarget(bw, bh, rtOpt(fType)), u: i ? new THREE.WebGLRenderTarget(bw, bh, rtOpt(fType)) : null, w: bw, h: bh }); bw = Math.max(1, bw >> 1); bh = Math.max(1, bh >> 1); }
+    bl[0].u = new THREE.WebGLRenderTarget(hw, hh, rtOpt(fType));
+  }
+  function free(){ if(rt){ rt.depthTexture.dispose(); rt.dispose(); } if(aoA){ aoA.dispose(); aoB.dispose(); } for(const b of bl){ b.d.dispose(); if(b.u) b.u.dispose(); } rt = null; bl = []; }
+  function pass(m, target){ quad.material = m; renderer.setRenderTarget(target); renderer.render(qscene, qcam); }
+  let aoOn = true;
+  function render(scene, cam){
+    if(!(want && ok && !failed)){ renderer.render(scene, cam); return; }
+    try {
+      alloc();
+      renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, cam);
+      const night = (typeof NIGHT_U !== "undefined") ? NIGHT_U.value : 0;
+      const tanY = Math.tan(cam.fov * Math.PI / 360), tanX = tanY * cam.aspect;
+      for(const m of [aoM, blurM]){ m.uniforms.tDepth.value = rt.depthTexture; m.uniforms.uNear.value = cam.near; m.uniforms.uFar.value = cam.far; m.uniforms.uTan.value.set(tanX, tanY); }
+      const hk = cam.far > 4000 ? 3 : 1;   // ヘリで高く上がった時は遠くまで
+      if(aoOn){
+        aoM.uniforms.uPx.value.set(1 / W, 1 / H); aoM.uniforms.uF0.value = 120 * hk; aoM.uniforms.uF1.value = 330 * hk; aoM.uniforms.uR.value = hk > 1 ? 4.0 : 2.2;
+        pass(aoM, aoA);
+        blurM.uniforms.tAO.value = aoA.texture; blurM.uniforms.uDir.value.set(2 / W, 0); pass(blurM, aoB);
+        blurM.uniforms.tAO.value = aoB.texture; blurM.uniforms.uDir.value.set(0, 2 / H); pass(blurM, aoA);
+      }
+      // ブルーム: 夜は街灯・看板・前照灯、昼は太陽の周りなどごく明るい所だけ
+      brightM.uniforms.tColor.value = rt.texture; brightM.uniforms.uTh.value = night > 0.5 ? 0.6 : night > 0.2 ? 0.98 : 1.05;   // 昼は 1 を超える所（太陽・強い照り返し）だけ。白い車・外壁はにじませない brightM.uniforms.uPx.value.set(1 / W, 1 / H);
+      pass(brightM, bl[0].d);
+      for(let i = 1; i < bl.length; i++){ downM.uniforms.t.value = bl[i - 1].d.texture; downM.uniforms.uPx.value.set(0.5 / bl[i - 1].w, 0.5 / bl[i - 1].h); pass(downM, bl[i].d); }
+      let src = bl[bl.length - 1].d;
+      for(let i = bl.length - 2; i >= 0; i--){ upM.uniforms.t.value = src.texture; upM.uniforms.tAdd.value = bl[i].d.texture; upM.uniforms.uPx.value.set(0.5 / bl[i + 1].w, 0.5 / bl[i + 1].h); pass(upM, bl[i].u); src = bl[i].u; }
+      compM.uniforms.tColor.value = rt.texture; compM.uniforms.tAO.value = aoA.texture; compM.uniforms.tBloom.value = src.texture; compM.uniforms.uPx.value.set(1 / W, 1 / H);
+      compM.uniforms.uAO.value = aoOn ? (night > 0.5 ? 0.6 : 0.85) : 0; compM.uniforms.uBloom.value = night > 0.5 ? 0.75 : night > 0.2 ? 0.35 : 0.12;
+      pass(compM, null);
+    } catch(e){ failed = true; console.warn("Post off", e); renderer.setRenderTarget(null); renderer.render(scene, cam); }
+  }
+  function set(on){ want = !!on; if(!want) free(); W = H = 0; try { Prefs.setM("post", want); } catch(e){} syncBtn(); }
+  function syncBtn(){ document.querySelectorAll(".post-opt").forEach(b => { b.classList.toggle("on", want); b.textContent = "画質: " + (want ? "最高" : "標準"); }); }
+  return { render, set, syncBtn, get on(){ return want && ok && !failed; }, setAO(v){ aoOn = !!v; }, get rt(){ return rt; }, _m: { aoM, compM, brightM } };
+})();
+window.__Post = Post;
 const world = new THREE.Group(); scene.add(world);
 
 /* ---------------- 手続き的テクスチャ（路面材質） ---------------- */
@@ -7112,6 +7239,7 @@ document.querySelectorAll(".cstart-opt").forEach(b=>b.addEventListener("click",(
 document.querySelectorAll(".cstart-dir").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".cstart-dir").forEach(x=>x.classList.remove("on")); b.classList.add("on"); S.mwDir=b.dataset.dir; }));
 document.querySelectorAll(".look-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".look-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on"); setLook(b.dataset.look); }));
 document.querySelectorAll(".dia-opt").forEach(b=>b.addEventListener("click",()=>{ const on=!b.classList.contains("on"); b.classList.toggle("on",on); b.textContent="ダイヤ運行: "+(on?"あり":"なし"); Dia.setOn(on); }));
+document.querySelectorAll(".post-opt").forEach(b=>b.addEventListener("click",()=>Post.set(!b.classList.contains("on")))); Post.syncBtn();
 document.querySelectorAll(".shadow-opt").forEach(b=>b.addEventListener("click",()=>{ const on=!b.classList.contains("on"); b.classList.toggle("on",on); b.textContent="影: "+(on?"あり":"なし"); setShadows(on); }));
 Car.bindUI();
 // 車モード: 他の車・電車との接触（進む先の車体の範囲に何かあれば止める）
@@ -10412,7 +10540,7 @@ function loop(now){
     scene.fog.near = FOG_BASE.near*hk; scene.fog.far = FOG_BASE.far*hk; const cf = hk>1 ? 14000 : 3500; if(camera.far!==cf){ camera.far=cf; camera.updateProjectionMatrix(); } }
   if(window.__camfix){ const c=window.__camfix; camera.position.set(c.pos[0],c.pos[1],c.pos[2]); camera.lookAt(c.look[0],c.look[1],c.look[2]); }   // 確認用の固定カメラ
   const sky=scene.getObjectByName("sky"); if(sky) sky.position.copy(camera.position);
-  renderer.render(scene,camera);
+  Post.render(scene,camera);   // v54: 映像の仕上げ（画質: 最高）。標準なら今まで通り renderer.render
   if(S.mode==="car"||S.mode==="bus") Mirrors.render(renderer, scene);
   Cab.active = S.mode==="tram" && S.running && S.view==="cab";
   if(Cab.active){ Cab.update(dt,S); renderer.autoClear=false; Cab.render(renderer); renderer.autoClear=true; Mirrors.renderTram(renderer, scene); }
