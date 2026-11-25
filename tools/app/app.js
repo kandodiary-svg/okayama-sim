@@ -1206,25 +1206,35 @@ function hedgeMat(){
    ・南側のビルの屋上の看板の鉄骨（2 か所）と大型ビジョン */
 const StreetProps = (() => {
   const SHEL = { x0: -6.0, x1: 27.0, z0: -4.45, z1: -1.75, top: 3.16 };   // v52: 写真では屋根がホームのほぼ全長   // ホーム面の高さ = 基準 2.91 + 0.25
-  function hideOldRoof(c, q){   // 旧 岡山駅前電停の平らな上屋と電停名の板（ホーム面 +2.3m より上）を潰す
+  // v60: ストリートビューと比べて、東の降車ホーム（x 57.6〜83.9）にも同じ赤いアーチの屋根があった（以前は茶色の平らな屋根のまま）
+  const SHEL2 = { x0: 57.4, x1: 84.1, z0: -5.0, z1: -2.75, top: 3.16 };
+  const inShel = (S, cx, cz, pad) => cx > S.x0 - pad && cx < S.x1 + pad && cz > S.z0 - 1.2 && cz < S.z1 + 1.2;
+  function hideOldRoof(c, q, buf){   // 旧 岡山駅前電停の平らな上屋と電停名の板（ホーム面 +2.3m より上）を潰す
     if(c.layer !== "stop") return;
     const sc = c.scale, o = c.origin; let n = 0;
     for(let t = 0; t + 8 < c.count * 3; t += 9){
       const cx = o[0] + (q[t] + q[t + 3] + q[t + 6]) / 3 * sc, cy = o[1] + (q[t + 1] + q[t + 4] + q[t + 7]) / 3 * sc, cz = o[2] + (q[t + 2] + q[t + 5] + q[t + 8]) / 3 * sc;
       const inA = cx > SHEL.x0 - 0.5 && cx < SHEL.x1 + 0.5;   // アーチの外では柱も消す（屋根の無いホーム）
       if(cx > -8 && cx < 29 && cz > -5.6 && cz < -0.6 && cy < SHEL.top + 4 && (cy > SHEL.top + 2.3 || (!inA && cy > SHEL.top + 1.3))){ for(let k = 3; k < 9; k++) q[t + k] = q[t + (k % 3)]; n++; }
+      else if(inShel(SHEL2, cx, cz, 0.6) && ((cy > SHEL2.top + 2.3 && cy < SHEL2.top + 4) || (cy > SHEL2.top + 0.4 && Math.abs(cz - (SHEL2.z0 + SHEL2.z1) / 2) < 0.35 && cy < SHEL2.top + 4))){ /* 屋根と、ホームの真ん中の古い柱 */ for(let k = 3; k < 9; k++) q[t + k] = q[t + (k % 3)]; n++; }
     }
+    // v60: 柱・柵は写真では銀色に近い灰色（以前は焦げ茶）。ホーム面より上の茶色の頂点だけ灰色に
+    if(buf && c.col !== undefined){ const cl = new Uint8Array(buf, c.col, c.count * 4);
+      for(let i = 0; i < c.count; i++){ const x = o[0] + q[i * 3] * sc, y = o[1] + q[i * 3 + 1] * sc, z = o[2] + q[i * 3 + 2] * sc;
+        if(!(inShel(SHEL, x, z, 1.5) || inShel(SHEL2, x, z, 1.5)) || y < SHEL.top + 0.15) continue;
+        const r = cl[i * 4], g = cl[i * 4 + 1], b = cl[i * 4 + 2];
+        if(r > b + 18 && r < 170){ const v = 150 + ((i * 37) % 9); cl[i * 4] = v; cl[i * 4 + 1] = v + 1; cl[i * 4 + 2] = v + 3; } } }
     return n;
   }
   function textTex(lines, w, h, bg, fg){
     return canvasTex(w, h, (g) => { g.fillStyle = bg; g.fillRect(0, 0, w, h); g.fillStyle = fg; g.textAlign = "center"; g.textBaseline = "middle";
       lines.forEach(([t, x, y, fs]) => { g.font = "bold " + fs + "px 'Hiragino Sans','Noto Sans JP','Noto Sans CJK JP','Yu Gothic',Arial,sans-serif"; g.fillText(t, x, y); }); });
   }
-  function shelter(G){
-    const S = SHEL, L = S.x1 - S.x0, W = S.z1 - S.z0, cz = (S.z0 + S.z1) / 2, y0 = S.top + 2.45, rise = 0.7, seg = 14;
+  function shelter(G, S, lab){
+    S = S || SHEL; const L = S.x1 - S.x0, W = S.z1 - S.z0, cz = (S.z0 + S.z1) / 2, y0 = S.top + 2.7, rise = (S.z1 - S.z0) * 0.5, seg = 18;   // v60: 写真では高い半円のアーチ
     // アーチの屋根（上面: 赤、下面: 明るい灰）
     const pos = [], col = [];
-    const red = [0.70, 0.13, 0.14], under = [0.80, 0.78, 0.74];
+    const red = [0.80, 0.22, 0.22], under = [0.72, 0.50, 0.34];   // v60: 写真では明るい赤、下面は木目のような茶
     const P = (i) => { const a = i / seg * Math.PI; return [cz - Math.cos(a) * W / 2 * 1.08, y0 + Math.sin(a) * rise]; };
     for(let i = 0; i < seg; i++){
       const [za, ya] = P(i), [zb, yb] = P(i + 1);
@@ -1239,10 +1249,20 @@ const StreetProps = (() => {
     const m = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }); Env.patch(m, "color");
     const roof = new THREE.Mesh(g, m); roof.castShadow = true; roof.receiveShadow = true; G.add(roof);
     // 長い辺の帯（赤地に白い文字）
-    const tx = textTex([["路面電車  Street Car", 1024, 32, 40], ["岡山駅前", 260, 32, 40]], 2048, 64, "#b3241f", "#ffffff"); tx.wrapS = THREE.ClampToEdgeWrapping;
+    const tx = textTex([["路面電車  Street Car", 1024, 32, 40], [lab || "岡山駅前", 260, 32, 40]], 2048, 64, "#b3241f", "#ffffff"); tx.wrapS = THREE.ClampToEdgeWrapping;
     const fm = new THREE.MeshLambertMaterial({ map: tx, emissive: 0x2a2a2a, emissiveMap: tx }); Env.patch(fm, "signs");
     for(const [z, ry] of [[S.z0 - W * 0.04 - 0.02, Math.PI], [S.z1 + W * 0.04 + 0.02, 0]]){
       const f = new THREE.Mesh(new THREE.PlaneGeometry(L, 0.45), fm); f.position.set((S.x0 + S.x1) / 2, y0 - 0.2, z); f.rotation.y = ry; G.add(f); }
+    // v60: 柱（銀色の丸い柱を両側に約 4.4m おき。古い柱は屋根の高さを上げたので上を足す）
+    { const nP = Math.max(2, Math.round(L / 4.4)), pm = new THREE.MeshLambertMaterial({ color: 0x9a9b9c }); Env.patch(pm, "color");
+      const pg = new THREE.CylinderGeometry(0.075, 0.075, y0 - S.top, 10), im = new THREE.InstancedMesh(pg, pm, (nP + 1) * 2), _m = new THREE.Matrix4(); let k = 0;
+      for(let i = 0; i <= nP; i++) for(const z of [S.z0 + 0.12, S.z1 - 0.12]){ _m.makeTranslation(S.x0 + 0.3 + (L - 0.6) * i / nP, (S.top + y0) / 2, z); im.setMatrixAt(k++, _m); }
+      im.instanceMatrix.needsUpdate = true; im.castShadow = true; G.add(im); }
+    // v60: 妻の帯（ストリートビューでは端の面に「降車ホーム Arrivals only」などの帯）
+    const et = textTex(lab ? [["路面電車  Street Car", 256, 18, 20], [lab, 256, 62, 50], ["Arrivals only", 256, 106, 30]] : [["路面電車  Street Car", 256, 18, 20], ["岡山駅前", 256, 62, 50], ["Okayama-Ekimae", 256, 106, 28]], 512, 128, "#d0474a", "#ffffff");
+    const em = new THREE.MeshLambertMaterial({ map: et, emissive: 0x2a2a2a, emissiveMap: et }); Env.patch(em, "signs");
+    for(const [x, ry] of [[S.x0 - 0.03, -Math.PI / 2], [S.x1 + 0.03, Math.PI / 2]]){
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.08, W * 0.36), em); f.position.set(x, y0 + W * 0.1, cz); f.rotation.y = ry; G.add(f); }
   }
   function planter(G, x0, x1, z){
     const L = x1 - x0, cx = (x0 + x1) / 2, Wd = 2.5, y = Car.hAt(cx, z);
@@ -1374,7 +1394,7 @@ const StreetProps = (() => {
   function build(){
     if(made) return; made = true;
     const G = new THREE.Group(); G.name = "streetprops";
-    shelter(G); planter(G, 29.2, 36.6, -3.1);
+    shelter(G); shelter(G, SHEL2, "降車ホーム"); planter(G, 29.2, 36.6, -3.1);
     frames(G, [{ x: 28.0, z0: 24.0, z1: 39.0, y: 36.9, H: 11.0 }, { x: 82.0, z0: 23.5, z1: 37.5, y: 25.1, H: 10.0 }]);
     screen(G, 5.5, 21.75, 30.6, 8.0, 5.6);
     try { lamps(G); shelters(G); } catch(e){ console.warn("lamps", e); }
@@ -3629,7 +3649,7 @@ function buildChunks(chunks, bufs, atlas, ortho){
   for(const c of chunks){
     if(c.layer==="veg" && Trees.active && (c.nrm!==undefined || c.mat==="color")) continue;   // v48: 木の樹冠・幹は画面側で作る（Trees）。植え込み（cover）だけ使う
     if(c.layer==="signal") continue;   // v19
-    if(c.layer==="stop" && typeof StreetProps!=="undefined" && bufs[c.file]) StreetProps.hideOldRoof(c, new Int16Array(bufs[c.file], c.pos, c.count*3));   // v51: 信号機は車線の信号データから画面側で作る（buildSignalsFromTraffic）
+    if(c.layer==="stop" && typeof StreetProps!=="undefined" && bufs[c.file]) StreetProps.hideOldRoof(c, new Int16Array(bufs[c.file], c.pos, c.count*3), bufs[c.file]);   // v51: 信号機は車線の信号データから画面側で作る（buildSignalsFromTraffic）
     const buf=bufs[c.file]; if(!buf) continue; const geo=new THREE.BufferGeometry();
     const q=new Int16Array(buf, c.pos, c.count*3);
     // v43: 路面の標示（白線など）で、頂点の一部が上の段（立体交差の上の道・トンネルの上の地面）の高さを拾って
@@ -10820,7 +10840,7 @@ function loop(now){
   if(S.mode!=="car" && S.mode!=="bus" && S.mode!=="heli") updateCamera();
   { const hk = S.mode==="heli" && Heli.H.active ? Heli.fogK : 1;   // v17: 高い所では霧・描画距離を遠く
     scene.fog.near = FOG_BASE.near*hk; scene.fog.far = FOG_BASE.far*hk; const cf = hk>1 ? 14000 : 3500; if(camera.far!==cf){ camera.far=cf; camera.updateProjectionMatrix(); } }
-  if(window.__camfix){ const c=window.__camfix; camera.position.set(c.pos[0],c.pos[1],c.pos[2]); camera.lookAt(c.look[0],c.look[1],c.look[2]); }   // 確認用の固定カメラ
+  if(window.__camfix){ const c=window.__camfix; camera.position.set(c.pos[0],c.pos[1],c.pos[2]); camera.lookAt(c.look[0],c.look[1],c.look[2]); if(c.fov && camera.fov !== c.fov){ camera.fov = c.fov; camera.updateProjectionMatrix(); } }   // 確認用の固定カメラ
   const sky=scene.getObjectByName("sky"); if(sky) sky.position.copy(camera.position);
   Post.render(scene,camera);   // v54: 映像の仕上げ（画質: 最高）。標準なら今まで通り renderer.render
   if(S.mode==="car"||S.mode==="bus") Mirrors.render(renderer, scene);
