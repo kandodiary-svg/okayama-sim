@@ -1541,9 +1541,12 @@ const TEX = {
   asphalt: canvasTex(256,256,(g,w,h)=>{ noise(g,w,h,"#4a4b4d",0.10,9000);
     g.strokeStyle="rgba(20,20,20,0.18)"; g.lineWidth=1; for(let i=0;i<6;i++){ g.beginPath(); g.moveTo(Math.random()*w,Math.random()*h); g.lineTo(Math.random()*w,Math.random()*h); g.stroke(); } }),
   paving: canvasTex(256,256,(g,w,h)=>{ // インターロッキング(約30cm角)
-    g.fillStyle="#b3aa9b"; g.fillRect(0,0,w,h);
-    const s=32; for(let y=0;y<h;y+=s){ for(let x=0;x<w;x+=s){ const off=(y/s)%2? s/2:0; const v=0.9+Math.random()*0.16;
-      g.fillStyle=`rgb(${179*v|0},${170*v|0},${155*v|0})`; g.fillRect((x+off)%w+1,y+1,s-2,s-2); } }
+    // v60: ストリートビューの桃太郎大通りの歩道: 灰色の平板に、赤茶と濃い灰の市松の帯（以前は一様なベージュ）
+    g.fillStyle="#8d8a86"; g.fillRect(0,0,w,h);
+    const s=32; for(let y=0;y<h;y+=s){ for(let x=0;x<w;x+=s){ const r=y/s, c=x/s, v=0.9+Math.random()*0.14;
+      const band = r>=5, chk = (r+c)%2===0;
+      const col = band ? (chk ? [126,90,78] : [112,108,104]) : [160,158,153];
+      g.fillStyle=`rgb(${col[0]*v|0},${col[1]*v|0},${col[2]*v|0})`; g.fillRect(x+1,y+1,s-2,s-2); } }
     noise(g,w,h,"rgba(0,0,0,0)",0.06,3000); }),
   island: canvasTex(128,128,(g,w,h)=>{ noise(g,w,h,"#9d9a92",0.08,2500); }),
   grass: canvasTex(128,128,(g,w,h)=>{ noise(g,w,h,"#5c7a3e",0.2,5000); }),
@@ -2464,7 +2467,7 @@ let _hedgeM = null;
 function hedgeMat(){
   if(_hedgeM) return _hedgeM;
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
-  m.customProgramCacheKey = () => "hedge48";
+  m.customProgramCacheKey = () => "hedge60";
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uHT = { value: HEDGE_TEX };
     sh.vertexShader = "varying vec3 vHW; varying vec3 vHN;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vHW = (modelMatrix * vec4(transformed, 1.0)).xyz; vHN = normalize(mat3(modelMatrix) * objectNormal);");
@@ -2474,6 +2477,13 @@ function hedgeMat(){
         float lum = dot(tx, vec3(0.3, 0.59, 0.11));
         diffuseColor.rgb = tx * 1.95 * mix(vec3(1.0), diffuseColor.rgb / max(0.25, dot(diffuseColor.rgb, vec3(0.33))) * 0.5, 0.25);
         diffuseColor.rgb *= mix(0.78, 1.08, clamp(vHN.y * 0.5 + 0.5, 0.0, 1.0));
+        /* v60: ストリートビューでは大通りの植え込みの多くがレッドロビン（新芽が赤い）。8m ごとに赤い区間と緑の区間、上面ほど赤い */
+        float rh = fract(sin(dot(floor(vHW.xz / 8.0), vec2(12.9898, 78.233))) * 43758.5453);
+        float lv = texture2D(uHT, vHW.xz / 0.53 + 0.37).g;
+        float redF = step(0.42, rh) * mix(0.3, 0.75, clamp(vHN.y, 0.0, 1.0)) * smoothstep(0.06, 0.16, lv);
+        float lv2 = texture2D(uHT, vHW.xz / 0.31 + vHW.y * 0.37).g; redF *= smoothstep(0.07, 0.13, lv2);
+        diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.20, 0.03, 0.03), vec3(0.46, 0.06, 0.06), clamp(lv2 * 5.0, 0.0, 1.0)) * clamp(tx.g * 5.5, 0.35, 1.1), redF * 0.85);
+        diffuseColor.rgb *= 0.86;
       }`);
   };
   Env.patch(m, "leaf"); return (_hedgeM = m);
@@ -2541,6 +2551,21 @@ const StreetProps = (() => {
     const em = new THREE.MeshLambertMaterial({ map: et, emissive: 0x2a2a2a, emissiveMap: et }); Env.patch(em, "signs");
     for(const [x, ry] of [[S.x0 - 0.03, -Math.PI / 2], [S.x1 + 0.03, Math.PI / 2]]){
       const f = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.08, W * 0.36), em); f.position.set(x, y0 + W * 0.1, cz); f.rotation.y = ry; G.add(f); }
+  }
+  /* v60: 路面の「桃太郎大通り」の文字（ストリートビューでは交差点の間の車線に白い大きな縦書き。手前から奥へ読む） */
+  function roadText(G){
+    const N = 6, cw = 128, tx = canvasTex(cw, cw * N, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = "rgba(240,240,236,0.92)"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.font = "bold 112px 'Hiragino Sans','Noto Sans JP','Noto Sans CJK JP','Yu Gothic',sans-serif";
+      [..."桃太郎大通り"].forEach((ch, i) => g.fillText(ch, w / 2, h - (i + 0.5) * w)); });   // 下（手前）から 1 文字目
+    const m = new THREE.MeshLambertMaterial({ map: tx, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -10 });
+    const geo = new THREE.PlaneGeometry(2.2, N * 4.0);   // 路面の文字は進む方向に長く伸ばす
+    const curbZ = (x, z, dz) => { for(let i = 0; i < 80; i++){ const zz = z + dz * i * 0.5; let ok = true; for(let j = 0; j <= 8; j++) if(Car.kindAt(x, zz + dz * j * 0.5) !== 2){ ok = false; break; } if(ok) return zz; } return null; };
+    for(const x of [120, 365, 520, 713, 832]) for(const dir of [1, -1]){
+      const cb = curbZ(x, dir > 0 ? -6 : 0, dir > 0 ? -1 : 1); if(cb === null) continue; const z = cb + dir * 5.3;   // 歩道側から 2 本目の車線
+      const y = Car.hAt(x, z); if(!(y > -50)) continue;
+      const k = Car.kindAt(x, z); if(k !== 1) continue;
+      const me = new THREE.Mesh(geo, m); me.rotation.order = "YXZ"; me.rotation.y = dir > 0 ? -Math.PI / 2 : Math.PI / 2; me.rotation.x = -Math.PI / 2;
+      me.position.set(x, y + 0.03, z); me.receiveShadow = true; G.add(me); }
   }
   function planter(G, x0, x1, z){
     const L = x1 - x0, cx = (x0 + x1) / 2, Wd = 2.5, y = Car.hAt(cx, z);
@@ -2672,7 +2697,7 @@ const StreetProps = (() => {
   function build(){
     if(made) return; made = true;
     const G = new THREE.Group(); G.name = "streetprops";
-    shelter(G); shelter(G, SHEL2, "降車ホーム"); planter(G, 29.2, 36.6, -3.1);
+    shelter(G); shelter(G, SHEL2, "降車ホーム"); try { roadText(G); } catch(e){ console.warn("roadText", e); } planter(G, 29.2, 36.6, -3.1);
     frames(G, [{ x: 28.0, z0: 24.0, z1: 39.0, y: 36.9, H: 11.0 }, { x: 82.0, z0: 23.5, z1: 37.5, y: 25.1, H: 10.0 }]);
     screen(G, 5.5, 21.75, 30.6, 8.0, 5.6);
     try { lamps(G); shelters(G); } catch(e){ console.warn("lamps", e); }
