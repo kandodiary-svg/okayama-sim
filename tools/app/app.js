@@ -181,7 +181,7 @@ const Post = (() => {
       s += texture2D(t, vUv + uPx * vec2(-2.0, 0.0)).rgb + texture2D(t, vUv + uPx * vec2(2.0, 0.0)).rgb + texture2D(t, vUv + uPx * vec2(0.0, -2.0)).rgb + texture2D(t, vUv + uPx * vec2(0.0, 2.0)).rgb;
       s += (texture2D(t, vUv + uPx * vec2(-1.0, -1.0)).rgb + texture2D(t, vUv + uPx * vec2(1.0, -1.0)).rgb + texture2D(t, vUv + uPx * vec2(-1.0, 1.0)).rgb + texture2D(t, vUv + uPx * vec2(1.0, 1.0)).rgb) * 2.0;
       gl_FragColor = vec4(s / 12.0 * 1.15 + texture2D(tAdd, vUv).rgb * uW, 1.0); }`);
-  const compM = mk({ tColor: { value: null }, tAO: { value: null }, tBloom: { value: null }, uPx: { value: new THREE.Vector2() }, uAO: { value: 0.85 }, uBloom: { value: 0.2 }, uSharp: { value: 0.22 }, uVig: { value: 0.16 }, uSat: { value: 1.04 }, uDbg: { value: 0 } },
+  const compM = mk({ tColor: { value: null }, tAO: { value: null }, tBloom: { value: null }, uPx: { value: new THREE.Vector2() }, uAO: { value: 0.85 }, uBloom: { value: 0.2 }, uSharp: { value: 0.22 }, uVig: { value: 0.16 }, uSat: { value: 1.18 }, uDbg: { value: 0 } },
     `uniform sampler2D tColor, tAO, tBloom; uniform vec2 uPx; uniform float uAO, uBloom, uSharp, uVig, uSat, uDbg; varying vec2 vUv;
     float sh1(float x){ return x <= 0.8 ? x : 0.8 + 0.2 * (1.0 - exp(-(x - 0.8) / 0.2)); }
     void main(){
@@ -191,6 +191,7 @@ const Post = (() => {
       c *= mix(1.0, texture2D(tAO, vUv).r, uAO);
       c += texture2D(tBloom, vUv).rgb * uBloom;
       c = max(c, 0.0); c = vec3(sh1(c.r), sh1(c.g), sh1(c.b));
+      { vec3 cc = clamp(c, 0.0, 1.0); c += (cc * cc * (3.0 - 2.0 * cc) - cc) * 0.28; }   // v58: 日なたと日陰の差を写真に近く（ゆるい S 字）
       float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = max(mix(vec3(l), c, uSat), 0.0);
       vec2 q = vUv - 0.5; c *= 1.0 - uVig * smoothstep(0.25, 0.85, dot(q, q) * 2.2);
       c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0;
@@ -477,7 +478,8 @@ function facadeMaterial(kind){
   m.onBeforeCompile=(sh)=>{
     sh.uniforms.uSkyTop=FACADE_UNIFORMS.uSkyTop; sh.uniforms.uSkyHor=FACADE_UNIFORMS.uSkyHor; sh.uniforms.uLM = LANDMARK_U;
     sh.vertexShader = "attribute float aSpec; attribute float aGH; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vSpec = aSpec; vGH = aGH; vSW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-    sh.fragmentShader = "uniform vec3 uSkyTop; uniform vec3 uSkyHor; uniform vec4 uLM[" + (LANDMARKS.length * 4) + "]; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + FROOM_GLSL + sh.fragmentShader
+    const SIGN_P = { shop: 0.92, office: 0.80, curtain: 0.62, apt: 0.50, house: 0.14, house_old: 0.18 }[kind] || 0.0;
+    sh.fragmentShader = "#define SIGN_P " + SIGN_P.toFixed(2) + "\n" + "uniform vec3 uSkyTop; uniform vec3 uSkyHor; uniform vec4 uLM[" + (LANDMARKS.length * 4) + "]; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + FROOM_GLSL + sh.fragmentShader
       .replace("#include <map_fragment>", `
         vec2 fuv = vUv; float flr = floor(fuv.y); vec2 frc = fract(fuv);
         vec2 tuv = vec2(frc.x, flr < 0.5 ? frc.y*0.5 : 0.5 + frc.y*0.5);
@@ -568,8 +570,40 @@ function facadeMaterial(kind){
           float jx = min(frc.x, 1.0 - frc.x); diffuseColor.rgb *= 1.0 - wallF * 0.09 * (1.0 - smoothstep(0.004, 0.012, jx));
           if(flr < 0.5) diffuseColor.rgb *= mix(0.70, 1.0, smoothstep(0.0, 0.16, frc.y));
           diffuseColor.rgb *= 0.94 + 0.08 * fract(sin((flr + bk*17.0)*78.233)*43758.5453) * wallF; }
+        // v58: 縦長の看板（壁の端の柱間に、2 階から上へ数階分。テナントの名前の帯の代わりに色と白い字の形だけ）
+        if(flr > 0.5 && vSpec < 0.5 && fract(sin(cell.x * 5.17 + bk * 13.3) * 43758.5453) < SIGN_P * 0.38){
+          float nF = 2.0 + floor(fract(bk * 9.1) * 5.0);
+          if(flr <= nF){
+            float vx = step(0.14, frc.x) * step(frc.x, 0.46);
+            float qv = fract(bk * 31.7 + cell.x * 0.37);
+            vec3 vc = qv < 0.2 ? vec3(0.75, 0.12, 0.10) : qv < 0.38 ? vec3(0.12, 0.30, 0.64) : qv < 0.52 ? vec3(0.94, 0.93, 0.90) : qv < 0.66 ? vec3(0.95, 0.74, 0.10) : qv < 0.8 ? vec3(0.12, 0.46, 0.28) : vec3(0.10, 0.10, 0.11);
+            vec3 vt = (qv > 0.38 && qv < 0.66) ? vec3(0.12, 0.12, 0.14) : vec3(0.98);
+            float ch = step(0.2, frc.x) * step(frc.x, 0.40) * step(0.12, fract(frc.y * 2.0)) * step(fract(frc.y * 2.0), 0.82) * step(0.5, fract(sin((flr * 2.0 + floor(frc.y * 2.0)) * 7.3 + bk * 91.0) * 437.5) + 0.3);
+            float aaV = 1.0 - smoothstep(0.08, 0.25, max(fwidth(frc.x), fwidth(frc.y)) * 6.0);
+            vec3 vs = mix(vc, vt, ch * aaV);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vs, vx); glassF *= 1.0 - vx; gEm = mix(gEm, vs * 0.3, vx);
+          }
+        }
+        // v58: 1 階の店の上の看板の帯（店ごとの色・白い文字の帯）と日よけ。実際の通りの写真のように 1 階に色を足す（店名は書かない）
+        if(flr < 0.5 && vSpec < 0.5){
+          float shX = floor(cell.x * 0.5), shF = fract(cell.x * 0.5) * 2.0;   // 2 柱間で 1 軒の店
+          float sP = fract(sin((shX * 3.71 + bk * 41.3) * 12.9898) * 43758.5453), sQ = fract(sP * 7.31 + bk * 3.1);
+          if(sP < SIGN_P){
+            vec3 sc = sQ < 0.16 ? vec3(0.72, 0.10, 0.10) : sQ < 0.30 ? vec3(0.10, 0.28, 0.62) : sQ < 0.42 ? vec3(0.12, 0.48, 0.26) : sQ < 0.52 ? vec3(0.92, 0.70, 0.08) : sQ < 0.62 ? vec3(0.90, 0.42, 0.10) : sQ < 0.74 ? vec3(0.94, 0.93, 0.90) : sQ < 0.84 ? vec3(0.12, 0.12, 0.13) : sQ < 0.92 ? vec3(0.55, 0.12, 0.42) : vec3(0.08, 0.55, 0.62);
+            float band = step(0.72, frc.y) * step(frc.y, 0.99) * (shF < 0.5 ? step(0.02, frc.x) : step(frc.x, 0.98));
+            float sx2 = (shF + frc.x) * 0.5; float tx = fract(sx2 * mix(8.0, 14.0, sQ)); float txt = step(0.79, frc.y) * step(frc.y, 0.94) * step(0.15, tx) * step(tx, 0.78) * step(0.12, sx2) * step(sx2, mix(0.5, 0.86, sP / SIGN_P));
+            vec3 tc = (sQ > 0.42 && sQ < 0.52) || (sQ > 0.62 && sQ < 0.74) ? vec3(0.12, 0.12, 0.14) : vec3(0.97, 0.97, 0.95);
+            float aaS = 1.0 - smoothstep(0.08, 0.25, max(fwidth(frc.x), fwidth(frc.y)) * 6.0);
+            vec3 sg = mix(sc, tc, txt * aaS);
+            diffuseColor.rgb = mix(diffuseColor.rgb, sg, band); glassF *= 1.0 - band; gEm = mix(gEm, sg * 0.25, band);
+            // 日よけ（3 軒に 1 軒くらい。看板の下の斜めの布）
+            float aw = step(0.60, frc.y) * step(frc.y, 0.72) * step(0.55, fract(sQ * 13.7));
+            vec3 awc = mix(sc, vec3(0.96), step(0.5, fract(frc.x * 8.0)) * step(0.85, fract(sQ * 5.3)));
+            diffuseColor.rgb = mix(diffuseColor.rgb, awc * mix(0.85, 1.0, (frc.y - 0.60) / 0.12), aw); glassF *= 1.0 - aw;
+          }
+        }
         // v49: 写真資料（Wikimedia Commons、出典は画面下の注記）に合わせた個別の外壁（駅前〜西川の主な建物）。vSpec = 建物の番号（0 は一般の建物）
-        float lmOn = 0.0;
+        float lmOn = 0.0, mirF = 0.0; vec3 mirT = vec3(1.0);
         if(vSpec > 0.5){
           int si = int(vSpec + 0.5) - 1;
           float vSpecI = float(si + 1);   // v55: 補間でわずかに揺れる vSpec を乱数に入れると窓ごとの値が画素ごとに飛んでざらついた（以前からの不具合）→ 整数にしてから使う
@@ -706,7 +740,10 @@ function facadeMaterial(kind){
             }
           }
           // v55: 四角い窓の建物（type 4・7）・住宅の塔（5）の窓にもガラスの向こうの部屋
-          if((ty > 3.5 && ty < 5.5 || ty > 6.5 && ty < 7.5) && gl > 0.3 && hg > A.w){
+          mirF = (ty > 3.5 && ty < 4.5 && Dg.w > 0.7 && Dg.w <= 0.85 || ty > 0.5 && ty < 2.5) ? 1.0 : 0.0;
+          if(mirF > 0.5){ float gL = dot(Dg.rgb, vec3(0.3, 0.5, 0.2)); mirT = mix(vec3(0.9), clamp(Dg.rgb / max(gL, 0.04), 0.5, 1.4) * 0.85, 0.55); }   // ガラスの色（青・緑など）を映る空にも掛ける（白っぽく飛ばない）
+          // v58: 反射ガラスの建物（細い格子の窓・カーテンウォール）は空がはっきり映る
+          if((ty > 3.5 && ty < 5.5 || ty > 6.5 && ty < 7.5) && gl > 0.3 && hg > A.w && mirF < 0.5){
             vec3 Vw2 = normalize(vSW - cameraPosition); vec3 tg3 = vec3(tg.x, 0.0, tg.y); vec3 wn2 = dot(wn, Vw2) > 0.0 ? -wn : wn;
             float vin2 = max(dot(Vw2, -wn2), 0.08), nr2 = 1.0 - smoothstep(0.12, 0.35, max(fwidth(pc.x), fwidth(pc.y)));
             vec2 shv2 = vec2(dot(Vw2, tg3) / A.y, Vw2.y / A.z) / vin2;
@@ -727,10 +764,11 @@ function facadeMaterial(kind){
         { vec3 vd = normalize(vViewPosition); vec3 rv = reflect(vd, normal);
           vec3 upv = normalize((viewMatrix * vec4(0.0,1.0,0.0,0.0)).xyz);
           float e = dot(rv, upv);
-          vec3 sky = mix(uSkyHor, uSkyTop, clamp(e,0.0,1.0)); sky = mix(vec3(0.30,0.31,0.30), sky, smoothstep(-0.25,0.05,e));
+          vec3 sky = mix(uSkyHor, uSkyTop, clamp(e,0.0,1.0)); sky = mix(mix(vec3(0.42,0.44,0.46), uSkyHor * 0.8, mirF * 0.5), sky, smoothstep(-0.45,0.02,e)); sky *= mirT;   // v58: 地平より下は向かいの街並み（暗すぎない灰色）
           float fres = 0.28 + 0.55*pow(1.0 - clamp(dot(-vd, normal),0.0,1.0), 3.0);
-          outgoingLight = mix(outgoingLight, sky, glassF * (1.0 - frameF) * fres * (flr < 0.5 ? 0.4 : 0.6)) + gEm * glassF; }`);
+          outgoingLight = mix(outgoingLight, sky, glassF * (1.0 - frameF) * (flr < 0.5 ? 0.4 * fres : mix(fres * (lmOn > 0.5 ? 0.85 : 0.68), 0.55 + 0.4 * fres, mirF))) + gEm * glassF; }`);
   };
+  m.customProgramCacheKey = () => "fac58_" + kind;   // v58: 種類ごとに 1 階の看板の多さが違う（SIGN_P）
   return m;
 }
 
@@ -1616,8 +1654,8 @@ const NightL = (() => {
 })();
 const Env = (() => {
   const P = {
-    morning: { sun:[0.78,0.32,0.30], sunC:0xffd9a8, sunI:0.95, hemi:[0xf4ead8,0x5b5448,0.60], skyL:0xf1e3cf, skyH:0x9dbad6, fog:0xe6ddd0, near:260, far:1600, exp:1.0, night:0 },
-    noon:    { sun:[-0.45,0.82,0.38], sunC:0xfff0d8, sunI:0.92, hemi:[0xeef2f5,0x5d574b,0.64], skyL:0xdfe6e8, skyH:0x8fb4d6, fog:0xd6dfe2, near:280, far:1700, exp:1.0, night:0 },
+    morning: { sun:[0.78,0.32,0.30], sunC:0xffd9a8, sunI:1.0, hemi:[0xf4ead8,0x5b5448,0.56], skyL:0xe6d8c8, skyH:0x4a86d0, fog:0xdcd8d2, near:420, far:2400, exp:1.0, night:0 },
+    noon:    { sun:[-0.45,0.82,0.38], sunC:0xfff2de, sunI:1.02, hemi:[0xe4eef8,0x5d574b,0.58], skyL:0xa8c7e6, skyH:0x2f6ec6, fog:0xbcd2e6, near:450, far:2600, exp:1.0, night:0 },
     evening: { sun:[-0.86,0.2,0.1], sunC:0xffa15a, sunI:0.98, hemi:[0xf2c8a8,0x4a3d36,0.47], skyL:0xf3b98a, skyH:0x6d7fa6, fog:0xd9b49a, near:240, far:1500, exp:0.95, night:0.35 },
     night:   { sun:[-0.3,0.7,0.5], sunC:0x8da6d6, sunI:0.12, hemi:[0x40506e,0x14161c,0.32], skyL:0x1a2438, skyH:0x05080f, fog:0x141a26, near:150, far:1100, exp:0.9, night:1 },
   };
@@ -1746,14 +1784,14 @@ const Env = (() => {
     const L = new THREE.Color(p.skyL), H = new THREE.Color(p.skyH);
     if(wet){ const grey = new THREE.Color(p.night>0.5 ? 0x121620 : 0x9aa2aa); L.lerp(grey, 0.7); H.lerp(grey, 0.75); }
     const sky = scene.getObjectByName("sky");
-    if(sky){ const g=sky.geometry, pp=g.attributes.position, col=g.attributes.color; for(let i=0;i<pp.count;i++){ const t=Math.max(0,pp.getY(i)/3000); const c=L.clone().lerp(H,Math.pow(t,0.55)); col.setXYZ(i,c.r,c.g,c.b); } col.needsUpdate=true; }
+    if(sky){ const g=sky.geometry, pp=g.attributes.position, col=g.attributes.color; for(let i=0;i<pp.count;i++){ const t=Math.max(0,pp.getY(i)/3000); const c=L.clone().lerp(H,Math.pow(t,0.38)); col.setXYZ(i,c.r,c.g,c.b); } col.needsUpdate=true; }
     const fogC = new THREE.Color(p.fog); if(wet) fogC.lerp(new THREE.Color(p.night>0.5?0x10141c:0xa3aab0), 0.6);
     scene.fog.color.copy(fogC); scene.fog.near = wet ? p.near*0.45 : p.near; scene.fog.far = wet ? p.far*0.55 : p.far; scene.background.copy(fogC);
     FOG_BASE.near = scene.fog.near; FOG_BASE.far = scene.fog.far;
     FACADE_UNIFORMS.uSkyTop.value.copy(H); FACADE_UNIFORMS.uSkyHor.value.copy(L);
     { const CL = { morning: [0xfbeee2, 0xa9a9b6], noon: [0xf7f8fa, 0xb3bcc9], evening: [0xffc89a, 0x6e5a66], night: [0x2a3242, 0x0d1118] }[st.time] || [0xf7f8fa, 0xb3bcc9];   // v42: 雲
       SKY_U.uSun.value.copy(SUN_DIR); SKY_U.uSunC.value.setHex(p.sunC); if(p.night > 0.5) SKY_U.uSunC.value.multiplyScalar(0.55);
-      SKY_U.uCloudC.value.setHex(CL[0]); SKY_U.uCloudS.value.setHex(CL[1]); SKY_U.uCloud.value = wet ? 0.95 : (st.time === "evening" ? 0.5 : 0.46); SKY_U.uStar.value = wet ? 0 : (p.night > 0.5 ? 1 : 0);
+      SKY_U.uCloudC.value.setHex(CL[0]); SKY_U.uCloudS.value.setHex(CL[1]); SKY_U.uCloud.value = wet ? 0.95 : (st.time === "evening" ? 0.5 : 0.36); SKY_U.uStar.value = wet ? 0 : (p.night > 0.5 ? 1 : 0);
       if(wet){ SKY_U.uCloudC.value.lerp(new THREE.Color(p.night > 0.5 ? 0x161a22 : 0xa4abb3), 0.6); SKY_U.uCloudS.value.lerp(new THREE.Color(p.night > 0.5 ? 0x0b0d12 : 0x7c838c), 0.6); } }
     NIGHT_U.value = p.night; Veh.setNight(p.night); Veh.setRain(wet);   // v41.14: 雨の日は車の窓に水滴・ワイパー
     for(const [k, m] of Object.entries(MATS)){ const kind = k.replace(/_\d+$/,""); apply1(m, kind); }
