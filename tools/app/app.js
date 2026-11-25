@@ -470,6 +470,23 @@ const FROOM_GLSL = `
       return ic;
     }
 `;
+// v59: 看板の文字の形（実在しない漢字風の画。店名やロゴは書かない）。u = 1 文字の中の位置 0..1、h = 文字ごとの乱数
+const GLYPH_GLSL = `
+float glyph(vec2 u, float h){
+  if(u.x < 0.1 || u.x > 0.9 || u.y < 0.08 || u.y > 0.92) return 0.0;
+  float w = 0.06, m = 0.0;
+  float b1 = fract(h * 13.1), b2 = fract(h * 71.7), b3 = fract(h * 157.3), b4 = fract(h * 313.9);
+  m = max(m, step(abs(u.y - 0.84), w) * step(0.45, b1) * step(mix(0.1, 0.5, step(0.75, b2)), u.x));
+  m = max(m, step(abs(u.y - 0.5), w) * step(0.2, b2) * step(mix(0.1, 0.5, step(0.65, b3)), u.x));
+  m = max(m, step(abs(u.y - 0.16), w) * step(0.3, b3));
+  m = max(m, step(abs(u.x - 0.5), w) * step(0.3, b4) * step(mix(0.0, 0.5, step(0.8, b1)), u.y));
+  m = max(m, step(abs(u.x - 0.18), w) * step(0.5, fract(b1 + b4)) * step(u.y, mix(0.92, 0.5, step(0.6, b2))));
+  m = max(m, step(abs(u.x - 0.82), w) * step(0.55, b2) * step(mix(0.08, 0.5, step(0.5, b4)), u.y));
+  m = max(m, step(abs((u.x - 0.5) + (u.y - 0.5) * mix(-0.9, 0.9, step(0.5, b3))), w * 1.2) * step(0.78, b1));
+  m = max(m, step(abs(u.y - 0.33), w) * step(abs(u.x - 0.5), 0.2) * step(0.85, b4));
+  return m;
+}
+`;
 function facadeMaterial(kind){
   const t=facadeTex(kind);
   if(kind==="station"){ t.repeat.set(0.01,0.01); return new THREE.MeshLambertMaterial({map:t, vertexColors:true}); }
@@ -479,7 +496,8 @@ function facadeMaterial(kind){
     sh.uniforms.uSkyTop=FACADE_UNIFORMS.uSkyTop; sh.uniforms.uSkyHor=FACADE_UNIFORMS.uSkyHor; sh.uniforms.uLM = LANDMARK_U;
     sh.vertexShader = "attribute float aSpec; attribute float aGH; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vSpec = aSpec; vGH = aGH; vSW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
     const SIGN_P = { shop: 0.92, office: 0.80, curtain: 0.62, apt: 0.50, house: 0.14, house_old: 0.18 }[kind] || 0.0;
-    sh.fragmentShader = "#define SIGN_P " + SIGN_P.toFixed(2) + "\n" + "uniform vec3 uSkyTop; uniform vec3 uSkyHor; uniform vec4 uLM[" + (LANDMARKS.length * 4) + "]; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + FROOM_GLSL + sh.fragmentShader
+    sh.uniforms.uSignP = { value: SIGN_P };   // v59: 一様変数で渡す（後から重ねる夜の窓の処理が customProgramCacheKey を上書きし、種類の違う建物が同じプログラムを共有して #define の値が最初の種類のものになっていた）
+    sh.fragmentShader = "uniform float uSignP;\n#define SIGN_P uSignP\n" + GLYPH_GLSL + "uniform vec3 uSkyTop; uniform vec3 uSkyHor; uniform vec4 uLM[" + (LANDMARKS.length * 4) + "]; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + FROOM_GLSL + sh.fragmentShader
       .replace("#include <map_fragment>", `
         vec2 fuv = vUv; float flr = floor(fuv.y); vec2 frc = fract(fuv);
         vec2 tuv = vec2(frc.x, flr < 0.5 ? frc.y*0.5 : 0.5 + frc.y*0.5);
@@ -571,16 +589,17 @@ function facadeMaterial(kind){
           if(flr < 0.5) diffuseColor.rgb *= mix(0.70, 1.0, smoothstep(0.0, 0.16, frc.y));
           diffuseColor.rgb *= 0.94 + 0.08 * fract(sin((flr + bk*17.0)*78.233)*43758.5453) * wallF; }
         // v58: 縦長の看板（壁の端の柱間に、2 階から上へ数階分。テナントの名前の帯の代わりに色と白い字の形だけ）
-        if(flr > 0.5 && vSpec < 0.5 && fract(sin(cell.x * 5.17 + bk * 13.3) * 43758.5453) < SIGN_P * 0.38){
+        if(flr > 0.5 && vSpec < 0.5 && fract(bk * 7.7) < SIGN_P && fract(sin(dot(vec2(mod(cell.x, 97.0), bk * 31.0), vec2(12.9898, 78.233))) * 43758.5453) < 0.3){
           float nF = 2.0 + floor(fract(bk * 9.1) * 5.0);
           if(flr <= nF){
-            float vx = step(0.14, frc.x) * step(frc.x, 0.46);
+            float vx = step(0.10, frc.x) * step(frc.x, 0.50) * step(0.04, frc.y) * step(frc.y, 0.97);
             float qv = fract(bk * 31.7 + cell.x * 0.37);
             vec3 vc = qv < 0.2 ? vec3(0.75, 0.12, 0.10) : qv < 0.38 ? vec3(0.12, 0.30, 0.64) : qv < 0.52 ? vec3(0.94, 0.93, 0.90) : qv < 0.66 ? vec3(0.95, 0.74, 0.10) : qv < 0.8 ? vec3(0.12, 0.46, 0.28) : vec3(0.10, 0.10, 0.11);
             vec3 vt = (qv > 0.38 && qv < 0.66) ? vec3(0.12, 0.12, 0.14) : vec3(0.98);
-            float ch = step(0.2, frc.x) * step(frc.x, 0.40) * step(0.12, fract(frc.y * 2.0)) * step(fract(frc.y * 2.0), 0.82) * step(0.5, fract(sin((flr * 2.0 + floor(frc.y * 2.0)) * 7.3 + bk * 91.0) * 437.5) + 0.3);
-            float aaV = 1.0 - smoothstep(0.08, 0.25, max(fwidth(frc.x), fwidth(frc.y)) * 6.0);
-            vec3 vs = mix(vc, vt, ch * aaV);
+            float cy = frc.y * 3.0; vec2 gu = vec2((frc.x - 0.12) / 0.36, fract(cy));
+            float aaV = 1.0 - smoothstep(0.03, 0.09, max(fwidth(frc.x), fwidth(frc.y)));
+            float ch = mix(0.28 * step(0.0, gu.x) * step(gu.x, 1.0), glyph(gu, fract(sin(flr * 17.0 + floor(cy) * 5.3 + bk * 91.0 + cell.x * 3.1) * 437.5)), aaV);
+            vec3 vs = mix(vc, vt, ch);
             diffuseColor.rgb = mix(diffuseColor.rgb, vs, vx); glassF *= 1.0 - vx; gEm = mix(gEm, vs * 0.3, vx);
           }
         }
@@ -591,10 +610,11 @@ function facadeMaterial(kind){
           if(sP < SIGN_P){
             vec3 sc = sQ < 0.16 ? vec3(0.72, 0.10, 0.10) : sQ < 0.30 ? vec3(0.10, 0.28, 0.62) : sQ < 0.42 ? vec3(0.12, 0.48, 0.26) : sQ < 0.52 ? vec3(0.92, 0.70, 0.08) : sQ < 0.62 ? vec3(0.90, 0.42, 0.10) : sQ < 0.74 ? vec3(0.94, 0.93, 0.90) : sQ < 0.84 ? vec3(0.12, 0.12, 0.13) : sQ < 0.92 ? vec3(0.55, 0.12, 0.42) : vec3(0.08, 0.55, 0.62);
             float band = step(0.72, frc.y) * step(frc.y, 0.99) * (shF < 0.5 ? step(0.02, frc.x) : step(frc.x, 0.98));
-            float sx2 = (shF + frc.x) * 0.5; float tx = fract(sx2 * mix(8.0, 14.0, sQ)); float txt = step(0.79, frc.y) * step(frc.y, 0.94) * step(0.15, tx) * step(tx, 0.78) * step(0.12, sx2) * step(sx2, mix(0.5, 0.86, sP / SIGN_P));
+            float sx2 = (shF + frc.x) * 0.5, nC = mix(8.0, 13.0, sQ); float tx = fract(sx2 * nC); float aaT = 1.0 - smoothstep(0.03, 0.09, max(fwidth(frc.x), fwidth(frc.y)) * 1.5);
+            float txt = step(0.78, frc.y) * step(frc.y, 0.95) * step(0.12, sx2) * step(sx2, mix(0.5, 0.86, sP / max(SIGN_P, 0.01))) * mix(0.3, glyph(vec2(tx, (frc.y - 0.78) / 0.17), fract(sin(floor(sx2 * nC) * 7.7 + shX * 3.3 + bk * 51.0) * 437.5)), aaT);
             vec3 tc = (sQ > 0.42 && sQ < 0.52) || (sQ > 0.62 && sQ < 0.74) ? vec3(0.12, 0.12, 0.14) : vec3(0.97, 0.97, 0.95);
             float aaS = 1.0 - smoothstep(0.08, 0.25, max(fwidth(frc.x), fwidth(frc.y)) * 6.0);
-            vec3 sg = mix(sc, tc, txt * aaS);
+            vec3 sg = mix(sc, tc, txt);
             diffuseColor.rgb = mix(diffuseColor.rgb, sg, band); glassF *= 1.0 - band; gEm = mix(gEm, sg * 0.25, band);
             // 日よけ（3 軒に 1 軒くらい。看板の下の斜めの布）
             float aw = step(0.60, frc.y) * step(frc.y, 0.72) * step(0.55, fract(sQ * 13.7));
