@@ -2141,14 +2141,15 @@ const Plaza = (() => {
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1]], add = (a, b) => [a[0] + b[0], a[1] + b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
   const nrm = (a) => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };
   // ---- バス ----
-  const BUS = [[-97.6, -1], [-59, -1], [-60, 24], [-74.5, 25.5], [-77.6, 26.8], [-107, 96], [-110, 99.3], [-134, 99.3], [-142, 94.5], [-144.5, 85], [-119.5, 40.5]];
+  // v62a: 上屋（PLATEAU）の内側の縁から 0.3m 内側（屋根の高さは地面から約 2.5m なので、バスは屋根の下に入れない）
+  const BUS = [[-97.2, -1], [-59, -1], [-60, 24], [-76.8, 24.6], [-77.4, 25.5], [-117.0, 95.5], [-118.0, 97], [-119.2, 98], [-120.6, 99], [-122.2, 99.7], [-130, 99.7], [-132.2, 98.7], [-134.2, 97.7], [-136.4, 96.7], [-138.3, 95.7], [-140.2, 94], [-141.4, 92], [-142.2, 89], [-142.4, 86], [-141.9, 84]];
   const stadium = (a, b, r, n) => { const d = nrm(sub(b, a)), ang = Math.atan2(d[1], d[0]), P = []; n = n || 10;
     for(let i = 0; i <= n; i++){ const t = ang - Math.PI / 2 + Math.PI * i / n; P.push([b[0] + Math.cos(t) * r, b[1] + Math.sin(t) * r]); }
     for(let i = 0; i <= n; i++){ const t = ang + Math.PI / 2 + Math.PI * i / n; P.push([a[0] + Math.cos(t) * r, a[1] + Math.sin(t) * r]); }
     return P; };
-  const MEDA = [-86.5, 21], MEDB = [-117.5, 76], MED = stadium(MEDA, MEDB, 1.4);
-  const EP0 = [-77.6, 26.8], EP1 = [-107, 96];          // 東の乗り場の縁（南向き）
-  const WP0 = [-144.5, 85], WP1 = [-119.5, 40.5];       // 西の乗り場の縁（北向き）
+  const MEDA = [-94.5, 26], MEDB = [-120.9, 74], MED = stadium(MEDA, MEDB, 1.4);
+  const EP0 = [-77.7, 26], EP1 = [-117.3, 96];          // 東の乗り場の縁（南向き）
+  const WP0 = [-142.2, 84], WP1 = [-118.8, 40];       // 西の乗り場の縁（北向き）
   // ---- タクシー ----
   const cE = (z) => -49.5 - 0.448 * (z + 150), sE = (z) => -32 - 0.257 * (z + 150) - 4.5;
   const TAXI = (() => { const P = []; for(let z = -166; z <= -78.5; z += 4) P.push([cE(Math.min(z, -78.5)), z]); P.push([cE(-78.5), -78.5]);
@@ -2198,16 +2199,16 @@ const Plaza = (() => {
     const eD = nrm(sub(EP1, EP0)), eIn = [-eD[1], eD[0]][0] < 0 ? [-eD[1], eD[0]] : [eD[1], -eD[0]];       // 西向き
     const wD = nrm(sub(WP1, WP0)), wIn = [-wD[1], wD[0]][0] > 0 ? [-wD[1], wD[0]] : [wD[1], -wD[0]];       // 東向き
     const eL = Math.hypot(...sub(EP1, EP0)), wL = Math.hypot(...sub(WP1, WP0));
-    for(const s of [8, 22, 36, 50]) berth(gP, EP0, EP1, s, s + 12, 3.2, eIn, "バス");
-    for(const s of [6, 20, 34]) berth(gP, WP0, WP1, s, s + 12, 3.2, wIn, "バス");
+    for(const s of [8, 22, 36, 50, 64]) berth(gP, EP0, EP1, s, s + 12, 3.3, eIn, "バス");
+    for(const s of [6, 20, 34]) berth(gP, WP0, WP1, s, s + 12, 3.3, wIn, "バス");
     line(gP, add(EP0, mul(eIn, 3.4)), add(EP1, mul(eIn, 3.4)), 0.15, [3, 3]);        // 停車帯と走る車線の境（破線）
     line(gP, add(WP0, mul(wIn, 3.4)), add(WP1, mul(wIn, 3.4)), 0.15, [3, 3]);
-    for(const s of [30, 66]) arrow(gP, add(add(EP0, mul(eD, s)), mul(eIn, 5.4)), eD);
+    for(const s of [30, 72]) arrow(gP, add(add(EP0, mul(eD, s)), mul(eIn, 5.4)), eD);
     for(const s of [16, 44]) arrow(gP, add(add(WP0, mul(wD, s)), mul(wIn, 5.4)), wD);
-    arrow(gP, [-124, 95.5], [-1, 0]);                                                   // 南の折り返し
+    arrow(gP, [-126, 96], [-1, 0]);                                                   // 南の折り返し
     text(gP, "バス専用", [-71, 18.5], [-1, 0], 1.6);                                     // 入口（市役所筋から西へ）
     arrow(gP, [-80, 19.5], nrm([-1, 0.25])); arrow(gP, [-80, 5], [1, 0]);
-    line(gP, [-85.6, 19.6], [-68.5, 12.2], 0.15);                                       // 入る車線と出る車線の境
+    line(gP, [-93.4, 24.6], [-68.5, 12.2], 0.15);                                       // 入る車線と出る車線の境
     line(gP, [-68.8, -0.6], [-68.8, 12.0], 0.45);                                       // 出口の停止線
     for(let z = 0.3; z < 23.6; z += 0.9){ gP.fillStyle = "#fff"; gP.fillRect(-66.8, z, 4.0, 0.45); }   // 市役所筋の歩道の横断（バスの出入口を横切る）
     // --- タクシー: 乗車枠・待つ車線・文字 ---
@@ -2274,8 +2275,8 @@ const Plaza = (() => {
     const at = (a, d, s, nIn, o) => add(add(a, mul(d, s)), mul(nIn, o));
     const eD = nrm(sub(EP1, EP0)), eIn = [-eD[1], eD[0]][0] < 0 ? [-eD[1], eD[0]] : [eD[1], -eD[0]];
     const wD = nrm(sub(WP1, WP0)), wIn = [-wD[1], wD[0]][0] > 0 ? [-wD[1], wD[0]] : [wD[1], -wD[0]];
-    for(const s of [14.5, 42.5]){ const p = at(EP0, eD, s, eIn, 1.75); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(eD[0], eD[1]), c: BUSC[L.length % 4] }); }
-    for(const s of [12.5, 40.5]){ const p = at(WP0, wD, s, wIn, 1.75); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(wD[0], wD[1]), c: BUSC[L.length % 4] }); }
+    for(const s of [14.5, 42.5]){ const p = at(EP0, eD, s, eIn, 1.95); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(eD[0], eD[1]), c: BUSC[L.length % 4] }); }
+    for(const s of [12.5, 40.5]){ const p = at(WP0, wD, s, wIn, 1.95); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(wD[0], wD[1]), c: BUSC[L.length % 4] }); }
     { const md = nrm(sub(MEDB, MEDA)), mn = [-md[1], md[0]];
       for(const [s, o] of [[16, 3.2], [30, 3.2], [24, -3.2]]){ const p = at(MEDA, md, s, mn, o); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(md[0], md[1]) + (o < 0 ? Math.PI : 0), c: BUSC[L.length % 4] }); } }
     const tD = nrm([cE(-80) - cE(-150), 70]), tIn = [-tD[1], tD[0]][0] > 0 ? [-tD[1], tD[0]] : [tD[1], -tD[0]], T0 = [cE(-150), -150];
