@@ -851,15 +851,182 @@ const PAVE_TEX = (() => {
   }
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy()); return t;
 })();
-const DETAIL_U = { uDetail: { value: DETAIL_TEX }, uDetailOn: { value: 1 }, uCamP: { value: camera.position }, uPave: { value: PAVE_TEX } };   // r128 の Lambert には cameraPosition が送られないので自前で渡す
+/* v62: 岡山駅東口の駅前広場の「車の通る所」。v48 で広場全体を御影石の平板にしたため、バスの環状路・タクシープール・一般車の降車場まで
+   平板になり、車路に木が生えていた。航空写真（2026）・ストリートビュー（2024-12）・岡山市の資料（タクシーは広場の北側、一般車の降車場は
+   南側のホテル側、バスは中央の環状路）を見て、上屋（PLATEAU の形）に合わせて車路の形を決めた。
+   ・バス: 東の乗り場（南向きに停まる＝左の扉が乗り場側）→ 南の U 字で折り返し → 西の乗り場（北向き）。中央に植え込みの分離帯。出入口は駅前交差点の南西の角
+   ・タクシー: 駅舎前の長い上屋の東側、市役所筋との間（北の端から入り、南の端の J 字の上屋の脇から市役所筋へ）
+   ・一般車降車場: 西の乗り場の外側。ヘアピン形の車路の外周が赤い舗装（降車場所）、内側が駐車場
+   車路は地面の絵（uPlz: R=アスファルト、G=白線、B=赤い舗装）で描き、縁石・分離帯の植え込み・停まっているバスとタクシーは形で置く */
+const Plaza = (() => {
+  const X0 = -200, Z0 = -172, WX = 174, WZ = 280, PPM = 7, CW = WX * PPM, CH = WZ * PPM;
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]], add = (a, b) => [a[0] + b[0], a[1] + b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
+  const nrm = (a) => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };
+  // ---- バス ----
+  const BUS = [[-97.6, -1], [-59, -1], [-60, 24], [-74.5, 25.5], [-77.6, 26.8], [-107, 96], [-110, 99.3], [-134, 99.3], [-142, 94.5], [-144.5, 85], [-119.5, 40.5]];
+  const stadium = (a, b, r, n) => { const d = nrm(sub(b, a)), ang = Math.atan2(d[1], d[0]), P = []; n = n || 10;
+    for(let i = 0; i <= n; i++){ const t = ang - Math.PI / 2 + Math.PI * i / n; P.push([b[0] + Math.cos(t) * r, b[1] + Math.sin(t) * r]); }
+    for(let i = 0; i <= n; i++){ const t = ang + Math.PI / 2 + Math.PI * i / n; P.push([a[0] + Math.cos(t) * r, a[1] + Math.sin(t) * r]); }
+    return P; };
+  const MEDA = [-86.5, 21], MEDB = [-117.5, 76], MED = stadium(MEDA, MEDB, 1.4);
+  const EP0 = [-77.6, 26.8], EP1 = [-107, 96];          // 東の乗り場の縁（南向き）
+  const WP0 = [-144.5, 85], WP1 = [-119.5, 40.5];       // 西の乗り場の縁（北向き）
+  // ---- タクシー ----
+  const cE = (z) => -49.5 - 0.448 * (z + 150), sE = (z) => -32 - 0.257 * (z + 150) - 4.5;
+  const TAXI = (() => { const P = []; for(let z = -166; z <= -78.5; z += 4) P.push([cE(Math.min(z, -78.5)), z]); P.push([cE(-78.5), -78.5]);
+    P.push([-62, -78.5], [-62, -60], [-51, -60], [-51, -80]); for(let z = -84; z >= -158; z -= 4) P.push([sE(z), z]); P.push([-29.5, -158], [-28.5, -166]); return P; })();
+  // ---- 一般車降車場（西の乗り場の外側の線に沿った座標 s: 北→南、t: 乗り場から西へ）----
+  const A0 = [-124.4, 41], AD = nrm([-23.2, 43]), AN = [-AD[1], AD[0]];   // AN: 西（駅舎）向き
+  const R = (s, t) => [A0[0] + AD[0] * s + AN[0] * t, A0[1] + AD[1] * s + AN[1] * t];
+  const RC = [31.5, 16.5], RS1 = 64;
+  const hairpin = (r, s1) => { const P = [R(s1, RC[1] - r), R(RC[0], RC[1] - r)];
+    for(let i = 1; i < 16; i++){ const f = -Math.PI / 2 - Math.PI * i / 16; P.push(R(RC[0] + Math.cos(f) * r, RC[1] + Math.sin(f) * r)); }
+    P.push(R(RC[0], RC[1] + r), R(s1, RC[1] + r)); return P; };
+  const ROT = hairpin(12.5, RS1), ROT_RED = hairpin(9.6, RS1), ISL = hairpin(5.0, RS1);
+  // ---- 判定（木・照明・歩く人）----
+  const inPoly = (P, x, z) => { let c = false; for(let i = 0, j = P.length - 1; i < P.length; j = i++){ const a = P[i], b = P[j]; if(((a[1] > z) !== (b[1] > z)) && (x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0])) c = !c; } return c; };
+  const segD = (p, a, b) => { const ab = sub(b, a), t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / (ab[0] * ab[0] + ab[1] * ab[1]))); return Math.hypot(p[0] - a[0] - ab[0] * t, p[1] - a[1] - ab[1] * t); };
+  function isRoad(x, z){
+    if(x < -205 || x > -20 || z < -170 || z > 106) return false;
+    if(inPoly(BUS, x, z)) return segD([x, z], MEDA, MEDB) > 2.4;   // 分離帯（と少し外）は除く
+    return inPoly(TAXI, x, z) || inPoly(ROT, x, z);
+  }
+  // ---- 地面の絵 ----
+  let tex = null;
+  function mask(){
+    if(tex) return tex;
+    const mk = () => { const c = document.createElement("canvas"); c.width = CW; c.height = CH; const g = c.getContext("2d"); g.fillStyle = "#000"; g.fillRect(0, 0, CW, CH); g.setTransform(PPM, 0, 0, PPM, -X0 * PPM, -Z0 * PPM); return [c, g]; };
+    const [cA, gA] = mk(), [cP, gP] = mk(), [cR, gR] = mk();
+    const poly = (g, P, col) => { g.fillStyle = col; g.beginPath(); P.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill(); };
+    const line = (g, a, b, w, dash) => { g.strokeStyle = "#fff"; g.lineWidth = w; g.setLineDash(dash || []); g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke(); g.setLineDash([]); };
+    const pline = (g, P, w, dash) => { g.strokeStyle = "#fff"; g.lineWidth = w; g.setLineDash(dash || []); g.beginPath(); P.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); g.setLineDash([]); };
+    // 路面の文字: 進む方向 d に向けて、縦に 2.4 倍伸ばす。h: 1 文字の幅（m）
+    const text = (g, s, at, d, h) => { g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.translate((at[0] - X0) * PPM, (at[1] - Z0) * PPM); g.rotate(Math.atan2(d[0], -d[1])); g.scale(1, 2.4);
+      g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle"; g.font = "bold " + Math.round(h * PPM) + "px 'Hiragino Sans','Noto Sans JP','Noto Sans CJK JP','Yu Gothic',sans-serif";
+      const ch = [...s]; ch.forEach((c, i) => g.fillText(c, 0, ((ch.length - 1) / 2 - i) * h * 1.05)); g.restore(); };   // 手前（下）から 1 文字目
+    // 矢印（進む方向 d、長さ 5m）
+    const arrow = (g, at, d, L) => { L = L || 5; const n = [-d[1], d[0]], tip = add(at, mul(d, L / 2)), tail = add(at, mul(d, -L / 2)), nb = add(at, mul(d, L / 2 - 1.6));
+      g.fillStyle = "#fff"; g.beginPath(); const P = [add(tail, mul(n, 0.15)), add(nb, mul(n, 0.15)), add(nb, mul(n, 0.6)), tip, add(nb, mul(n, -0.6)), add(nb, mul(n, -0.15)), add(tail, mul(n, -0.15))];
+      P.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill(); };
+    // 停車枠: 乗り場の縁 a→b（進む方向）の s0..s1、内側へ dep の深さ。nIn: 内向きの法線
+    const berth = (g, a, b, s0, s1, dep, nIn, label) => { const d = nrm(sub(b, a)), p0 = add(a, mul(d, s0)), p1 = add(a, mul(d, s1));
+      line(g, p0, add(p0, mul(nIn, dep)), 0.15); line(g, p1, add(p1, mul(nIn, dep)), 0.3); line(g, add(p0, mul(nIn, dep)), add(p1, mul(nIn, dep)), 0.15);
+      if(label) text(g, label, add(add(p0, mul(d, (s1 - s0) * 0.5)), mul(nIn, dep * 0.5)), d, 1.5); };
+    // アスファルト
+    poly(gA, BUS, "#fff"); poly(gA, TAXI, "#fff"); poly(gA, ROT, "#fff"); poly(gA, MED, "#000");
+    gA.fillStyle = "#fff"; gA.fillRect(-60, -30, 30, 56);   // 駅前交差点の南西の角: 道路の面のすき間から平板が見えていた
+    poly(gR, ROT, "#fff"); poly(gR, ROT_RED, "#000");
+    // --- バス: 停車枠・車線・矢印・出入口 ---
+    const eD = nrm(sub(EP1, EP0)), eIn = [-eD[1], eD[0]][0] < 0 ? [-eD[1], eD[0]] : [eD[1], -eD[0]];       // 西向き
+    const wD = nrm(sub(WP1, WP0)), wIn = [-wD[1], wD[0]][0] > 0 ? [-wD[1], wD[0]] : [wD[1], -wD[0]];       // 東向き
+    const eL = Math.hypot(...sub(EP1, EP0)), wL = Math.hypot(...sub(WP1, WP0));
+    for(const s of [8, 22, 36, 50]) berth(gP, EP0, EP1, s, s + 12, 3.2, eIn, "バス");
+    for(const s of [6, 20, 34]) berth(gP, WP0, WP1, s, s + 12, 3.2, wIn, "バス");
+    line(gP, add(EP0, mul(eIn, 3.4)), add(EP1, mul(eIn, 3.4)), 0.15, [3, 3]);        // 停車帯と走る車線の境（破線）
+    line(gP, add(WP0, mul(wIn, 3.4)), add(WP1, mul(wIn, 3.4)), 0.15, [3, 3]);
+    for(const s of [30, 66]) arrow(gP, add(add(EP0, mul(eD, s)), mul(eIn, 5.4)), eD);
+    for(const s of [16, 44]) arrow(gP, add(add(WP0, mul(wD, s)), mul(wIn, 5.4)), wD);
+    arrow(gP, [-124, 95.5], [-1, 0]);                                                   // 南の折り返し
+    text(gP, "バス専用", [-71, 18.5], [-1, 0], 1.6);                                     // 入口（市役所筋から西へ）
+    arrow(gP, [-80, 19.5], nrm([-1, 0.25])); arrow(gP, [-80, 5], [1, 0]);
+    line(gP, [-85.6, 19.6], [-68.5, 12.2], 0.15);                                       // 入る車線と出る車線の境
+    line(gP, [-68.8, -0.6], [-68.8, 12.0], 0.45);                                       // 出口の停止線
+    for(let z = 0.3; z < 23.6; z += 0.9){ gP.fillStyle = "#fff"; gP.fillRect(-66.8, z, 4.0, 0.45); }   // 市役所筋の歩道の横断（バスの出入口を横切る）
+    // --- タクシー: 乗車枠・待つ車線・文字 ---
+    const tD = nrm([cE(-80) - cE(-150), 70]), tIn = [-tD[1], tD[0]][0] > 0 ? [-tD[1], tD[0]] : [tD[1], -tD[0]];   // tD: 南向き、tIn: 東向き
+    const T0 = [cE(-150), -150];
+    for(const o of [3.0, 6.0, 9.0]) line(gP, add(add(T0, mul(tIn, o)), mul(tD, -10)), add(add(T0, mul(tIn, o)), mul(tD, 64)), 0.15, o === 3.0 ? [] : [3, 3]);
+    for(let s = 38; s < 70; s += 6.5) line(gP, add(T0, mul(tD, s)), add(add(T0, mul(tD, s)), mul(tIn, 3.0)), 0.15);       // 乗車の枠
+    text(gP, "のりば", add(add(T0, mul(tD, 51)), mul(tIn, 1.5)), [-tD[0], -tD[1]], 1.2);
+    for(const s of [8, 30]) for(const o of [4.5, 7.5]) text(gP, "タクシー", add(add(T0, mul(tD, s)), mul(tIn, o)), tD, 1.1);
+    line(gP, [-62, -67.5], [-51.5, -67.5], 0.45);                                       // 出口の停止線
+    text(gP, "止まれ", [-56.5, -72.5], [0, 1], 1.4);
+    for(let z = -165.5; z < -158.4; z += 0.9){ gP.fillStyle = "#fff"; gP.fillRect(-34.6, z, 4.0, 0.45); }   // 北の入口（歩道を横切る）
+    // --- 一般車降車場: 赤い舗装と白線、文字、駐車枠、矢印 ---
+    pline(gP, hairpin(9.6, RS1), 0.15);
+    const rD = AD, rUp = [-AD[0], -AD[1]];
+    for(const s of [40, 56]) text(gP, "降車場", R(s, 27.6), rUp, 1.3);
+    text(gP, "降車場", R(50, 5.4), rD, 1.3);
+    arrow(gP, R(56, 24.0), rUp); arrow(gP, R(44, 9.0), rD);
+    for(let s = 34; s <= 61.5; s += 2.5) line(gP, R(s, 11.7), R(s, 16.5), 0.12);         // 駐車枠（島の中の駐車場）
+    line(gP, R(34, 16.5), R(61.5, 16.5), 0.12);
+    line(gP, R(RS1 - 0.5, 4), R(RS1 - 0.5, 11.5), 0.45);                                  // 出口の停止線
+    // 白線は車路の上だけ（はみ出しを消す）
+    gP.globalCompositeOperation = "multiply"; gP.drawImage(cA, 0, 0, CW, CH, X0, Z0, WX, WZ); gP.globalCompositeOperation = "source-over";
+    // 3 枚をまとめる（R: アスファルト、G: 白線、B: 赤い舗装）
+    const out = document.createElement("canvas"); out.width = CW; out.height = CH; const go = out.getContext("2d"), im = go.createImageData(CW, CH);
+    const dA = gA.getImageData(0, 0, CW, CH).data, dP = gP.getImageData(0, 0, CW, CH).data, dR = gR.getImageData(0, 0, CW, CH).data;
+    for(let i = 0; i < dA.length; i += 4){ im.data[i] = dA[i]; im.data[i + 1] = dP[i]; im.data[i + 2] = dR[i]; im.data[i + 3] = 255; }
+    go.putImageData(im, 0, 0);
+    tex = new THREE.CanvasTexture(out); tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping; tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return tex;
+  }
+  // ---- 形: 縁石・分離帯の植え込み・停まっているバスとタクシー ----
+  function build3D(G){
+    const kp = [], kn = [], KW = 0.2, KH = 0.15;
+    const quad = (a, b, c, d, n) => { for(const p of [a, b, c, a, c, d]){ kp.push(...p); kn.push(...n); } };
+    const kerb = (P, closed, skip) => { const n = P.length, m = closed ? n : n - 1;
+      for(let i = 0; i < m; i++){ if(skip && skip(i)) continue; const a = P[i], b = P[(i + 1) % n], d = nrm(sub(b, a)), L = Math.hypot(...sub(b, a)), k = Math.max(1, Math.ceil(L / 3)), o = [-d[1] * KW / 2, d[0] * KW / 2];
+        for(let j = 0; j < k; j++){ const p = add(a, mul(sub(b, a), j / k)), q = add(a, mul(sub(b, a), (j + 1) / k));
+          const yp = Car.hAt(p[0], p[1]), yq = Car.hAt(q[0], q[1]); if(!(yp > -50) || !(yq > -50)) continue;
+          const pl = add(p, o), pr = sub(p, o), ql = add(q, o), qr = sub(q, o);
+          quad([pl[0], yp + KH, pl[1]], [ql[0], yq + KH, ql[1]], [qr[0], yq + KH, qr[1]], [pr[0], yp + KH, pr[1]], [0, 1, 0]);
+          quad([pl[0], yp - 0.05, pl[1]], [ql[0], yq - 0.05, ql[1]], [ql[0], yq + KH, ql[1]], [pl[0], yp + KH, pl[1]], [-d[1], 0, d[0]]);
+          quad([pr[0], yp + KH, pr[1]], [qr[0], yq + KH, qr[1]], [qr[0], yq - 0.05, qr[1]], [pr[0], yp - 0.05, pr[1]], [d[1], 0, -d[0]]); } } };
+    kerb(BUS, true, (i) => i === 1);                    // 市役所筋の側（出入口）は無し
+    kerb(MED, true);
+    { const W = []; for(let z = -166; z < -78.5; z += 4) W.push([cE(z), z]); W.push([cE(-78.5), -78.5], [-62, -78.5], [-62, -66]); kerb(W, false);
+      const E = [[-51, -80]]; for(let z = -84; z >= -158; z -= 4) E.push([sE(z), z]); kerb(E, false); }
+    kerb(ROT, false); kerb(ISL, false);
+    const kg = new THREE.BufferGeometry(); kg.setAttribute("position", new THREE.Float32BufferAttribute(kp, 3)); kg.setAttribute("normal", new THREE.Float32BufferAttribute(kn, 3));
+    const km = new THREE.Mesh(kg, new THREE.MeshLambertMaterial({ color: 0xb4b2ab })); km.receiveShadow = true; km.name = "plaza_kerb"; G.add(km);
+    // 分離帯の植え込み（刈り込み 0.9m）
+    { const d = sub(MEDB, MEDA), L = Math.hypot(...d) - 1.0, c = mul(add(MEDA, MEDB), 0.5), y = Car.hAt(c[0], c[1]);
+      const gg = new THREE.BoxGeometry(1.7, 0.85, L, 1, 1, 8); const cc = new Float32Array(gg.attributes.position.count * 3).fill(0.7); gg.setAttribute("color", new THREE.BufferAttribute(cc, 3));
+      const h = new THREE.Mesh(gg, hedgeMat()); h.position.set(c[0], y + 0.15 + 0.42, c[1]); h.rotation.y = Math.atan2(d[0], d[1]); h.castShadow = true; h.receiveShadow = true; G.add(h); }
+    // 市役所筋の西の歩道の植え込み（ストリートビュー 2024-12: バスターミナルの前は車道沿いに低い生け垣が続く）
+    { let prev = null; const pts = [];
+      for(let z = 29; z <= 104; z += 1){ let ex = null; for(let x = -84; x <= -50; x += 0.5) if(Car.kindAt(x, z) === 1){ ex = x; break; } if(ex !== null) pts.push([ex - 1.4, z]); }
+      for(let i = 0; i + 1 < pts.length; i += 6){ const a = pts[i], b = pts[Math.min(pts.length - 1, i + 6)], d = sub(b, a), L = Math.hypot(...d); if(L < 1) continue;
+        const c = mul(add(a, b), 0.5), y = Car.hAt(c[0], c[1]); if(!(y > -50)) continue;
+        const gg = new THREE.BoxGeometry(1.0, 0.75, L + 0.05); const cc = new Float32Array(gg.attributes.position.count * 3).fill(0.7); gg.setAttribute("color", new THREE.BufferAttribute(cc, 3));
+        const h = new THREE.Mesh(gg, hedgeMat()); h.position.set(c[0], y + 0.37, c[1]); h.rotation.y = Math.atan2(d[0], d[1]); h.castShadow = true; G.add(h); } }
+    // 停まっているバス（乗り場に 4 台、分離帯の脇で待つ 3 台）とタクシー（プールに 13 台、乗車枠に 2 台）。進む方向 d → yaw = atan2(dx, dz)
+    const BUSC = ["#f3efe2", "#e9eef2", "#f2e7cf", "#f4f4f1"], TXC = ["#1d2440", "#1c1d20", "#1d2440", "#2a2d33"], L = [];
+    const at = (a, d, s, nIn, o) => add(add(a, mul(d, s)), mul(nIn, o));
+    const eD = nrm(sub(EP1, EP0)), eIn = [-eD[1], eD[0]][0] < 0 ? [-eD[1], eD[0]] : [eD[1], -eD[0]];
+    const wD = nrm(sub(WP1, WP0)), wIn = [-wD[1], wD[0]][0] > 0 ? [-wD[1], wD[0]] : [wD[1], -wD[0]];
+    for(const s of [14.5, 42.5]){ const p = at(EP0, eD, s, eIn, 1.75); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(eD[0], eD[1]), c: BUSC[L.length % 4] }); }
+    for(const s of [12.5, 40.5]){ const p = at(WP0, wD, s, wIn, 1.75); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(wD[0], wD[1]), c: BUSC[L.length % 4] }); }
+    { const md = nrm(sub(MEDB, MEDA)), mn = [-md[1], md[0]];
+      for(const [s, o] of [[16, 3.2], [30, 3.2], [24, -3.2]]){ const p = at(MEDA, md, s, mn, o); L.push({ t: "bus", x: p[0], z: p[1], yaw: Math.atan2(md[0], md[1]) + (o < 0 ? Math.PI : 0), c: BUSC[L.length % 4] }); } }
+    const tD = nrm([cE(-80) - cE(-150), 70]), tIn = [-tD[1], tD[0]][0] > 0 ? [-tD[1], tD[0]] : [tD[1], -tD[0]], T0 = [cE(-150), -150];
+    let k = 0; for(const o of [4.5, 7.5]) for(let s = -4; s < 30; s += 5.6){ if((k++ % 5) === 3) continue; const p = at(T0, tD, s, tIn, o); L.push({ t: k % 4 === 0 ? "taxi2" : "taxi", x: p[0], z: p[1], yaw: Math.atan2(tD[0], tD[1]), c: k % 4 === 0 ? "#f2f2ef" : TXC[k % 4] }); }
+    for(const s of [41.25, 47.75]){ const p = at(T0, tD, s, tIn, 1.5); L.push({ t: "taxi", x: p[0], z: p[1], yaw: Math.atan2(-tD[0], -tD[1]), c: TXC[0] }); }
+    // 降車場の島の駐車場に数台
+    const PC = ["#f2f2f0", "#c9ccd0", "#1c1d20", "#6b6f75", "#8a1d1d", "#1f3f78"], PT = ["sedan", "kei", "minivan", "suv", "kei2"];
+    for(const s of [35.25, 40.25, 47.75, 55.25, 60.25]){ const p = R(s, 14.0); L.push({ t: PT[Math.floor(s) % 5], x: p[0], z: p[1], yaw: Math.atan2(AN[0], AN[1]) + Math.PI, c: PC[Math.floor(s * 7) % 6] }); }
+    if(typeof Veh !== "undefined"){
+      const mat = Veh.makeMat(), byT = {}; for(const c of L) (byT[c.t] = byT[c.t] || []).push(c);
+      const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), pv = new THREE.Vector3(), col = new THREE.Color();
+      for(const t in byT){ const A = byT[t], g = Veh.ai(t, 1); g.setAttribute("aBrake", new THREE.InstancedBufferAttribute(new Float32Array(A.length), 1));
+        const im = new THREE.InstancedMesh(g, mat, A.length); im.castShadow = true; im.name = "plaza_veh_" + t;
+        A.forEach((c, i) => { q.setFromAxisAngle(up, c.yaw); pv.set(c.x, Car.hAt(c.x, c.z), c.z); m4.compose(pv, q, one); im.setMatrixAt(i, m4); im.setColorAt(i, col.set(c.c));
+          const ux = Math.sin(c.yaw), uz = Math.cos(c.yaw), half = t === "bus" ? 4.6 : 1.6; for(let b = -half; b <= half + 0.01; b += 1.6) try { Car.addBlock(c.x + ux * b, c.z + uz * b, 1); } catch(e){} });
+        G.add(im); }
+    }
+  }
+  return { mask, isRoad, build3D };
+})();
+const DETAIL_U = { uDetail: { value: DETAIL_TEX }, uDetailOn: { value: 1 }, uCamP: { value: camera.position }, uPave: { value: PAVE_TEX }, uPlazaOn: { value: 1 }, uPlz: { value: Plaza.mask() } };   // r128 の Lambert には cameraPosition が送られないので自前で渡す
 function groundDetail(m, scale){
   const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey ? m.customProgramCacheKey.bind(m) : null, SC = (scale || 3).toFixed(2);
   m.customProgramCacheKey = () => (prevKey ? prevKey() : "") + "|gdet2_" + SC;
   m.onBeforeCompile = (sh, r) => {
     if(prev) prev(sh, r);
-    sh.uniforms.uDetail = DETAIL_U.uDetail; sh.uniforms.uDetailOn = DETAIL_U.uDetailOn; sh.uniforms.uCamP = DETAIL_U.uCamP; sh.uniforms.uPave = DETAIL_U.uPave;
+    sh.uniforms.uDetail = DETAIL_U.uDetail; sh.uniforms.uDetailOn = DETAIL_U.uDetailOn; sh.uniforms.uCamP = DETAIL_U.uCamP; sh.uniforms.uPave = DETAIL_U.uPave; sh.uniforms.uPlazaOn = DETAIL_U.uPlazaOn; sh.uniforms.uPlz = DETAIL_U.uPlz;
     sh.vertexShader = "varying vec3 vGW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vGW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-    sh.fragmentShader = "uniform sampler2D uDetail; uniform float uDetailOn; uniform vec3 uCamP; uniform sampler2D uPave; varying vec3 vGW;\n" + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
+    sh.fragmentShader = "uniform sampler2D uDetail; uniform float uDetailOn; uniform vec3 uCamP; uniform sampler2D uPave; uniform float uPlazaOn; uniform sampler2D uPlz; varying vec3 vGW;\n" + sh.fragmentShader.replace("#include <map_fragment>", `#include <map_fragment>
       #ifdef USE_MAP
       { float dd = distance(vGW, uCamP), up = uCamP.y - vGW.y;
         float fade = uDetailOn * (1.0 - smoothstep(60.0, 170.0, dd)) * (1.0 - smoothstep(60.0, 140.0, up));
@@ -889,9 +1056,20 @@ function groundDetail(m, scale){
       #endif
       { // v48: 駅前広場（多角形: 駅舎の前の斜めの線 A(-105,-160)→B(-190,80) の東、x < -28、-160 < z < 80、地面の高さ 7m 未満）
         vec2 p = vGW.xz; float cr = (-85.0) * (p.y + 160.0) - 240.0 * (p.x + 105.0);
-        float inP = step(vGW.y, 7.0) * smoothstep(0.0, 300.0, -cr) * smoothstep(-28.0, -30.0, p.x) * smoothstep(-160.0, -158.0, p.y) * smoothstep(80.0, 78.0, p.y);
+        float inP = uPlazaOn * step(vGW.y, 7.0) * smoothstep(0.0, 300.0, -cr) * smoothstep(-28.0, -30.0, p.x) * smoothstep(-160.0, -158.0, p.y) * smoothstep(80.0, 78.0, p.y);
         if(inP > 0.001){ vec2 dA = vec2(-0.3339, 0.9426); vec2 q = vec2(dot(p, dA), dot(p, vec2(-dA.y, dA.x)));   // 目地の向きを駅舎の正面に平行に
-          vec3 pv = texture2D(uPave, q / 6.0).rgb; diffuseColor.rgb = mix(diffuseColor.rgb, pv * 0.92, inP); } }`);
+          vec3 pv = texture2D(uPave, q / 6.0).rgb; diffuseColor.rgb = mix(diffuseColor.rgb, pv * 0.92, inP); } }
+      { // v62: 広場の中の車路（バス・タクシー・一般車）: R=アスファルト、G=白線、B=赤い舗装（Plaza.mask）
+        vec2 p = vGW.xz, mu = vec2((p.x + 200.0) / 174.0, 1.0 - (p.y + 172.0) / 280.0);
+        if(uPlazaOn > 0.5 && vGW.y < 7.0 && mu.x > 0.0 && mu.x < 1.0 && mu.y > 0.0 && mu.y < 1.0){
+          vec3 mk = texture2D(uPlz, mu).rgb;
+          if(mk.r > 0.003){
+            vec3 D = texture2D(uDetail, p / 3.0).rgb, D2 = texture2D(uDetail, p * 0.093 + vec2(0.31, 0.57)).rgb;
+            float n = 0.92 + (D.r - 0.47) * 0.55 + (D2.g - 0.5) * 0.3;
+            vec3 asp = vec3(0.265, 0.268, 0.275) * n;
+            asp = mix(asp, vec3(0.40, 0.165, 0.135) * n, mk.b);
+            asp = mix(asp, vec3(0.80, 0.80, 0.77) * (0.93 + (D.g - 0.5) * 0.25), smoothstep(0.15, 0.75, mk.g));
+            diffuseColor.rgb = mix(diffuseColor.rgb, asp, smoothstep(0.0, 0.6, mk.r)); } } }`);
   };
   m.needsUpdate = true; return m;
 }
@@ -1151,7 +1329,7 @@ const Trees = (() => {
   }
   function addTile1(tk){
     mats();
-    const L = D.tiles[tk].map(place), groups = new Map(); V48T.ntree += L.length;
+    const L = D.tiles[tk].filter(t => !Plaza.isRoad(t[0] / 10, t[1] / 10)).map(place), groups = new Map();   // v62: 駅前広場の車路の木は除く V48T.ntree += L.length;
     for(const p of L){ const key = p.shape * 3 + p.k; if(!groups.has(key)) groups.set(key, []); groups.get(key).push(p); }
     const T = S.scene.tiles[tk], cx = T.x0 + T.size / 2, cz = T.z0 + T.size / 2;
     for(const [key, arr] of groups){
@@ -1426,6 +1604,7 @@ const StreetProps = (() => {
     screen(G, 5.5, 21.75, 30.6, 8.0, 5.6);
     try { lamps(G); shelters(G); } catch(e){ console.warn("lamps", e); }
     try { aeon(G); } catch(e){ console.warn("aeon", e); }
+    try { Plaza.build3D(G); } catch(e){ console.warn("plaza", e); }
     scene.add(G);
   }
   return { build, hideOldRoof };
@@ -1824,7 +2003,7 @@ const Env = (() => {
     // v36: 街灯は「小さく鋭い光源 + 弱いにじみ」。両方向の車線で重なる分は 7m 以内で1本にまとめる。色は LED の白 6割・ナトリウム灯の橙 4割
     const raw = Traffic.segsForLamps(), seen = new Set(), pts = [], cols = [];
     // v48: 駅前広場（車線の無い所）にも 20m おきに照明（夜に広場だけ真っ暗だった）。範囲は地面の平板と同じ多角形
-    for(let x = -150; x <= -36; x += 20) for(let z = -150; z <= 70; z += 20){ if(-85 * (z + 160) - 240 * (x + 105) > -600) continue; raw.push(x, Car.hAt(x, z) + 8.0, z); }
+    for(let x = -150; x <= -36; x += 20) for(let z = -150; z <= 70; z += 20){ if(-85 * (z + 160) - 240 * (x + 105) > -600 || Plaza.isRoad(x, z)) continue; raw.push(x, Car.hAt(x, z) + 8.0, z); }
     for(let i=0;i<raw.length;i+=3){
       const kx = Math.round(raw[i]/7), kz = Math.round(raw[i+2]/7), key = kx*100003 + kz;
       if(seen.has(key)) continue; seen.add(key);
@@ -7671,7 +7850,10 @@ const Peds = (() => {
       for(let k = 1; k < P.length / 2; k++){ const x0 = P[2*k-2], z0 = P[2*k-1], x1 = P[2*k], z1 = P[2*k+1], L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(L));
         for(let j = 0; j < n; j++){ const x = x0 + (x1 - x0) * j / n, z = z0 + (z1 - z0) * j / n; if(TRK.has(Math.floor(x) + "," + Math.floor(z))){ if(++run >= 4) return true; } else run = 0; } }
       return false; };
-    const nE0 = J.edges.length; J.edges = J.edges.filter(e => !onTrk(e)); if(J.edges.length < nE0) console.log("peds: dropped edges on the plaza tracks", nE0 - J.edges.length);
+    // v62: 駅前広場の車路（バスの環状路・タクシープール・降車場）の中を 5m 以上続けて通る辺も使わない
+    const onPlz = (e) => { const P = e[8]; let run = 0; for(let k = 1; k < P.length / 2; k++){ const x0 = P[2*k-2], z0 = P[2*k-1], x1 = P[2*k], z1 = P[2*k+1], L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(L));
+      for(let j = 0; j < n; j++){ const x = x0 + (x1 - x0) * j / n, z = z0 + (z1 - z0) * j / n; if(Plaza.isRoad(x, z)){ if(++run >= 5) return true; } else run = 0; } } return false; };
+    const nE0 = J.edges.length; J.edges = J.edges.filter(e => !onTrk(e) && !onPlz(e)); if(J.edges.length < nE0) console.log("peds: dropped edges on the plaza tracks", nE0 - J.edges.length);
     E = J.edges.map((e, i) => {
       const P = new Float32Array(e[8]), n = P.length / 2, cum = new Float32Array(n);
       for(let k = 1; k < n; k++) cum[k] = cum[k - 1] + Math.hypot(P[2*k] - P[2*k-2], P[2*k+1] - P[2*k-1]);
@@ -10891,5 +11073,5 @@ applyMenu();
 (PAGE==="menu" ? menuBoot() : loadAll()).catch(e=>{ console.error(e); Boot.fail("データの読み込みに失敗しました。通信の状態を確認して、もう一度お試しください。", e, true); });
 window.__scene = scene; window.__Quest = Quest; window.__Clock = Clock; window.__TT = TT; window.__phase = phaseState; window.__Dia = Dia; window.__VEHICLES = VEHICLES; window.__limitAt = limitAt; window.__doorAction = doorAction; window.__setNotch = setNotch; window.__tick = tick; window.__Bus = Bus; window.__busP = ()=>mkPath(Bus.data.path); window.__pathPt = pathPt; window.__pathTan = pathTan; window.__Loc = Loc; window.__applyHandles = applyHandles; window.__Traffic = Traffic; window.__Trams = Trams; window.__sim = simTraffic; window.__Obs = Obs;
 window.__Obs = Obs; window.__MarkFix = MarkFix; window.__CityTun = CityTun; window.__Outer = Outer; window.__MW = MW; window.__MWT = MWT; window.__OrthoPages = OrthoPages; window.__GT = GROUND_TILES; window.__dataIn = dataIn; window.__cam = camera; window.__updateCamera = updateCamera; window.__NaviMap = NaviMap; window.__Nav = Nav; window.__Taxi = Taxi; window.__Rules = Rules;   // v29: 試験用
-window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream; window.__Stamps = Stamps; window.__ShopSigns = ShopSigns;
+window.__doHorn = doHorn; window.__S = S; window.__Snd = Snd; window.__Heli = Heli; window.__Env = Env; window.__Stream = Stream; window.__world = world; window.__cabpos = () => Cab.screenPos(); window.__Car = Car; window.__DETAIL_U = DETAIL_U; window.__Peds = Peds; window.__JR = JR; window.__FACADE_U = FACADE_U; window.__HiStream = HiStream; window.__Stamps = Stamps; window.__ShopSigns = ShopSigns;
 })();
