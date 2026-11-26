@@ -5205,7 +5205,8 @@ const Bus = (() => {
     st.atStop=0; st.dwell=0; st.dwellNeed=3+1.1*st.waiting[0];
     ribbon.visible=true; active=true; bd.clk=S.clock; bdBuild();
     $("busui").classList.add("on"); $("bus-route").textContent=D.short+"（"+D.via+"）"; hudStops();
-    busAnn("start"); setTimeout(()=>busSay("岡山駅東口 13番のりばに停車中。お客様が乗り終わったら（約"+Math.ceil(st.dwellNeed)+"秒）F で扉を閉め、青い帯に沿って発車してください。"), 400);
+    st.departPA=-1; st.reqAt=-1; st.annNext=false;
+    busAnn("start");
     return true;
   }
   function end(){ active=false; if(marks){ scene.remove(marks); marks=null; } Car.C.onDriverView=null; Car.C.camCeil=null; Car.C.passable=null; if(ribbon) ribbon.visible=false; $("busui").classList.remove("on"); for(const p of people) scene.remove(p); people.length=0; Car.setProfile("sedan"); }
@@ -5270,7 +5271,13 @@ const Bus = (() => {
     const q=mm(Car.C.x,Car.C.z); g.fillStyle="#e6503e"; g.beginPath(); g.arc(q[0],q[1],4,0,7); g.fill();
   }
   /* ---- 放送（録音があれば再生、無ければ字幕のみ） ---- */
-  function busAnn(id, extra){ const txt = BUS_ANN[id] ? BUS_ANN[id].text : null; if(txt) busSay("（放送）"+txt); Snd.ann && Snd.ann("bus_"+id); }
+  function busAnn(id, delay=0, stop=st.stopI){
+    const key="bus_"+id, txt=BUS_ANN[id]?.text;
+    const valid=()=>active && (id==="terminal" || (!st.done && stop===st.stopI &&
+      (id==="start" || !st.doors)));
+    if(txt && valid()) busSay("（放送）"+txt);
+    Snd.ann(key,delay,{key:id,valid,fallback:{[key]:txt},replace:id==="terminal"});
+  }
   /* ---- ダイヤ（時刻表）: ゲーム内ダイヤ。区間ごとに 長さ ÷ 6.2 m/s ＋ 12 秒、停車は 20 秒。電車のダイヤ（Dia）と同じ評価 ---- */
   const bd = { clk: 32400, sc: null, pen: 0, rec: [], early: [], passed: 0, passedList: [], hold: null, stopClk: 0, moving: false };
   const bdOn = () => active && Dia.on && bd.sc && !st.done;
@@ -5336,18 +5343,20 @@ const Bus = (() => {
     if(!st.doors){
       if(Math.abs(C.v)>0.3){ busSay("停車してから扉を開けてください。"); return; }
       const z=zoneInfo();
-      st.doors=true; Snd.door && Snd.door(true);
+      st.doors=true; st.departPA=-1; Snd.door(true);
       if(z && z.ok){ const i=st.stopI; st.atStop=i; st.dwell=0; const a=st.alight[i]||0, b=st.waiting[i]||0; st.dwellNeed=3+1.1*(a+b);
         const acc=Math.max(0, 40-Math.abs(z.along)*10-Math.max(0,z.gap-0.8)*25); st.score=Math.min(1000, st.score+acc);
         busSay(D.stops[i].name+"。"+(a?a+"人が降ります。":"")+(b?b+"人が乗ります。":"")+"乗り降りが終わるまでお待ちください。");
         { const m=bdOpen(i); if(m){ $("bus-msg").textContent+="　"+m; $("subtitle").textContent+="　"+m; } }
-        if(i===D.stops.length-1) setTimeout(finish, 2500);
+        if(i===D.stops.length-1) Snd.after(2500,finish,()=>active&&!st.done&&st.stopI===i);
       } else { st.atStop=-1; st.score=Math.max(0, st.score-5); busSay(z ? "停留所の標柱に扉を合わせてください（"+(z.along>0?"あと "+z.along.toFixed(1)+" m 前":Math.abs(z.along).toFixed(1)+" m 行き過ぎ")+"・歩道まで "+z.gap.toFixed(1)+" m）。" : "停留所以外で扉を開けました（-5点）。"); }
     } else {
       if(st.atStop>=0 && st.dwell<st.dwellNeed){ st.score=Math.max(0, st.score-10); busSay("まだ乗り降りしています（-10点）。"); }
       st.doors=false; Snd.door && Snd.door(false);
       if(st.atStop>=0){ const i=st.atStop; { const m=bdClose(i); if(m) setTimeout(()=>busSay(m), 300); } st.pax += (st.waiting[i]||0) - (st.alight[i]||0); st.pax=Math.max(0,st.pax); st.waiting[i]=0; placePeople();
-        st.stopI=Math.min(D.stops.length-1, i+1); st.req=false; st.annNext=false; setTimeout(()=>busAnn("depart"), 600); setTimeout(()=>{ busAnn("next_"+st.stopI); prepareNext(); }, 3200); }
+        st.stopI=Math.min(D.stops.length-1, i+1); st.req=false; st.annNext=false;
+        if(i<D.stops.length-1) st.departPA=st.stopI;
+        prepareNext(); Snd.preload(["bus_depart","bus_next_"+st.stopI,"bus_request"]); }
       st.atStop=-1; hudStops();
     }
   }
@@ -5383,6 +5392,10 @@ const Bus = (() => {
   function tick(dt, simT){
     if(!active) return;
     const C=Car.C;
+    if(!st.done && !st.doors && st.departPA===st.stopI && C.v>0.75){
+      st.departPA=-1; st.annNext=true;
+      busAnn("depart"); busAnn("next_"+st.stopI,0.42);
+    }
     // 扉の開閉（開いている間は発進しない）
     st.doorT += ((st.doors?1:0)-st.doorT)*Math.min(1,dt*3); setBusDoors(model, st.doorT);
     if(st.doors && Math.abs(C.v)>0.2){ C.v*=0.9; if(performance.now()-st.lastWarn>2500){ st.lastWarn=performance.now(); busSay("扉が開いています。閉めてから発車してください。"); } }
@@ -5403,7 +5416,10 @@ const Bus = (() => {
       if(d<0 && d>-8){ if(s_===2 && !sg._run){ sg._run=true; st.score=Math.max(0,st.score-50); busSay("赤信号を越えました（-50点）。"); } st.sigI++; } }
     $("bus-siglamp").className="siglamp "+sCls; $("bus-sig").textContent=sTxt; $("bus-sigd").textContent=sDist;
     // 降車ボタン
-    if(!st.req && st.reqAt>0){ st.reqAt-=dt; if(st.reqAt<=0){ st.req=true; Snd.chime ? Snd.chime() : null; busAnn("request"); } }
+    if(!st.req && !st.doors && st.annNext && C.v>0.3 && st.reqAt>0){
+      st.reqAt-=dt;
+      if(st.reqAt<=0){ st.req=true; Snd.chime(); busAnn("request",0.24); }
+    }
     // 停留所
     const i=st.stopI, s=D.stops[i];
     if(s){
@@ -5423,7 +5439,10 @@ const Bus = (() => {
       if(ds < -12 && !st.doors){
         if(need){ st.score=Math.max(0, st.score-40); bdPass(i); busSay(s.name+" を通過してしまいました（-40点・ダイヤ -"+Dia.cfg.PASS_PEN+"点）。"); }
         else busSay(s.name+" は乗り降りが無いので通過しました。");
-        st.pax -= 0; st.waiting[i]=0; placePeople(); st.stopI=Math.min(D.stops.length-1,i+1); st.req=false; prepareNext(); setTimeout(()=>busAnn("next_"+st.stopI), 800); hudStops();
+        if(i<D.stops.length-1){
+          st.waiting[i]=0; placePeople(); st.stopI=i+1; st.req=false;
+          prepareNext(); st.annNext=true; busAnn("next_"+st.stopI,0.5); hudStops();
+        }
       }
     }
     // 乗り心地（乗客がいるとき）
@@ -5759,6 +5778,7 @@ const Dia = (() => {
 Veh.wipeCb = (up) => { if(typeof Snd !== "undefined") Snd.wiper(up); };   // v41.14: ワイパーが払うたびに音（vehicles.js から呼ばれる）
 const Snd = (() => {
   let ctx = null, master = null, sfxBus = null, annBus = null, on = true;
+  let cabFilter, paHP, paLP, paPresence, paAudience, paEcho, paDucker;
   const buf = {};
   let rollLo = null, rollHi = null, gLo, gHi, motorG, motorO1, motorO2, motorF, hsL = null;   // v39: 新幹線の車内録音（アイドル・巡航・轟音の3層）
   let lastJoint = 0, squealed = false, squealSrc = null, squealGain = null;
@@ -5781,30 +5801,42 @@ const Snd = (() => {
     catch(e){ console.warn("sound load failed", url); }
   }
   function startLoops(){
-    if(buf.roll_lo && !rollLo){ rollLo = ctx.createBufferSource(); rollLo.buffer = buf.roll_lo; rollLo.loop = true; rollLo.connect(gLo); rollLo.start(0, Math.random()*10); }
-    if(buf.roll_hi && !rollHi){ rollHi = ctx.createBufferSource(); rollHi.buffer = buf.roll_hi; rollHi.loop = true; rollHi.connect(gHi); rollHi.start(0, Math.random()*10); }
-    if(buf.hs_idle && buf.hs_cruise && buf.hs_roar && !hsL){   // 新幹線の車内の音: 停車中の機器音 / 巡航の走行音 / 高速の轟音 を速度でつなぐ（再生速度は変えない）
-      hsL = {};
+    if(buf.roll_lo && !rollLo){ rollLo = ctx.createBufferSource(); rollLo.buffer = buf.roll_lo; rollLo.loop = true; rollLo.connect(gLo); rollLo.start(0, Math.random()*buf.roll_lo.duration); }
+    if(buf.roll_hi && !rollHi){ rollHi = ctx.createBufferSource(); rollHi.buffer = buf.roll_hi; rollHi.loop = true; rollHi.connect(gHi); rollHi.start(0, Math.random()*buf.roll_hi.duration); }
+    if(buf.hs_idle || buf.hs_cruise || buf.hs_roar){   // 欠けている素材は合成音で補う
+      if(!hsL) hsL={};
       for(const k of ["idle", "cruise", "roar"]){
+        if(hsL[k] || !buf["hs_"+k]) continue;
         const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 6000; lp.Q.value = 0.4;
         const g = ctx.createGain(); g.gain.value = 0; const sN = ctx.createBufferSource(); sN.buffer = buf["hs_" + k]; sN.loop = true;
         sN.connect(lp).connect(g).connect(sfxBus); sN.start(0, Math.random() * sN.buffer.duration); hsL[k] = { g, lp, s: sN }; } }
   }
   function init(){
-    if(ctx){ ctx.resume(); return; }
+    if(ctx){ ctx.resume().catch(()=>{}); loadEffects(); return; }
+    on=Prefs.soundOn;
     const AC = window.AudioContext || window.webkitAudioContext; if(!AC) return;
-    ctx = new AC(); master = ctx.createGain(); master.gain.value = 1.0;
-    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -10; comp.ratio.value = 4; comp.attack.value = 0.005; comp.release.value = 0.2;
+    ctx = new AC(); master = ctx.createGain(); master.gain.value = on ? 0.88 : 0;
+    function unlock(){
+      if(ctx.state==="running"){
+        document.removeEventListener("pointerdown",unlock,true); document.removeEventListener("keydown",unlock,true);
+      } else ctx.resume().catch(()=>{});
+    }
+    document.addEventListener("pointerdown",unlock,true);
+    document.addEventListener("keydown",unlock,true);
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -7; comp.ratio.value = 3; comp.attack.value = 0.008; comp.release.value = 0.26;
     master.connect(comp).connect(ctx.destination);
-    sfxBus = ctx.createGain(); sfxBus.gain.value = 1.9; sfxBus.connect(master);   // 走行音・効果音は大きめ（v8.2）
-    // 放送: 車内スピーカー風（帯域を絞り、わずかに残響）
-    annBus = ctx.createGain(); annBus.gain.value = 0.95;
-    const hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 220;
-    const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 6500;
-    const pk = ctx.createBiquadFilter(); pk.type = "peaking"; pk.frequency.value = 2200; pk.gain.value = 3; pk.Q.value = 0.8;
-    annBus.connect(hp).connect(pk).connect(lp).connect(master);
-    const dl = ctx.createDelay(); dl.delayTime.value = 0.045; const fb = ctx.createGain(); fb.gain.value = 0.18;
-    lp.connect(dl).connect(fb).connect(master);
+    sfxBus = ctx.createGain(); sfxBus.gain.value = 1.30;
+    cabFilter = ctx.createBiquadFilter(); cabFilter.type = "highshelf"; cabFilter.frequency.value = 2300;
+    paDucker = ctx.createGain(); paDucker.gain.value = 1; sfxBus.connect(cabFilter).connect(paDucker).connect(master);
+    annBus = ctx.createGain();
+    const voiceComp = ctx.createDynamicsCompressor(); voiceComp.threshold.value = -18; voiceComp.ratio.value = 2.7;
+    paHP = ctx.createBiquadFilter(); paHP.type = "highpass"; paHP.frequency.value = 230;
+    paLP = ctx.createBiquadFilter(); paLP.type = "lowpass"; paLP.frequency.value = 5200;
+    paPresence = ctx.createBiquadFilter(); paPresence.type = "peaking"; paPresence.frequency.value = 1950; paPresence.gain.value = 2; paPresence.Q.value = 1.1;
+    paAudience = ctx.createGain(); paAudience.gain.value = 0.85;
+    annBus.connect(voiceComp).connect(paHP).connect(paPresence).connect(paLP).connect(paAudience).connect(master);
+    const reflection = ctx.createDelay(0.11); reflection.delayTime.value = 0.031;
+    paEcho = ctx.createGain(); paEcho.gain.value = 0.10; paLP.connect(reflection).connect(paEcho).connect(paAudience);
     gLo = ctx.createGain(); gLo.gain.value = 0; gLo.connect(sfxBus);
     gHi = ctx.createGain(); gHi.gain.value = 0; gHi.connect(sfxBus);
     // モーター（VVVFインバータの磁励音を控えめに合成）
@@ -5826,20 +5858,35 @@ const Snd = (() => {
     dslO1 = ctx.createOscillator(); dslO1.type = "sawtooth"; dslO2 = ctx.createOscillator(); dslO2.type = "square"; dslF = ctx.createBiquadFilter(); dslF.type = "lowpass"; dslF.frequency.value = 300; dslF.Q.value = 1.2;
     dslG = ctx.createGain(); dslG.gain.value = 0; const d2 = ctx.createGain(); d2.gain.value = 0.35; const am = ctx.createGain(); am.gain.value = 1; dslO1.connect(dslF); dslO2.connect(d2).connect(dslF); dslF.connect(am).connect(dslG).connect(sfxBus);
     dslLfo = ctx.createOscillator(); dslLfo.frequency.value = 7; const lg = ctx.createGain(); lg.gain.value = 0.25; dslLfo.connect(lg).connect(am.gain); dslO1.start(); dslO2.start(); dslLfo.start();   // ゆらぎは音量 0 の時は聞こえない（後段の dslG で絞る）
-    Promise.all(Object.entries(FILES).map(([k,u]) => load(k,u))).then(startLoops);
+    loadEffects();
+  }
+  const transients = new Set();
+  const pendingEffects = new Set();
+  function loadEffects(){
+    const keys = S.mode==="heli" ? ["heli_rotor","heli_body","heli_cabin"] :
+      S.mode==="bus" || S.mode==="car" ?
+        ["car_engine","car_road","car_squeal","car_horn","car_crash","bus_engine","bus_cabin","bus_horn","bus_air","bus_door_open","bus_door_close","roll_lo","roll_hi"] :
+        ["roll_lo","roll_hi","squeal","air","dopen","dclose","bell","mc_click","bv_click","lever_clunk",
+          ...(S.running && VEH().hs ? ["hs_idle","hs_cruise","hs_roar","hs_chime"] : [])];
+    for(const k of keys) if(!buf[k]&&!pendingEffects.has(k)){
+      pendingEffects.add(k); load(k,FILES[k]).then(startLoops);
+    }
   }
   function play(name, opt){
     if(!ctx || !on || !buf[name]) return null;
     opt = opt || {};
     const s = ctx.createBufferSource(); s.buffer = buf[name]; s.playbackRate.value = opt.rate || 1;
     const g = ctx.createGain(); g.gain.value = opt.gain == null ? 1 : opt.gain;
-    s.connect(g).connect(sfxBus); s.start(ctx.currentTime + (opt.delay || 0), opt.offset || 0, opt.dur);
+    s.connect(g).connect(sfxBus); transients.add(s);
+    s.onended=()=>{transients.delete(s);s.disconnect();g.disconnect();};
+    s.start(ctx.currentTime + (opt.delay || 0), Math.min(opt.offset || 0, Math.max(0, s.buffer.duration-0.01)), opt.dur);
     return {s, g};
   }
   function thump(t, v){                           // レール継目（録音にも含まれるため控えめに）
     const o = ctx.createOscillator(); o.type="sine"; o.frequency.setValueAtTime(80, t); o.frequency.exponentialRampToValueAtTime(40, t+0.12);
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.45*v, t+0.006); g.gain.exponentialRampToValueAtTime(0.0001, t+0.18);
-    o.connect(g).connect(sfxBus); o.start(t); o.stop(t+0.2);
+    o.connect(g).connect(sfxBus); transients.add(o);
+    o.onended=()=>{transients.delete(o);o.disconnect();g.disconnect();}; o.start(t); o.stop(t+0.2);
   }
   const sm = (a,b,x) => { const t = Math.min(1, Math.max(0, (x-a)/(b-a))); return t*t*(3-2*t); };
   let noiseBuf = null, windN = null, rumbN = null, hissN = null, lastTun = false, atcTimer = null, railN = null, floorN = null, dslO1 = null, dslO2 = null, dslF = null, dslG = null, dslLfo = null, dslRpm = 600;
@@ -5873,7 +5920,7 @@ const Snd = (() => {
     if(squealGain && (v < 0.2 || !braking)) { squealGain.gain.setTargetAtTime(0, t, 0.12); squealGain = null; }
   }
   function jrLoops(on2, t){ if(!jrL) return; if(!on2){ jrL.run.g.gain.setTargetAtTime(0, t, 0.2); jrL.cruise.g.gain.setTargetAtTime(0, t, 0.2); } }
-  function jrUpdate(t, st){
+  function jrUpdate(t, st, dt){
     const vk = Number.isFinite(st.vk) ? st.vk : 0, ins = st.inside !== false, kind = st.kind || "u227", lineK = st.line || "sanyo";
     if(windN){ windN.g.gain.setTargetAtTime(0.25 * sm(60, 130, vk) * (ins ? 0.5 : 1), t, 0.3); windN.fl.frequency.setTargetAtTime(500 + vk * 5, t, 0.3); rumbN.g.gain.setTargetAtTime(0, t, 0.3); hissN.g.gain.setTargetAtTime(0.03 * sm(70, 130, vk), t, 0.3); }
     // 走行音: 録音（低速）→ 合成の転動音へ
@@ -5895,7 +5942,7 @@ const Snd = (() => {
     if(kind === "kiha47"){
       motorG.gain.setTargetAtTime(0, t, 0.1);
       const pf = st.pf || 0, tgt = pf > 0 ? (vk < 45 ? 900 + 700 * pf : Math.min(1600, 650 + vk * 10)) : 600;
-      dslRpm += (tgt - dslRpm) * Math.min(1, (tgt > dslRpm ? 1.2 : 0.8) * 0.1);
+      dslRpm += (tgt - dslRpm) * Math.min(1, (tgt > dslRpm ? 2.4 : 1.5) * dt);
       const fe = dslRpm / 60 * 3;
       dslO1.frequency.setTargetAtTime(fe, t, 0.08); dslO2.frequency.setTargetAtTime(fe / 2, t, 0.08); dslF.frequency.setTargetAtTime(220 + (dslRpm - 600) * 0.55, t, 0.1);
       dslG.gain.setTargetAtTime((0.07 + 0.11 * (dslRpm - 600) / 1000) * (ins ? 1 : 0.8), t, 0.15);
@@ -5908,7 +5955,7 @@ const Snd = (() => {
       } else {               // VVVF（IGBT）
         const fm = vk * 4.3;   // 電動機の回転に比例する基本の高さ（近似）
         let step;
-        if(vk < 12){ f = 1040; step = f; q = 9; }                                        // 非同期（搬送波一定）
+        if(vk < 12){ f = kind==="ml223" ? 890 : 1060; step = f; q = 8; }
         else if(vk < 38){ f = fm * 6.5; step = Math.round(f / 30) * 30; q = 7; }        // 同期モード
         else if(vk < 62){ f = fm * 3.4; step = Math.round(f / 30) * 30; q = 6; }
         else { f = fm * 1.0 + 40; step = f; q = 3; }                                     // 1 パルス: 低い唸り
@@ -5917,13 +5964,13 @@ const Snd = (() => {
       }
       motorF.Q.setTargetAtTime(q, t, 0.1); motorG.gain.setTargetAtTime(g * (ins ? 1 : 0.7) * (dep ? 0.35 : 1), t, 0.12);
     }
-    departSnd(t, vk, (st.pf || 0) > 0, kind !== "kiha47" && kind !== "y115", ins ? 0.7 : 0.45);
+    departSnd(t, vk, (st.pf || 0) > 0, kind==="u227", ins ? 0.38 : 0.22);
     // ブレーキ鳴き（停止の直前に一度）
     brakeSqueal(t, vk, st.notch < 0 || st.emergency, 0.32, 0.85, ins ? 0.45 : 0.3);
     // 継目: 線ごとの間隔。1 両目の台車 2 つ（各 2 軸）
     const iv = (lineK === "tsuyama" || lineK === "kibi") ? 25 : 200;
     if(vk > 3){
-      if(st.pos - jrJointAt >= iv){ jrJointAt = st.pos; const ms = vk / 3.6, vol = Math.min(1, 0.25 + vk / 90) * (iv > 100 ? 0.8 : 1);
+      if(st.pos - jrJointAt >= iv){ jrJointAt = st.pos; const ms = vk / 3.6, vol = Math.min(1, 0.20 + vk / 105) * (iv > 100 ? 0.53 : 0.74);
         for(const d of [1.2, 3.3, 15.1, 17.2]) thump(t + d / ms, vol); }
     } else jrJointAt = st.pos;
   }
@@ -5946,14 +5993,14 @@ const Snd = (() => {
     if(rollLo) rollLo.playbackRate.setTargetAtTime(0.5 + Math.min(vk, 200) / 200 * 0.5, t, 0.3);
     if(hsL){
       const lv = ins ? 0.42 : 0.2, tg = tun ? 1.25 : 1;
-      hsL.idle.g.gain.setTargetAtTime(lv * 0.6 * (1 - sm(40, 150, vk)), t, 0.4);
+      hsL.idle?.g.gain.setTargetAtTime(lv * 0.6 * (1 - sm(40, 150, vk)), t, 0.4);
       const pw = Math.max(0, Math.min(1, Math.max(st.pf, st.bf * 0.7))) * sm(5, 120, vk) * (1 - sm(200, 290, vk));   // v39.2: 加速・回生中は録音の走行音が少し強まる（電子音の磁励音の代わり）
-      hsL.cruise.g.gain.setTargetAtTime(lv * sm(15, 130, vk) * (1 - sm(200, 285, vk) * 0.8) * tg * (1 + 0.2 * pw), t, 0.5);
-      hsL.roar.g.gain.setTargetAtTime(lv * sm(150, 270, vk) * tg, t, 0.5);
+      hsL.cruise?.g.gain.setTargetAtTime(lv * sm(15, 130, vk) * (1 - sm(200, 285, vk) * 0.8) * tg * (1 + 0.2 * pw), t, 0.5);
+      hsL.roar?.g.gain.setTargetAtTime(lv * sm(150, 270, vk) * tg, t, 0.5);
       const cut = (ins ? 7000 : 2500) * (tun ? 0.7 : 1);              // 外から聞くときはこもらせる
       for(const k in hsL) hsL[k].lp.frequency.setTargetAtTime(cut, t, 0.4);
     }
-    const wk = hsL ? 0.3 : 1;                                       // 録音がある時は合成の風音を控えめに
+    const wk = hsL?.cruise && hsL.roar ? 0.36 : 1;
     if(windN){
       windN.g.gain.setTargetAtTime((0.01 + 0.5 * Math.pow(k, 1.8)) * wk * (ins ? 0.8 : 1.3) * (tun ? 1.7 : 1) * sm(1, 30, vk), t, 0.25);
       windN.fl.frequency.setTargetAtTime((350 + vk * 6.5) * (tun ? 0.75 : 1), t, 0.3);
@@ -5976,9 +6023,9 @@ const Snd = (() => {
     if(noiseBuf){ const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = enter ? 380 : 700; const h = ctx.createGain();
       h.gain.setValueAtTime(0.0001, t); h.gain.exponentialRampToValueAtTime(0.9 * k, t + 0.08); h.gain.exponentialRampToValueAtTime(0.0001, t + 1.2); s.connect(f).connect(h).connect(sfxBus); s.start(t, Math.random() * 2, 1.3); }
   }
-  function atc(on){   // ATC 速度超過の警報（ピンポーン…）。自動ブレーキが解除されるまで繰り返す
+  function atc(active){   // ATC 速度超過の警報（ピンポーン…）。自動ブレーキが解除されるまで繰り返す
     if(atcTimer){ clearInterval(atcTimer); atcTimer = null; }
-    if(!on || !ctx) return;
+    if(!active || !on || !ctx) return;
     const ding = () => { if(!ctx) return; const t = ctx.currentTime;
       for(const [f, d] of [[1568, 0], [1175, 0.28]]){ const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = f; const g = ctx.createGain();
         g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.28, t + d + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.5); o.connect(g).connect(sfxBus); o.start(t + d); o.stop(t + d + 0.6); } };
@@ -5994,13 +6041,14 @@ const Snd = (() => {
     const t = ctx.currentTime, v = st.speed, a = st.acc;
     if(!st.jr) jrLoops(false, t);
     if(st.hs){ if(dslG) dslG.gain.setTargetAtTime(0, t, 0.2); if(railN){ railN.g.gain.setTargetAtTime(0, t, 0.2); floorN.g.gain.setTargetAtTime(0, t, 0.2); } hsUpdate(t, st); return; }
-    if(st.jr){ jrUpdate(t, st); return; }
+    if(st.jr){ jrUpdate(t, st, dt); return; }
     if(dslG) dslG.gain.setTargetAtTime(0, t, 0.2); if(railN){ railN.g.gain.setTargetAtTime(0, t, 0.2); floorN.g.gain.setTargetAtTime(0, t, 0.2); }
     if(windN){ windN.g.gain.setTargetAtTime(0, t, 0.2); rumbN.g.gain.setTargetAtTime(0, t, 0.2); hissN.g.gain.setTargetAtTime(0, t, 0.2); }
     // 走行音: 低速ループ→高速ループへクロスフェード。再生速度も速度に比例
-    const lvl = Math.pow(sm(0.3, 14, v), 0.8), wHi = sm(14, 32, v);
-    gLo.gain.setTargetAtTime(lvl * (1 - wHi) * 1.3, t, 0.15);
-    gHi.gain.setTargetAtTime(lvl * wHi * 1.2 + lvl * 0.18, t, 0.15);
+    const lvl = Math.pow(sm(0.3,14,v),0.8), wHi = sm(14,32,v), old=st.motor==="dc";
+    const cab=st.view==="cab", rollLevel=(cab?0.82:1)*(old?1:0.72);
+    gLo.gain.setTargetAtTime(lvl*(1-wHi)*1.10*rollLevel,t,0.15);
+    gHi.gain.setTargetAtTime(lvl*(wHi*1.04+0.15)*rollLevel,t,0.15);
     if(rollLo) rollLo.playbackRate.setTargetAtTime(0.55 + Math.min(v, 30) / 30 * 0.6, t, 0.2);
     if(rollHi) rollHi.playbackRate.setTargetAtTime(0.75 + Math.min(v, 45) / 45 * 0.4, t, 0.2);
     // モーター: 力行・電気ブレーキ時。低速は一定音程、速度とともに上昇
@@ -6012,28 +6060,36 @@ const Snd = (() => {
       motorF.Q.setTargetAtTime(2.5, t, 0.1); motorF.frequency.setTargetAtTime(f * 2.2, t, 0.1);
       motorG.gain.setTargetAtTime(v > 0.5 ? (0.02 + 0.05 * Math.min(1, v / 35)) * (st.notch > 0 ? 1.6 : 0.8) : 0.0, t, 0.15);
     } else {
-      const f = v < 8 ? 520 + v * 8 : 584 + (v - 8) * 26;
+      const f = v < 8 ? 515 + v * 7 : v < 25 ? 575 + (v - 8)*24 : 990 + (v - 25)*11;
       motorO1.frequency.setTargetAtTime(f, t, 0.08); motorO2.frequency.setTargetAtTime(f * 2, t, 0.08);
       motorF.Q.setTargetAtTime(6, t, 0.1); motorF.frequency.setTargetAtTime(f * 1.5, t, 0.1);
-      motorG.gain.setTargetAtTime((st.notch !== 0 || st.emergency) && v < 48 ? (0.012 + 0.03 * load) * (dep ? 0.35 : 1) : 0.0, t, 0.15);
+      motorG.gain.setTargetAtTime(!st.doorOpen && !st.emergency && st.notch!==0 && (v>1.8||st.notch>0) && v<48 ?
+        (0.012+0.032*load)*(st.notch<0?0.73:1)*(cab?0.85:1) : 0,t,0.13);
     }
-    want("depart", "stop2", "buzz_long", "buzz_short");
-    departSnd(t, v, st.notch > 0, st.motor !== "dc", 0.75);   // 吊り掛け（3000形）は発車の録音を使わない（VVVF の音のため）
+    want("stop2", "buzz_long", "buzz_short");
     // ブレーキ鳴き: 制動中に 9km/h を下回ったら一度だけ（停止で消える）
     brakeSqueal(t, v, st.notch < 0 || st.emergency, 0.55, 1, 0.7);
     // 継目音
     if(v > 3){
       if(st.pos - lastJoint >= 25){
-        lastJoint = st.pos; const ms = v / 3.6, vol = Math.min(1, 0.3 + v / 45);
-        for(const d of [1.5, 3.3, 14.7, 16.5]) thump(t + d / ms, vol);
+        lastJoint=st.pos; const ms=v/3.6, vol=Math.min(0.64,0.16+v/75)*(old?1:0.66);
+        const axles=old ? [0,1.7,6.7,8.4] : [0,1.8,8.6,10.4];
+        for(const d of axles) if(d/ms<5) thump(t+d/ms,vol);
       }
     } else lastJoint = st.pos;
   }
   function notch(n, prev){
     if(!ctx || !on) return;
-    if(n < prev && n < 0) play("air", {gain: 0.18, rate: 1.6, dur: 0.6});      // ブレーキ込め
+    const vehicle=VEH();
+    if(n<prev && n<0 && !vehicle.hs && (S.motor==="dc" || (vehicle.jr&&n<=-NB()))){
+      play("air",{gain:n<=-NB()?0.23:0.09,rate:S.motor==="dc"?1.16:1.56,dur:0.42});
+    }
   }
-  function brakeRelease(){ play("air", {gain: 0.6}); }
+  function brakeRelease(){
+    if(S.motor==="dc" || (VEH().jr&&!VEH().hs)){
+      play("air",{gain:S.motor==="dc"?0.33:0.19,rate:S.motor==="dc"?0.91:1.16,dur:0.68});
+    }
+  }
   // v18: 電車のマスコン・ブレーキ弁のノッチの音（1 段ごとに「カチッ」。まとめて動かすと「カクカク」と続けて鳴る）
   let lastMC = 0, lastBV = 0;
   function levers(mc, bv, emg){ emg = emg || 6;
@@ -6049,20 +6105,51 @@ const Snd = (() => {
     lastMC = mc; lastBV = bv;
   }
   function door(open){
-    if(S.mode === "bus"){ play(open ? "bus_door_open" : "bus_door_close", {gain: 0.9}); return; }
-    const jr = S.mode === "tram" && typeof VEH === "function" && VEH().jr && !VEH().hs;
-    if(jr) jrDoorChime();
-    else if(S.mode === "tram" && !open) play("buzz_long", {gain: 0.5});   // v47: 路面電車はドアが閉まる時にブザー（提供音源）
-    if(open && jr && buf.jr_door) play("jr_door", {gain: 1.1}); else if(open) play("dopen", {gain: 0.9}); else play("dclose", {gain: 0.9});
+    if(S.mode==="bus"){
+      const inside=Car.C.view==="driver";
+      play(open?"bus_door_open":"bus_door_close",{gain:inside?0.76:0.49,rate:0.96+Math.random()*0.07});
+      if(open) play("bus_air",{gain:inside?0.17:0.29,rate:1.35,delay:0.12,dur:0.32});
+      return;
+    }
+    const v=VEH(), old=!v.jr && S.motor==="dc", inside=S.view==="cab", modern=v.jr&&!v.hs&&v.mk!=="y115"&&v.mk!=="kiha47";
+    if(!open && modern) jrDoorChime();
+    if(!open && old) play("buzz_long",{gain:inside?0.36:0.21,dur:0.48});
+    const file=open?(v.jr&&!v.hs&&buf.jr_door?"jr_door":"dopen"):"dclose";
+    play(file,{gain:inside?0.73:0.53,rate:v.hs?0.84:old?0.95:1.06,delay:!open&&modern?0.32:!open&&old?0.18:0});
   }
   function horn(){
     if(S.mode === "tram" && typeof VEH === "function" && VEH().hs){ hsHorn(); return; }
     if(S.mode === "tram" && typeof VEH === "function" && VEH().jr){ jrHorn(); return; }
     if(S.mode === "bus"){ play("bus_horn", {gain: 0.8}); return; }
     if(S.mode === "car"){ play("car_horn", {gain: 0.75}); return; }
-    play("bell", {gain: 0.9}); play("bell", {gain: 0.8, delay: 0.42}); }
+    if(S.motor!=="dc"){ play("bell",{gain:S.view==="cab"?0.66:0.97,rate:1.05}); return; }
+    // 3000形に後付けメロディホーンは付かない。短い警報音を近似する。
+    legacyHorn();
+  }
+  function legacyHorn(){
+    if(!ctx || !on) return;
+    const t=ctx.currentTime;
+    for(const [freq,levels] of [[385,0.08],[512,0.055]]){
+      const tone=ctx.createOscillator(), g=ctx.createGain(), lp=ctx.createBiquadFilter();
+      tone.type="sawtooth"; tone.frequency.value=freq;
+      lp.type="lowpass"; lp.frequency.value=1300;
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(levels*(S.view==="cab"?0.78:1),t+0.032);
+      g.gain.setValueAtTime(levels*(S.view==="cab"?0.78:1),t+0.37);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.55);
+      tone.connect(lp).connect(g).connect(sfxBus); transients.add(tone);
+      tone.onended=()=>{transients.delete(tone);tone.disconnect();lp.disconnect();g.disconnect();};
+      tone.start(t); tone.stop(t+0.58);
+    }
+  }
   function buzz(long){ return play(long ? "buzz_long" : "buzz_short", {gain: long ? 0.5 : 0.55}); }   // v47: ブザー（降車ボタンなど）
-  function hsChime(){ return play("hs_chime", {gain: 0.7}); }   // v40: 新幹線の「まもなく到着」チャイム（提供音源）
+  function hsChime(){
+    if(!ctx || !on || !buf.hs_chime) return 0;
+    const src=ctx.createBufferSource(), g=ctx.createGain();
+    src.buffer=buf.hs_chime; g.gain.value=0.54; src.connect(g).connect(annBus);
+    transients.add(src); src.onended=()=>{transients.delete(src);src.disconnect();g.disconnect();};
+    src.start(); return src.buffer.duration+0.20;
+  }
   // v41.7: ミッションや発車時刻の合図（kind: ok=ピポッ / load=積み込み / done=到着・完了 / bad=減点）
   function blip(kind){ if(!ctx || !on) return; const t=ctx.currentTime;
     const seq = kind==="bad" ? [[196,0,"triangle"],[147,0.15,"triangle"]] : kind==="done" ? [[784,0],[988,0.11],[1319,0.22],[1568,0.36]] : kind==="load" ? [[659,0],[880,0.09]] : [[880,0],[1175,0.13]];
@@ -6072,50 +6159,124 @@ const Snd = (() => {
     for(const [f,d] of [[1318.5,0],[1046.5,0.32]]){ const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=f; const g=ctx.createGain();
       g.gain.setValueAtTime(0.0001,t+d); g.gain.exponentialRampToValueAtTime(0.35,t+d+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+d+0.9); o.connect(g).connect(sfxBus); o.start(t+d); o.stop(t+d+1); } }
   // ---- 放送 ----
-  let annCur = null, ANNF = null;
-  fetch("audio/ann.json").then(r => r.json()).then(j => { ANNF = j; }).catch(() => {});
-  const annBuf = {};
-  async function annLoad(f){
-    if(!annBuf[f]) annBuf[f] = fetch("audio/" + f).then(r => r.arrayBuffer()).then(a => ctx.decodeAudioData(a)).catch(e => { delete annBuf[f]; throw e; });
-    return annBuf[f];
-  }
-  function preload(ids){ if(!ctx || !ANNF) return; for(const id of ids){ const c = ANNF[id]; if(c && !annBuf[c.f]) annLoad(c.f).catch(()=>{}); } }
-  // v44: いくつかの放送を続けて流す（日本語 → 英語など）。間は gap 秒。途中で別の放送が始まったら打ち切る
-  let annSeqN = 0;
-  async function annSeq(ids, gap){
-    (window.__annLog || (window.__annLog = [])).push(ids.join("+"));   // 試験用の記録
-    if(!on || !ctx || !ANNF) return; const my = ++annSeqN; let t0 = ctx.currentTime + 0.1;
-    if(annCur){ try{ annCur.stop(); }catch(e){} }
-    for(const id of ids){ const c = ANNF[id]; if(!c) continue; let b; try{ b = await annLoad(c.f); }catch(e){ continue; } if(my !== annSeqN) return;
-      const s = ctx.createBufferSource(); s.buffer = b; s.connect(annBus); const st = Math.max(t0, ctx.currentTime + 0.05); s.start(st); annCur = s; t0 = st + b.duration + (gap == null ? 0.45 : gap); }
-  }
-  async function ann(id, delay){
-    if(!on) return; annSeqN++;
-    const c = ANNF && ANNF[id];
-    if(c && ctx){
-      try{
-        const b = await annLoad(c.f);
-        if(annCur){ try{ annCur.stop(); }catch(e){} }
-        const s = ctx.createBufferSource(); s.buffer = b; s.connect(annBus); s.start(ctx.currentTime + (delay || 0)); annCur = s;
-        return;
-      }catch(e){}
+  let ANNF = null, service = 0, speaking = false, playing = false, serial = 0;
+  let jobs = [], stopVoice = null;
+  const manifest = PAGE === "menu" ? Promise.resolve(null) :
+    fetch("audio/ann.json").then(r => r.ok ? r.json() : null).then(j => ANNF = j).catch(() => null);
+  const annBuf = new Map();
+  function annLoad(file){
+    if(!annBuf.has(file)){
+      const p = fetch("audio/" + file)
+        .then(r => { if(!r.ok) throw Error("PA audio unavailable"); return r.arrayBuffer(); })
+        .then(a => ctx.decodeAudioData(a))
+        .catch(e => { if(annBuf.get(file)===p) annBuf.delete(file); throw e; });
+      annBuf.set(file,p);
+      if(annBuf.size > 36) annBuf.delete(annBuf.keys().next().value);
     }
-    if(c) say(c.tts);
+    return annBuf.get(file);
   }
-  let voice = null;
-  function pickVoice(){
-    if(!("speechSynthesis" in window)) return null;
-    const vs = speechSynthesis.getVoices().filter(v => /^ja/i.test(v.lang));
-    voice = vs.find(v => /female|kyoko|nanami|haruka|ayumi|sayaka|google/i.test(v.name)) || vs[0] || null;
-    return voice;
+  async function preload(ids){
+    if(!ctx) return;
+    const table = await manifest;
+    for(const id of ids){ const file = table?.[id]?.f; if(file) annLoad(file).catch(()=>{}); }
   }
-  if("speechSynthesis" in window){ speechSynthesis.onvoiceschanged = pickVoice; }
-  function say(text){
-    if(!on || !("speechSynthesis" in window)) return;
-    const u = new SpeechSynthesisUtterance(text); u.lang = "ja-JP"; if(voice || pickVoice()) u.voice = voice;
-    u.rate = 0.98; u.pitch = 1.05; speechSynthesis.speak(u);
+  function browserSpeech(text, english){
+    return new Promise(resolve => {
+      if(!text || !("speechSynthesis" in window)) { resolve(); return; }
+      const voices = speechSynthesis.getVoices();
+      const list = voices.filter(v => (english ? /^en/i : /^ja/i).test(v.lang));
+      const chosen = list.find(v=>/nanami|kyoko|haruka|ayumi|sayaka|sonia|aria|google/i.test(v.name)) || list[0];
+      if(!chosen && voices.length){ resolve(); return; }
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = english ? "en-GB" : "ja-JP"; if(chosen) u.voice = chosen;
+      u.rate = english ? 0.91 : 0.96; u.pitch = 1.0;
+      const inside=S.mode==="bus" ? Car.C.view==="driver" : S.view==="cab";
+      u.volume=inside ? 0.76 : 0.22;
+      let timeout;
+      const done=()=>{ clearTimeout(timeout); if(stopVoice===cancel) stopVoice=null; resolve(); };
+      const cancel=()=>{ speechSynthesis.cancel(); done(); };
+      stopVoice=cancel;
+      u.onend=u.onerror=done;
+      timeout=setTimeout(cancel,Math.min(28000,Math.max(6500,text.length*260)));
+      try { speechSynthesis.speak(u); } catch(e){ done(); }
+    });
   }
-  function hush(){ if(annCur){ try{ annCur.stop(); }catch(e){} annCur = null; } if("speechSynthesis" in window) speechSynthesis.cancel();
+  function after(delay, action, valid = () => true){
+    const turn = service;
+    return setTimeout(()=>{ if(turn===service && valid()) action(); },delay);
+  }
+  function clearPA(){
+    serial++; jobs=[]; playing=false; speaking=false;
+    if(stopVoice) stopVoice();
+  }
+  function wait(seconds){ return new Promise(resolve=>setTimeout(resolve,seconds*1000)); }
+  function playPA(buffer){
+    return new Promise(resolve=>{
+      const src=ctx.createBufferSource(); src.buffer=buffer; src.connect(annBus);
+      const done=()=>{ if(stopVoice===cancel) stopVoice=null; src.disconnect(); resolve(); };
+      const cancel=()=>{ src.onended=null; try{src.stop();}catch(e){} done(); };
+      stopVoice=cancel; src.onended=done; src.start();
+    });
+  }
+  async function drain(){
+    if(playing || !on || !ctx || ctx.state!=="running") return;
+    const ticket=serial; playing=true;
+    try {
+      while(ticket===serial && jobs.length){
+        const job=jobs.shift();
+        if(job.delay) await wait(job.delay);
+        if(ticket!==serial || !on) return;
+        if(!job.valid()) continue;
+        const table=await manifest;
+        for(let i=0;i<job.ids.length;i++){
+          const id=job.ids[i], clip=table?.[id]; let buffer=null;
+          if(clip?.f){ try{ buffer=await annLoad(clip.f); }catch(e){} }
+          if(ticket!==serial || !on) return;
+          if(!job.valid()) break;
+          const fallback=clip?.tts || clip?.text || job.fallback?.[id];
+          if(!buffer && !fallback) continue;
+          speaking=true;
+          if(buffer) await playPA(buffer); else await browserSpeech(fallback,/_en$/.test(id));
+          if(ticket!==serial) return;
+          if(i<job.ids.length-1) await wait(job.gap);
+        }
+        speaking=false;
+      }
+    } finally {
+      if(ticket===serial){ playing=false; speaking=false; }
+    }
+  }
+  function annSeq(ids, gap=0.42, opt={}){
+    if(!on || !ctx) return;
+    const log=window.__annLog || (window.__annLog=[]);
+    log.push(ids.join("+")); if(log.length>60) log.shift();
+    if(opt.replace) clearPA();
+    if(opt.key) jobs=jobs.filter(j=>j.key!==opt.key);
+    jobs.push({ids,gap,delay:opt.delay||0,valid:opt.valid||(()=>true),fallback:opt.fallback,key:opt.key});
+    drain().catch(e=>console.warn("PA playback failed",e));
+  }
+  function ann(id, delay=0, opt={}){ annSeq([id],0,{...opt,delay}); }
+  function audioSpace(){
+    if(!ctx) return;
+    if(ctx.state==="running" && jobs.length && !playing) drain().catch(e=>console.warn("PA playback failed",e));
+    const t=ctx.currentTime, bus=S.mode==="bus", rail=S.mode==="tram" && S.running;
+    const vehicle=rail ? VEH() : null, hs=!!vehicle?.hs, traditional=rail && !vehicle.jr && S.motor==="dc";
+    const inside=bus || S.mode==="car" ? Car.C.view==="driver" : S.mode==="heli" ? Heli.H.view!=="chase" : S.view==="cab";
+    const open=bus ? Bus.st.doors : rail && S.doorOpen;
+    paHP.frequency.setTargetAtTime(traditional?320:hs?165:bus?255:215,t,0.16);
+    paLP.frequency.setTargetAtTime(inside ? (traditional?4300:bus?5100:hs?6800:5600) : open?4300:2450,t,0.18);
+    paPresence.gain.setTargetAtTime(traditional?3:1.6,t,0.14);
+    paAudience.gain.setTargetAtTime(inside ? 0.83 : open ? 0.35 : 0.14,t,0.20);
+    paEcho.gain.setTargetAtTime(inside ? (traditional?0.10:hs?0.16:0.075) : 0.08,t,0.2);
+    cabFilter.gain.setTargetAtTime(inside&&!open ? (hs?-5:bus?-3.8:-2.2) : 0,t,0.18);
+    paDucker.gain.setTargetAtTime(speaking ? (inside?0.69:0.9) : 1,t,speaking?0.065:0.30);
+  }
+  function hush(newService=true){
+    if(newService) service++;
+    clearPA(); atc(false); lastJoint=jrJointAt=0; lastTun=false; busBrakePeak=0; busAirAt=-Infinity; busGear=-1; busGearAt=-Infinity; depArm=true; squealed=false;
+    if("speechSynthesis" in window) speechSynthesis.cancel();
+    for(const src of transients){ try{src.stop();}catch(e){} }
+    transients.clear();
     if(ctx){ const t = ctx.currentTime;   // v38: モードを変える時に、新幹線の連続音（録音・風・モーター）を止める（次の update で必要なら戻る）
       for(const n of [motorG, gLo, gHi, dslG]) if(n) n.gain.setTargetAtTime(0, t, 0.05);
       for(const n of [railN, floorN]) if(n) n.g.gain.setTargetAtTime(0, t, 0.05);
@@ -6175,13 +6336,17 @@ const Snd = (() => {
   }
   function toggle(){
     on = !on;
-    if(!on){ hush(); if(master) master.gain.value = 0; } else if(master) master.gain.value = 1.0;
+    if(!on){ hush(false); if(master) master.gain.value=0; }
+    else if(master){
+      master.gain.value=0.88;
+      if(S.mode==="tram"&&S.running&&S.atc&&VEH().hs) atc(true);
+    }
     return on;
   }
   function text(id){ return ANNF && ANNF[id] ? ANNF[id].text : ""; }
   // ---- 車モードの音: エンジン（回転数に応じた倍音）・ロードノイズ・タイヤ鳴き・衝突 ----
   // ---- 車・バスの音（v18: 実録音のループ）: エンジン（回転数で再生速度・踏み込みで明るく）・ロードノイズ・タイヤ鳴き。バスはディーゼルと車内の音 ----
-  let eng = null, wasMoving = false, bkv = null;
+  let eng = null, bkv = null, busBrakePeak=0, busAirAt=-Infinity, busGear=-1, busGearAt=-Infinity;
   /* v41.19: バイクのエンジン音（合成。録音ではない）。400cc 並列 4 気筒の目安: 1 回転に 2 回の爆発 → 基音 = 回転数/30 Hz（アイドル 1,300rpm で 43Hz・11,000rpm で 367Hz）。
      基音（倍音を少し足した波）＋ 半分の周波数の波（気筒のばらつき）をローパスに通し、回転と踏み込みで明るく・大きく。帯域を絞った雑音で吸気・排気の「ゴー」、風切り音（速度の 2 乗）。シフトの瞬間は音を一瞬落とす */
   function bikeVoice(){
@@ -6198,15 +6363,26 @@ const Snd = (() => {
   function carSound(C){
     if(!ctx) return;
     if(!eng){
-      if(!buf.car_engine || !buf.bus_engine) return;
+      if(!C.active || (S.mode!=="bus" && S.mode!=="car")) return;
       const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2000; lp.Q.value = 0.7; lp.connect(sfxBus);
       eng = { lp, car: loopNode("car_engine", lp), bus: loopNode("bus_engine", lp), road: loopNode("car_road", sfxBus), cabin: loopNode("bus_cabin", sfxBus), sq: loopNode("car_squeal", sfxBus) };
+      const diesel=ctx.createOscillator(), resonance=ctx.createBiquadFilter(), dieselGain=ctx.createGain();
+      diesel.type="triangle"; resonance.type="lowpass"; resonance.frequency.value=275;
+      dieselGain.gain.value=0; diesel.connect(resonance).connect(dieselGain).connect(sfxBus);
+      diesel.start(); eng.diesel=diesel; eng.resonance=resonance; eng.dieselGain=dieselGain;
       const o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = 1050; const g = ctx.createGain(); g.gain.value = 0; o.connect(g).connect(sfxBus); o.start(); eng.bp = g;
     }
+    for(const [key,asset,dest] of [["car","car_engine",eng.lp],["bus","bus_engine",eng.lp],["road","car_road",sfxBus],["cabin","bus_cabin",sfxBus],["sq","car_squeal",sfxBus]]){
+      if(!eng[key]&&buf[asset]) eng[key]=loopNode(asset,dest);
+    }
     const t = ctx.currentTime, set = (n, v, tc) => { if(n) n.g.gain.setTargetAtTime(v, t, tc || 0.1); };
-    if(!on || !C.active){ for(const k of ["car","bus","road","cabin","sq"]) set(eng[k], 0); eng.bp.gain.setTargetAtTime(0, t, 0.02); bikeOff(t); wasMoving = false; return; }
+    if(!on || !C.active || (S.mode!=="bus" && S.mode!=="car")){
+      for(const k of ["car","bus","road","cabin","sq"]) set(eng[k],0);
+      eng.dieselGain.gain.setTargetAtTime(0,t,0.05); eng.bp.gain.setTargetAtTime(0,t,0.02); bikeOff(t); return;
+    }
     const bus = S.mode === "bus" || C.profile === "truck", sp = Math.abs(C.v), inside = C.view === "driver", bike = C.profile === "bike" && S.mode === "car";
     const r = Math.max(0, Math.min(1, (C.rpm - 800) / 5200));
+    if(!bus) eng.dieselGain.gain.setTargetAtTime(0,t,0.09);
     if(!bike) bikeOff(t);
     if(bike){
       set(eng.car, 0); set(eng.bus, 0); set(eng.cabin, 0);
@@ -6222,17 +6398,32 @@ const Snd = (() => {
       set(eng.road, (inside ? 0.3 : 0.22) * Math.min(1, sp / 18) * (Env.st.rain ? 1.35 : 1));
     } else if(bus){
       set(eng.car, 0);
-      eng.bus.src.playbackRate.setTargetAtTime(0.72 + r * 0.85 + C.thr * 0.06, t, 0.12);
-      set(eng.bus, (inside ? 0.38 : 0.5) * (0.55 + C.thr * 0.6));
-      set(eng.cabin, inside ? Math.min(0.6, 0.12 + sp / 18 * 0.5) : 0);
-      set(eng.road, (inside ? 0.15 : 0.35) * Math.min(1, sp / 16));
-      eng.lp.frequency.setTargetAtTime(900 + C.thr * 2500 + r * 1500, t, 0.1);
-      // 停車するとエアの音（プシュー）
-      if(wasMoving && sp < 0.15){ play("bus_air", {gain: 0.55}); wasMoving = false; }
-      if(sp > 2) wasMoving = true;
+      const rpm=Math.min(2580,800+Math.max(0,C.rpm-800)*0.34);
+      const throttle=C.thr||0, door=S.mode==="bus"&&Bus.st.doors, gear=C.gearN||1;
+      if(busGear>=0&&gear!==busGear&&throttle>0.25&&sp>2) busGearAt=t;
+      busGear=gear;
+      const shift=1-0.32*Math.max(0,1-(t-busGearAt)/0.34);
+      const load=(rpm-800)/1780;
+      eng.diesel.frequency.setTargetAtTime(rpm/20,t,0.13);
+      eng.resonance.frequency.setTargetAtTime(190+throttle*200,t,0.20);
+      eng.dieselGain.gain.setTargetAtTime((inside?0.046:0.065)*(0.55+throttle*0.75)*shift,t,0.18);
+      if(eng.bus) eng.bus.src.playbackRate.setTargetAtTime(0.78+load*0.69,t,0.16);
+      set(eng.bus,(inside?0.27+(door?0.10:0):0.51)*(0.55+throttle*0.64)*shift);
+      set(eng.cabin, inside ? Math.min(0.44,0.13+sp*0.017) : 0);
+      set(eng.road,(inside?0.22:0.43)*sm(0,19,sp)*(Env.st.rain?1.20:1));
+      eng.lp.frequency.setTargetAtTime((inside?880:1630)+(door?300:0)+throttle*1300+load*490,t,0.13);
+      const brake=C.brk||0;
+      if(brake>=0.10) busBrakePeak=Math.max(busBrakePeak,brake);
+      else {
+        if(busBrakePeak>0.34 && t-busAirAt>1.2 && S.mode==="bus"){
+          play("bus_air",{gain:(inside?0.18:0.31)*(0.6+busBrakePeak*0.4),rate:1.15,dur:0.55});
+          busAirAt=t;
+        }
+        busBrakePeak=0;
+      }
     } else {
       set(eng.bus, 0); set(eng.cabin, 0);
-      eng.car.src.playbackRate.setTargetAtTime(0.8 + r * 1.7, t, 0.06);
+      if(eng.car) eng.car.src.playbackRate.setTargetAtTime(0.8 + r * 1.7, t, 0.06);
       set(eng.car, (inside ? 0.3 : 0.42) * (0.5 + C.thr * 0.7));
       set(eng.road, (inside ? 0.55 : 0.4) * Math.min(1, sp / 18) * (Env.st.rain ? 1.35 : 1));   // v41.14: 濡れた路面は「シャー」と大きい
       eng.lp.frequency.setTargetAtTime(1100 + C.thr * 4000 + r * 2500, t, 0.08);
@@ -6240,13 +6431,14 @@ const Snd = (() => {
     if(eng.road) eng.road.src.playbackRate.setTargetAtTime(0.7 + Math.min(sp, 30) / 30 * 0.6, t, 0.2);
     set(eng.sq, bike && C.fall && sp > 1 ? 0.55 : Math.min(0.6, C.slip * 0.7), 0.05);   // v41.19: 転倒して滑るときは路面にこする音
     // 後退時の警告音: 約 1kHz を 0.4 秒ごとに断続
-    const beepOn = C.gear === "R" && (ctx.currentTime % 0.8) < 0.4;
+    const beepOn = bus && C.gear === "R" && (ctx.currentTime % 0.86) < 0.36;
     eng.bp.gain.setTargetAtTime(beepOn ? 0.06 : 0, t, 0.01);
   }
   function carHit(v){ play("car_crash", {gain: Math.min(1, 0.3 + v / 12), rate: S.mode === "bus" ? 0.75 : 1}); }
     // 試験用: 読み込んだ音・ループの音量
   let plays = 0; const _play = play; play = function(n, o){ plays++; Snd._last = n; return _play(n, o); };
   function debug(){ const g = o => o ? +o.g.gain.value.toFixed(3) : null; return { ctx: ctx && ctx.state, bufs: Object.keys(buf).length, plays, last: Snd._last,
+    pa:{speaking,queued:jobs.length,localLevel:paAudience?.gain.value,duck:paDucker?.gain.value}, roadAmbience:street?.gain.gain.value,
     car: eng && { car: g(eng.car), bus: g(eng.bus), road: g(eng.road), cabin: g(eng.cabin), rate: eng.car && +eng.car.src.playbackRate.value.toFixed(2), brate: eng.bus && +eng.bus.src.playbackRate.value.toFixed(2) },
     heli: hs && { rotor: g(hs.rotor), body: g(hs.body), cabin: g(hs.cabin) },
     v47: { loaded: Object.keys(FILES2).filter(k => buf[k]), jr: jrL && { run: g(jrL.run), cruise: g(jrL.cruise), rr: +jrL.run.src.playbackRate.value.toFixed(2) }, dep: dep && +dep.g.gain.value.toFixed(3), sq: !!squealGain, brkNew,
@@ -6271,7 +6463,8 @@ const Snd = (() => {
   // ワイパーが 1 回払うごとの「スー」（上り・下りで音程が逆）と、折り返しの「コトッ」。運転席視点では大きく、外から見ているときは小さく
   function wiper(up){
     if(!ctx || !on || !noiseBuf || !sfxBus) return;
-    const inside = (S.mode === "car" || S.mode === "bus") && Car.C.view === "driver", k = inside ? 1 : 0.25, t = ctx.currentTime;
+    const inside=S.mode==="tram" ? S.view==="cab" : Car.C.view==="driver";
+    const k=(inside?0.78:0.23)*(S.mode==="tram"?0.64:1), t=ctx.currentTime;
     const s = ctx.createBufferSource(); s.buffer = noiseBuf; const f = ctx.createBiquadFilter(); f.type = "bandpass"; f.Q.value = 0.9;
     f.frequency.setValueAtTime(up ? 900 : 2000, t); f.frequency.linearRampToValueAtTime(up ? 2000 : 900, t + 0.5);
     const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.2 * k, t + 0.14); g.gain.linearRampToValueAtTime(0.0001, t + 0.56);
@@ -6280,7 +6473,42 @@ const Snd = (() => {
     const tg = ctx.createGain(); tg.gain.setValueAtTime(0.0001, t + 0.62); tg.gain.linearRampToValueAtTime(0.22 * k, t + 0.635); tg.gain.linearRampToValueAtTime(0.0001, t + 0.72);
     th.connect(tl).connect(tg).connect(sfxBus); th.start(t + 0.6, Math.random() * 2, 0.15);
   }
-  return {init, annSeq, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, blip, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, rainSound, buzz, wiper, get on(){ return on; }};
+  let street=null, streetT=0;
+  function ambience(dt){
+    if(!ctx||!noiseBuf) return;
+    if(!street){
+      const lp=ctx.createBiquadFilter(); lp.type="bandpass"; lp.frequency.value=540; lp.Q.value=0.57;
+      const gain=ctx.createGain(); gain.gain.value=0;
+      const pan=ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+      const src=ctx.createBufferSource(); src.buffer=noiseBuf; src.loop=true;
+      src.connect(lp).connect(gain).connect(pan).connect(sfxBus); src.start();
+      street={lp,gain,pan};
+    }
+    streetT-=dt;
+    if(streetT>0) return;
+    streetT=0.125;
+    const car=S.mode==="car"||S.mode==="bus", rail=S.mode==="tram"&&S.running;
+    const live=car ? Car.C.active : rail || (S.mode==="heli"&&Heli.H.active);
+    const t=ctx.currentTime;
+    if(!on||!live){ street.gain.gain.setTargetAtTime(0,t,0.12); return; }
+    const inside=car ? Car.C.view==="driver" : S.view==="cab", open=S.mode==="bus"?Bus.st.doors:rail&&S.doorOpen;
+    const pos=camera.position, matrix=camera.matrixWorld.elements;
+    let closest=null, best=0, total=0;
+    if(S.mode!=="heli") for(const v of Traffic.cars){
+      if(v.active===false || !Number.isFinite(v.x) || !Number.isFinite(v.z) || !Number.isFinite(v.v)) continue;
+      const dx=v.x-pos.x, dz=v.z-pos.z, lift=(v.y??0)-pos.y;
+      const d=Math.hypot(dx,dz,2*lift);
+      if(d>72) continue;
+      const strength=(0.15+Math.min(1,Math.abs(v.v)/13))*Math.pow(1-d/73,3);
+      total+=strength;
+      if(strength>best){ best=strength; closest={pan:Math.max(-0.8,Math.min(0.8,(dx*matrix[0]+dz*matrix[2])/Math.max(5,d))),v:Math.abs(v.v)}; }
+    }
+    const level=(inside && !open ? 0.34 : 0.93)*Math.min(0.095,0.016+total*0.056);
+    street.gain.gain.setTargetAtTime(level,t,0.16);
+    street.lp.frequency.setTargetAtTime((inside&&!open?320:530)+(closest?Math.min(480,closest.v*25):0),t,0.19);
+    if(street.pan.pan) street.pan.pan.setTargetAtTime(closest?closest.pan:0,t,0.18);
+  }
+  return {init, annSeq, audioSpace, ambience, after, cancelPA:clearPA, update, notch, levers, debug, brakeRelease, door, horn, atc, chime, blip, hsChime, ann, preload, text, hush, toggle, carSound, carHit, heliSound, jrSound, rainSound, buzz, wiper, get on(){ return on; }};
 })();
 
 /* 放送文は audio/ann.json（提供の書き起こしを整えた文面。広告は除外、運賃は改定があるため入れていない）。 */
@@ -6298,24 +6526,66 @@ function jrAnnKey(){
   return null;
 }
 function jrAnn(kind, name){   // kind: start / next / app
-  if(!Snd.annSeq) return; const hs = !!VEH().hs, p = hs ? "hs_" : "jr_";
-  if(kind === "start"){ const k = jrAnnKey(); if(k){ const nx = S.stops[1] ? p + "next_" + S.stops[1].name : null; Snd.annSeq([k, k + "_en"].concat(nx && Snd.text(nx) ? [nx, nx + "_en"] : []), 0.5); const t = Snd.text(k); if(t) setSubtitle("（放送）" + t); } return; }
-  const id = p + kind + "_" + name; if(!Snd.text(id)) return;
-  Snd.annSeq([id, id + "_en"], 0.5); setSubtitle("（放送）" + Snd.text(id));
+  const hs=!!VEH().hs, prefix=hs ? "hs_" : "jr_", route=S.route, stop=S.stopIndex;
+  const valid=()=>S.running && S.route===route && S.stopIndex===stop &&
+    (kind==="start" || (!S.doorOpen && (kind!=="next" || !S._appr)));
+  if(kind==="start"){
+    const k=jrAnnKey(); if(!k) return;
+    Snd.annSeq([k,k+"_en"],0.48,{valid,key:"rail-start"});
+    const t=Snd.text(k); if(t) setSubtitle("（放送）"+t);
+    return;
+  }
+  const id=prefix+kind+"_"+name;
+  const fallback=(kind==="app" ? "まもなく、" : "次は、")+name+"です。";
+  Snd.annSeq([id,id+"_en"],0.48,{valid,key:"rail-"+kind,fallback:{[id]:fallback},replace:kind==="app"&&!hs});
+  setSubtitle("（放送）"+(Snd.text(id)||fallback));
 }
-function annStart(){ if(VEH().jr){ jrAnn("start"); return; } Snd.ann("start_" + S.key); Snd.preload(["dep_" + S.key + "_1", "app_" + S.key + "_1", "arr_" + S.key + "_1"]); }
+function annStart(){
+  if(!S.running) return;
+  if(VEH().jr){ jrAnn("start"); return; }
+  const route=S.route, id="start_"+S.key;
+  Snd.ann(id,0,{key:"rail-start",valid:()=>S.running&&S.route===route&&S.doorOpen,
+    fallback:{[id]:"ご乗車ありがとうございます。この電車は、"+S.route.dest+"行きです。"}});
+  Snd.preload(["dep_"+S.key+"_1","app_"+S.key+"_1","arr_"+S.key+"_1"]);
+}
 const AI = () => S.stopIndex + (S.annOff||0);
 function annDepart(){
   if(VEH().jr){ if(S.stopIndex<S.stops.length){ setSubtitle("（放送）次は "+S.stops[S.stopIndex].name+" です。"); jrAnn("next", S.stops[S.stopIndex].name); } return; }
   if(S.phase==="pull") return;
   const id = "dep_" + S.key + "_" + AI();
-  Snd.ann(id);
+  const route=S.route, stop=S.stopIndex;
+  Snd.ann(id,0,{key:"rail-next",valid:()=>S.running&&S.route===route&&S.stopIndex===stop&&!S.doorOpen&&!S._appr,
+    fallback:{[id]:"次は、"+S.stops[stop].name+"です。"}});
   Snd.preload(["app_" + S.key + "_" + AI(), "arr_" + S.key + "_" + AI(), "dep_" + S.key + "_" + (AI() + 1)]);
   const t = Snd.text(id); setSubtitle("（放送）" + (t ? t.replace(/^この電車は、[^。]+。発車します。ご注意ください。/, "") : "次は " + S.stops[S.stopIndex].name));
 }
-function annApproach(){ if(VEH().jr){ const nm = S.stops[S.stopIndex].name; setSubtitle("（放送）まもなく "+nm+" です。"); if(VEH().hs && Snd.hsChime){ Snd.hsChime(); setTimeout(() => jrAnn("app", nm), 2600); } else jrAnn("app", nm); return; } if(S.phase==="pull" || AI()<=0) return; const id = "app_" + S.key + "_" + AI(); Snd.ann(id); const t = Snd.text(id); if(t) setSubtitle("（放送）" + t);
-  if(S.motor === "dc" && Snd.buzz && Math.random() < 0.6){ const si = S.stopIndex; setTimeout(() => { if(S.running && !S.doorOpen && S.stopIndex === si) Snd.buzz(false); }, 2500 + Math.random() * 3500); } }   // v47: 3000形は降車ボタンのブザー（お客様が押す。提供音源）
-function annArrive(){ if(VEH().jr) return; Snd.ann("arr_" + S.key + "_" + AI(), 0.8); }
+function annApproach(){
+  const route=S.route, stop=S.stopIndex, name=S.stops[stop].name;
+  const valid=()=>S.running&&S.route===route&&S.stopIndex===stop&&!S.doorOpen;
+  if(VEH().jr){
+    if(VEH().hs) {
+      Snd.cancelPA();
+      const seconds=Snd.hsChime();
+      Snd.after(seconds*1000,()=>jrAnn("app",name),valid);
+    } else jrAnn("app",name);
+    return;
+  }
+  if(S.phase==="pull" || AI()<=0) return;
+  const id="app_"+S.key+"_"+AI(), fallback="まもなく、"+name+"です。";
+  Snd.ann(id,0,{key:"rail-approach",valid,replace:true,fallback:{[id]:fallback}});
+  setSubtitle("（放送）"+(Snd.text(id)||fallback));
+  if(S.motor==="dc" && Math.random()<0.6) Snd.after(1900+Math.random()*2100,()=>Snd.buzz(false),valid);
+}
+function annArrive(){
+  if(VEH().jr) return;
+  const route=S.route, stop=S.stopIndex, id="arr_"+S.key+"_"+AI();
+  Snd.ann(id,0.65,{replace:true,valid:()=>S.route===route&&S.stopIndex===stop&&S.doorOpen,
+    fallback:{[id]:S.stops[stop].name+"です。お忘れ物のないよう、ご注意ください。"}});
+}
+function scheduleRailPA(callback,delay,door){
+  const route=S.route, stop=S.stopIndex;
+  Snd.after(delay,callback,()=>S.running&&S.route===route&&S.stopIndex===stop&&S.doorOpen===door);
+}
 
 /* ---------------- 運転台（3D）: 参考写真の在来形路面電車の運転台を再現 ----------------
    左: 主幹制御器（マスコン）… 箱形の台に縦軸のハンドル、黒い握り玉。右へ回すと 1〜4 ノッチ
@@ -6760,8 +7030,12 @@ const Cab = (() => {
     box(0.012, length * 0.74, 0.012, m, 0, length * 0.37, 0, pivot);
     box(0.025, length * 0.59, 0.009, m, 0, length * 0.70, 0.002, pivot);
     pivot.rotation.z = rest;
+    let lastPhase=-1;
     return (t, rain) => {
       const f = (t % 2.7) / 1.25;
+      const phase=rain&&f<1 ? Math.floor(t/2.7)*2+(f>=0.5?1:0) : -1;
+      if(phase>=0 && phase!==lastPhase) Snd.wiper(f<0.5);
+      lastPhase=phase;
       pivot.rotation.z = rest + (rain && f < 1 ? sweep * (1 - Math.cos(f * 2 * Math.PI)) / 2 : 0);
     };
   }
@@ -7525,9 +7799,11 @@ function tick(dt){
   if(!S.doorOpen && S.stopIndex<S.stops.length-1 && S.pos > S.cum[S.stopIndex] + 6){
     const passed=S.stops[S.stopIndex].name; Dia.onPass(S.stopIndex); S.stopIndex++; S._appr=false;
     $("stop-seq").textContent=S.stopIndex+" / "+(S.stops.length-1); $("next-stop").textContent=S.stops[S.stopIndex].name;
-    setSubtitle(passed.replace(/・.*$/,"")+" を通過しました。"); setTimeout(annDepart, 1200);
+    setSubtitle(passed.replace(/・.*$/,"")+" を通過しました。"); scheduleRailPA(annDepart,900,false);
   }
-  if(!S.doorOpen && !S._appr && ds < (VEH().jr ? 500 + S.speed*3 : 140) && ds > 20 && S.speed > 3){ S._appr = true; annApproach(); }
+  const approachDistance=VEH().hs ? Math.max(350,S.speed/3.6*32) : VEH().jr ?
+    Math.max(135,S.speed/3.6*19) : Math.max(42,S.speed/3.6*10);
+  if(!S.doorOpen && !S._appr && ds < approachDistance && ds > 12 && S.speed > 3){ S._appr=true; annApproach(); }
   const s0=S.cum[S.stopIndex-1]||0, s1=S.cum[S.stopIndex]; $("stop-progress").style.width=(Math.min(1,Math.max(0,(S.pos-s0)/(s1-s0||1)))*100).toFixed(1)+"%";
   const p=pointAt(S.pos);
   for(const lm of (S.routes.landmarks||[])){ if(S.announced.has(lm.name)) continue; if(Math.hypot(lm.x-p.x,lm.z-p.z)<60&&S.speed>1){ S.announced.add(lm.name); setSubtitle("「"+lm.name+"」付近を通過します。"); } }
@@ -7550,7 +7826,7 @@ function doorAction(){
     const z=doorZone();
     if(S.speed<0.4 && ds>=z[0] && ds<=z[1]){
       S.score=Math.min(1000,S.score+Math.max(0,40-Math.abs(ds)*12)); S._openedAt=S.stopIndex; S.doorOpen=true; $("door").textContent="開";
-      Snd.brakeRelease(); setTimeout(()=>Snd.door(true), 500);
+      Snd.brakeRelease(); scheduleRailPA(()=>Snd.door(true),380,true);
       if(AI()===0){ annStart(); setSubtitle(S.stops[S.stopIndex].name+"（乗車）。お客様が乗り終わったらドアを閉めて発車してください。"); }
       else { annArrive(); setSubtitle(S.stops[S.stopIndex].name+"。停車しました。乗降が終わったらドアを閉めて発車してください。"); }
       Dia.onOpen(S.stopIndex);
@@ -7563,7 +7839,7 @@ function doorAction(){
     Dia.onClose(S._openedAt===S.stopIndex ? S.stopIndex : S.stopIndex-1);
     if(S._openedAt===S.stopIndex && S.stopIndex<S.stops.length-1) S.stopIndex++;
     S._openedAt=-1;
-    S._appr = false; setTimeout(annDepart, 1800);
+    S._appr = false; scheduleRailPA(annDepart,1400,false);
     $("stop-seq").textContent=S.stopIndex+" / "+(S.stops.length-1); $("next-stop").textContent=S.stops[S.stopIndex].name;
   }
 }
@@ -7627,7 +7903,7 @@ function afterTurn(){
   Dia.build();
   if(S.vehicle && S.vehicle!=="momo") setVehicle(S.vehicle);
   mapCache=null; $("route-name").textContent=S.route.name; $("next-stop").textContent=S.stops[S.stopIndex].name; $("stop-seq").textContent=S.stopIndex+" / "+(S.stops.length-1);
-  if(S.doorOpen){ S._appr=false; setTimeout(annStart, 600); setSubtitle(S.stops[0].name.replace(/・.*$/,"")+"。折り返し、"+S.route.dest+"行きになります。ドアを閉めて発車してください。"); }
+  if(S.doorOpen){ S._appr=false; scheduleRailPA(annStart,600,true); setSubtitle(S.stops[0].name.replace(/・.*$/,"")+"。折り返し、"+S.route.dest+"行きになります。ドアを閉めて発車してください。"); }
 }
 function fadeMsg(t, fn){ const f=$("fade"); $("fade-text").textContent=t; f.classList.add("on"); setTimeout(()=>{ fn(); setTimeout(()=>f.classList.remove("on"), 500); }, 900); }
 function applyHandles(){
@@ -7933,7 +8209,7 @@ function beginRide(){ leaveJR(); Clock.reset(); setupRoute(S.key,false); if(S.ve
   const departure = VEH().oneH ? "ドアを閉めて、ハンドルを手前の力行側へ。" :
     "ドアを閉めて、ブレーキハンドルを運転位置に戻し、マスコンを入れてください。";
   setSubtitle((S.key.endsWith("_r") ? S.stops[0].name : "岡山駅前（駅前広場の新停留場）") + "。" + departure);
-  Snd.init(); Snd.hush(); S._appr=false; setTimeout(annStart, 600);
+  Snd.init(); Snd.hush(); S._appr=false; scheduleRailPA(annStart,600,true);
   Trams.populate(S.key, S.pos, S.vehicle); Traffic.reset(); }
 /* ---------------- v35: JR・新幹線を運転する ---------------- */
 let JRSEL = null;
@@ -7968,7 +8244,7 @@ function beginJR(){
   S.running=true; updateNotchBar();
   setSubtitle(S.stops[0].name+"。ドアを閉め、"+(VEH().oneH ? "ワンハンドルを N から手前へ引いて力行してください" : "ブレーキ弁を運転位置に戻してマスコンを入れてください")+"。次は "+(S.stops[1]?S.stops[1].name:"")+"。");
   Snd.init(); Snd.hush(); S._appr=false;
-  setTimeout(() => { if(S.mode === "tram" && VEH().jr && S.running) jrAnn("start"); }, 1500);   // v44: 発車前の案内放送（行き先・次の駅）
+  scheduleRailPA(annStart,850,true);
   Trams.populate(null, 0, "none"); Traffic.reset(); }
 $("start").addEventListener("click",()=>{ if($("start").disabled) return; applyMenu(); const sel=document.querySelector(".mode-opt.on"); const m=sel ? sel.dataset.mode : S.mode;
   if(PAGE==="menu"){ try { Prefs.save(); } catch(e){} $("start").disabled=true; $("start-label").textContent="開始の準備中…"; location.href="play.html?m="+m; return; }   // v46: モードのページへ
@@ -8088,9 +8364,17 @@ const CAR_OBST = (x, z, fx, fz, dir) => { if (!Trams.ready) return null; const h
   for (let u = u0; u >= u1; u -= 1.3) for (const w of (hw > 0.6 ? [hw, -hw] : [0])) { const e = Obs.hit(x + fx * u + sx * w, z + fz * u + sz * w, 0.55, PCAR, (o) => !!(o && (o.ped || o.danger)), Car.C.h); if (e) return e.o && e.o.ped !== undefined ? "歩行者" : e.o && e.o.type ? (e.o.type.name === "bus" ? "バス" : "他の車") : "電車"; } return null; };
 Car.C.obst = CAR_OBST;
 Cab.bind({ getMC:()=>S.mc, setMC:(n)=>{ if(S.running) setMC(n); }, getBV:()=>S.bv, setBV:(n)=>{ if(S.running) setBV(n); } });
-$("sound-btn").addEventListener("click",()=>{ Snd.init(); const on=Snd.toggle(); Prefs.setSound(on); $("sound-btn").textContent=on?"音":"消"; $("sound-btn").title=on?"音を消す":"音を出す"; });
+function syncAudioButtons(){
+  for(const b of document.querySelectorAll("[data-sound-toggle]")){
+    const on=Prefs.soundOn; b.textContent=on?"音":"消"; b.title=on?"音を消す":"音を出す";
+    b.setAttribute("aria-label",b.title); b.setAttribute("aria-pressed",String(!on));
+  }
+}
+for(const b of document.querySelectorAll("[data-sound-toggle]")) b.addEventListener("click",()=>{
+  Snd.init(); Prefs.setSound(Snd.toggle()); syncAudioButtons();
+});
 // v25: 音を消す設定を覚えている時は、始めた時に消す
-$("start").addEventListener("click",()=>{ setTimeout(()=>{ if(!Prefs.soundOn && Snd.on){ Snd.init(); Snd.toggle(); $("sound-btn").textContent="消"; $("sound-btn").title="音を出す"; } }, 80); });
+$("start").addEventListener("click",syncAudioButtons);
 $("turnback").addEventListener("click", turnBack);
 $("restart").addEventListener("click",()=>{ Snd.hush(); $("finish-overlay").classList.remove("on"); $("menu").style.display="flex"; $("ui").classList.remove("on");
   if(Bus.active){ Bus.end(); Car.stop(); $("carui").classList.remove("on"); S.mode="bus"; } Loc.hide(); $("turnback").style.display=""; applyMenu(); });
@@ -11385,6 +11669,7 @@ function loop(now){
     Snd.rainSound(dt, !!(Env.st.rain && live), S.mode==="heli" ? "heli" : inCab ? "cab" : "out"); }
   Stamps.tick(dt);   // v41.15: 岡山めぐり
   if(S.mode!=="heli") Snd.heliSound(Heli.H);
+  Snd.audioSpace(); Snd.ambience(dt);
   if(S.mode==="car"||S.mode==="bus"){}
   else if(S.mode==="heli"){ S.t+=dt; S.clock+=dt; Heli.tick(dt); if(S.car) S.car.visible=false; Heli.updateCam(dt); Heli.hud(); Loc.update(dt, Heli.H.x, Heli.H.z, ""); Snd.heliSound(Heli.H); }
   else if(S.running){ tick(dt); if(S.track){ const p=pointAt(S.pos); Loc.update(dt, p.x, p.z, S.route && S.route.name ? S.route.name.replace(/（.*$/,"") : ""); } } else { S.t+=dt; if(S.track && $("menu").style.display!=="none"){ S.pos=S.cum[0]+40+((S.t*5)%Math.max(1,S.endArc-120)); } }

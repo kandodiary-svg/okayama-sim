@@ -807,7 +807,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
       <button class="iconbtn ttbtn" id="tt-btn" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn" id="view-toggle" title="視点切替">⟲</button>
-      <button class="iconbtn" id="sound-btn" title="音を消す">音</button>
+      <button class="iconbtn" id="sound-btn" type="button" data-sound-toggle title="音を消す" aria-label="音を消す" aria-pressed="false">音</button>
       <button class="iconbtn" id="help-btn">?</button>
       <button class="iconbtn homebtn" id="ui-menu" type="button" title="メニューに戻る">メニュー</button>
     </div>
@@ -892,6 +892,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn ttbtn" id="tt-btn2" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn rescue" id="rescue-btn" title="すぐそばの道路へ戻る（T）">道路に戻る <small>T</small></button>
       <button class="iconbtn" id="car-view" title="視点切替">⟲</button>
+      <button class="iconbtn" type="button" data-sound-toggle title="音を消す" aria-label="音を消す" aria-pressed="false">音</button>
       <button class="iconbtn homebtn" id="car-menu" type="button" title="メニューに戻る">メニュー</button>
     </div>
   </header>
@@ -938,6 +939,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
       <button class="iconbtn" id="heli-auto" title="自動で街を周回（O）">自動周回 <small>O</small></button>
       <button class="iconbtn" id="heli-view" title="視点切替（V）">⟲</button>
+      <button class="iconbtn" type="button" data-sound-toggle title="音を消す" aria-label="音を消す" aria-pressed="false">音</button>
       <button class="iconbtn homebtn" id="heli-menu" type="button" title="メニューに戻る">メニュー</button>
     </div>
   </header>
@@ -1019,6 +1021,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <p style="margin:0 0 10px"><b style="color:#e6a94d">基準時点:</b> 2027年春を想定しています（岡山駅前広場への路面電車の乗り入れが完成した後の姿。岡山市の公表では完成予定は 令和9年3月）。建物はそれより前（PLATEAU 2025年度）のデータなので、その後に建った・無くなった建物は反映されていません。</p>
       <p style="margin:0 0 10px"><b style="color:#e6a94d">地図の範囲:</b> 東西 約11.4km × 南北 約9.1km（約104km²。PLATEAU の 3 次メッシュ 10×10 区画の範囲で、PLATEAU の地形データ（DEM）のある所いっぱいまで）。北は津高台・宿（岡山大学の北）、南は泉田・洲崎、西は北長瀬・西長瀬、東は百間川を越えて米田・中川町まで。範囲の外は、国土地理院の標高と空中写真による遠景（建物・道路なし）です。</p>
       <p style="margin:0 0 4px"><b style="color:#e6a94d">出典（実際のデータ）</b></p>
+      <p>車内放送はシミュレーター用の音声です。実車の聞こえ方は、<a href="https://ryobi.gr.jp/news/7067/" target="_blank" rel="noopener noreferrer">岡電の警報音の資料</a>、<a href="https://www.fusobus.com/product/aero-star.html" target="_blank" rel="noopener noreferrer">エアロスターの仕様</a>、<a href="https://www.rtri.or.jp/rd/news/vehicle/vehicle_202304.html" target="_blank" rel="noopener noreferrer">鉄道総研の走行音の解説</a>を参考にしています。西大寺行きの再現区間は東山までです。</p>
       <ul style="margin:0 0 10px;padding-left:18px">
         <li>建物（外壁写真・形）・車道・歩道・交通島・植生・地形: 国土交通省 Project PLATEAU 岡山市（2025年度）CC BY 4.0。建物の外壁写真と、車道・歩道を分けた道路データは中心部（岡山駅〜表町〜岡山城の周り）だけで、その外の建物は箱形（高さは実測）、道路は道路の範囲だけのデータです</li>
         <li>線路・電停・道路網・一方通行・車線数・信号の位置・横断歩道・歩道・バス停・JR の線路: © OpenStreetMap contributors（ODbL。中心部〔v28 の範囲〕は 2026年9月26日時点、v29 で広げた所は 9月28日時点、v30 で広げた所は 9月29日時点のデータ）</li>
@@ -1088,4 +1091,4 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
 <script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
 <script>window.THREE||window.OkadenBoot.fail("3D の部品（three.js）を読み込めませんでした。インターネットの接続を確認してください。",null,true)</script>
 <script>window.OKA_PAGE="menu";</script>
-<script src="okaden.js?v=542b150d82"></script>
+<script src="okaden.js?v=a7ea531a36"></script>
