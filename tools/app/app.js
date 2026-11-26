@@ -1021,6 +1021,11 @@ const Plaza = (() => {
     // 降車場の島の駐車場に数台
     const PC = ["#f2f2f0", "#c9ccd0", "#1c1d20", "#6b6f75", "#8a1d1d", "#1f3f78"], PT = ["sedan", "kei", "minivan", "suv", "kei2"];
     for(const s of [35.25, 40.25, 47.75, 55.25, 60.25]){ const p = R(s, 14.0); L.push({ t: PT[Math.floor(s) % 5], x: p[0], z: p[1], yaw: Math.atan2(AN[0], AN[1]) + Math.PI, c: PC[Math.floor(s * 7) % 6] }); }
+    // v62b: バスモードの経路（data/bus.json の path: 13 番のりば → 南の U 字 → 西の乗り場 → 市役所筋）の上には置かない（自分のバスが停まっているバスに重なって始まっていた）
+    const place = (RP) => {
+    const clear = (c) => { const ux = Math.sin(c.yaw), uz = Math.cos(c.yaw), half = c.t === "bus" ? 5.4 : 2.4, need = (c.t === "bus" ? 1.3 : 0.9) + 1.25 + 0.6;
+      for(let b = -half; b <= half + 0.01; b += 1.2){ const x = c.x + ux * b, z = c.z + uz * b; for(let i = 0; i + 1 < RP.length; i++){ if(Math.hypot(RP[i + 1][0] - RP[i][0], RP[i + 1][1] - RP[i][1]) > 6) continue; if(segD([x, z], RP[i], RP[i + 1]) < need) return false; } } return true; };
+    for(let i = L.length - 1; i >= 0; i--) if(!clear(L[i])) L.splice(i, 1);
     if(typeof Veh !== "undefined"){
       const mat = Veh.makeMat(), byT = {}; for(const c of L) (byT[c.t] = byT[c.t] || []).push(c);
       const q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), m4 = new THREE.Matrix4(), one = new THREE.Vector3(1, 1, 1), pv = new THREE.Vector3(), col = new THREE.Color();
@@ -1029,7 +1034,10 @@ const Plaza = (() => {
         A.forEach((c, i) => { q.setFromAxisAngle(up, c.yaw); pv.set(c.x, Car.hAt(c.x, c.z), c.z); m4.compose(pv, q, one); im.setMatrixAt(i, m4); im.setColorAt(i, col.set(c.c));
           const ux = Math.sin(c.yaw), uz = Math.cos(c.yaw), half = t === "bus" ? 4.6 : 1.6; for(let b = -half; b <= half + 0.01; b += 1.6) try { Car.addBlock(c.x + ux * b, c.z + uz * b, 1); } catch(e){} });
         G.add(im); }
-    }
+    } };
+    fetch("data/bus.json").then(r => r.ok ? r.json() : null).catch(() => null).then(j => {
+      const RP = []; if(j && j.path) for(const p of j.path){ const x = p[0], z = p[p.length - 1]; if(x > -210 && x < -20 && z > -175 && z < 110) RP.push([x, z]); }
+      try { place(RP); } catch(e){ console.warn("plaza vehicles", e); } });
   }
   return { mask, isRoad, build3D };
 })();
