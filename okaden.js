@@ -1872,6 +1872,20 @@ function facadeMaterial(kind){
           float jx = min(frc.x, 1.0 - frc.x); diffuseColor.rgb *= 1.0 - wallF * 0.09 * (1.0 - smoothstep(0.004, 0.012, jx));
           if(flr < 0.5) diffuseColor.rgb *= mix(0.70, 1.0, smoothstep(0.0, 0.16, frc.y));
           diffuseColor.rgb *= 0.94 + 0.08 * fract(sin((flr + bk*17.0)*78.233)*43758.5453) * wallF; }
+        // v64: 一般の建物の外壁の色と素材（ストリートビューで多い順: 白・ベージュ・薄茶・焦げ茶のタイル、煉瓦色、暖かい灰・濃い灰の吹付け、クリーム、青みの白いパネル）。
+        //      以前は頂点の色（ほとんど灰〜ベージュ）だけで、どの建物も灰色に見えた。色の割合は頂点の色を割り戻して置き換え、明るさは頂点の色を残す。タイルの壁は近くで 1 枚ずつの色むら
+        if(vSpec < 0.5){ float wallF = 1.0 - glassF; float pk = fract(bk * 13.37 + 0.21);
+          vec3 pc = pk < 0.15 ? vec3(0.92, 0.90, 0.85) : pk < 0.28 ? vec3(0.86, 0.78, 0.63) : pk < 0.38 ? vec3(0.74, 0.58, 0.43) : pk < 0.46 ? vec3(0.50, 0.35, 0.29)
+                  : pk < 0.52 ? vec3(0.60, 0.36, 0.29) : pk < 0.61 ? vec3(0.79, 0.75, 0.70) : pk < 0.68 ? vec3(0.52, 0.53, 0.54) : pk < 0.75 ? vec3(0.83, 0.86, 0.88)
+                  : pk < 0.82 ? vec3(0.91, 0.86, 0.72) : pk < 0.87 ? vec3(0.73, 0.78, 0.73) : pk < 0.93 ? vec3(0.67, 0.49, 0.39) : vec3(0.87, 0.87, 0.86);
+          float isTile = step(pk, 0.52) + step(0.87, pk) * step(pk, 0.93);
+          vec3 L3 = vec3(0.30, 0.59, 0.11); vec3 vcN = vq / max(dot(vq, L3), 0.05), pcN = pc / dot(pc, L3);
+          vec3 fac = pcN / max(vcN, vec3(0.05)) * mix(1.0, dot(pc, L3) / 0.78, 0.7);
+          vec3 wN3 = normalize(cross(dFdx(vSW), dFdy(vSW))); float alw3 = dot(vSW.xz, normalize(vec2(-wN3.z, wN3.x) + 1e-5));
+          vec2 tc = vec2(alw3 / 0.24, vSW.y / 0.07); float tN = fract(sin(dot(floor(tc + vec2(0.5 * mod(floor(tc.y), 2.0), 0.0)), vec2(12.9898, 78.233))) * 43758.5453);
+          float near = 1.0 - smoothstep(0.03, 0.09, length(fwidth(tc * 0.07)));
+          fac *= 1.0 + isTile * near * (tN - 0.5) * 0.10;
+          diffuseColor.rgb *= mix(vec3(1.0), fac, wallF * 0.85); }
         // v58: 縦長の看板（壁の端の柱間に、2 階から上へ数階分。テナントの名前の帯の代わりに色と白い字の形だけ）
         if(flr > 0.5 && vSpec < 0.5 && fract(bk * 7.7) < SIGN_P && fract(sin(dot(vec2(mod(cell.x, 97.0), bk * 31.0), vec2(12.9898, 78.233))) * 43758.5453) < 0.3){
           float nF = 2.0 + floor(fract(bk * 9.1) * 5.0);
