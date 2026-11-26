@@ -4164,7 +4164,7 @@ function placeTram(car){
      3005号 … 東武日光軌道線時代の塗装に復元（上半分が淡い緑、下半分が橙）
      3007号 … 「KURO」（黒の車体に金の線、赤いパンタグラフと救助網） */
 const VEHICLES = {
-  momo:  { name:"9200形 MOMO", len:18.0, front:8.54, acc:[0,0.9,1.7,2.4,3.0], vmax:50, motor:"vvvf" },
+  momo:  { name:"9200形 MOMO", len:18.0, front:8.54, acc:[0,0.9,1.7,2.4,3.0], vmax:50, motor:"vvvf", oneH:true },
   t3005: { name:"3000形 3005号（東武日光軌道線 復元塗装）", len:12.0, front:12.0, acc:[0,0.6,1.1,1.6,2.0], vmax:40, motor:"dc" },
   t3007: { name:"3000形 3007号 KURO", len:12.0, front:12.0, acc:[0,0.6,1.1,1.6,2.0], vmax:40, motor:"dc" },
 };
@@ -4891,6 +4891,89 @@ function makeTruck(){
   g.traverse(o => { if(o.isMesh) o.castShadow = true; });
   return g;
 }
+// エアロスターの写真を基にした補機。ベース車体のアナログ計器と連動する。
+function dressAeroStar(hu) {
+  const cab = hu.cab;
+  const polymer = new THREE.MeshStandardMaterial({ color:0x26292b, roughness:0.79 });
+  const rubber = new THREE.MeshStandardMaterial({ color:0x111416, roughness:0.86 });
+  const gray = new THREE.MeshStandardMaterial({ color:0x55585a, roughness:0.72 });
+  const slab = (w,h,d,x,y,z,mat=polymer) => {
+    const o = new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+    o.position.set(x,y,z); cab.add(o); return o;
+  };
+  const card = (w,h,x,y,z,draw) => {
+    const o = new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map:canvasTex(384,160,draw)}));
+    o.position.set(x,y,z); o.rotation.y=Math.PI; cab.add(o); return o;
+  };
+  hu.eye.y = 2.04; hu.eye.z = 3.93; hu.eye.pitch = 12;
+  if (hu.screen) hu.screen.visible = false;
+  if (hu.clu) {
+    const face = hu.clu.children[0];
+    const original = face.material.map;
+    face.material.map = canvasTex(1024,364,(g,w,h)=>{
+      g.fillStyle="#111417"; g.fillRect(0,0,w,h);
+      const cy=h/2, radius=h*0.427;
+      for (const [cx,max,step,unit] of [[w*0.185,30,5,"×100 r/min"],[w*0.815,120,20,"km/h"]]) {
+        g.fillStyle="#090c0d"; g.beginPath(); g.arc(cx,cy,radius,0,Math.PI*2); g.fill();
+        g.strokeStyle="#585e5e"; g.lineWidth=5; g.stroke();
+        for(let i=0;i<=max;i+=step/2) {
+          const major=i%step===0, th=-Math.PI*0.75+Math.PI*1.5*i/max;
+          const dx=Math.sin(th), dy=-Math.cos(th), outer=radius-13, inner=outer-(major?22:11);
+          g.strokeStyle="#c9ceca"; g.lineWidth=major?4:2; g.beginPath();
+          g.moveTo(cx+dx*inner,cy+dy*inner); g.lineTo(cx+dx*outer,cy+dy*outer); g.stroke();
+          if(major){g.font="bold 25px sans-serif"; g.textAlign="center";g.textBaseline="middle";
+            g.fillStyle="#e0e4df";g.fillText(i,cx+dx*(inner-20),cy+dy*(inner-20));}
+        }
+        g.fillStyle="#9ca7a4";g.font="bold 23px sans-serif";g.fillText(unit,cx,cy+51);
+      }
+    });
+    original.dispose();
+  }
+  slab(0.24,0.098,0.045,-0.28,1.46,4.64,rubber).rotation.x = 0.27;
+  const lamps = new Map();
+  for (const [i, label] of ["R","N","D"].entries()) {
+    const x = -0.217 - i * 0.064;
+    const m = card(0.055,0.042,x,1.466,4.61,(g,w,h) => {
+      g.fillStyle="#262b2d"; g.fillRect(0,0,w,h);
+      g.strokeStyle="#555e60"; g.lineWidth=8; g.strokeRect(4,4,w-8,h-8);
+      g.fillStyle="#dadfda"; g.font="bold 105px sans-serif";
+      g.textAlign="center"; g.textBaseline="middle"; g.fillText(label,w/2,h/2);
+    });
+    m.rotation.x=0.27; lamps.set(label,m.material);
+  }
+  const keypad = slab(0.20,0.13,0.22,0.04,1.40,4.57,rubber);
+  keypad.rotation.x=-0.16;
+  for(let i=0;i<4;i++) for(let j=0;j<3;j++)
+    slab(0.038,0.008,0.029,-0.021+j*0.061,1.47,4.50+i*0.036,gray);
+  const fare = slab(0.29,0.50,0.30,0.61,1.33,4.07,gray);
+  fare.rotation.y=-0.10;
+  slab(0.30,0.045,0.33,0.61,1.60,4.07,rubber);
+  slab(0.093,0.008,0.12,0.66,1.625,4.07,gray);
+  card(0.22,0.060,0.61,1.485,3.918,(g,w,h)=>{
+    g.fillStyle="#252927"; g.fillRect(0,0,w,h); g.fillStyle="#e4e2ca"; g.font="bold 56px sans-serif";
+    g.textAlign="center"; g.textBaseline="middle"; g.fillText("運賃箱",w/2,h/2);
+  });
+  slab(0.125,0.075,0.39,-1.038,1.46,4.45,rubber);
+  const doorLamp = new THREE.MeshBasicMaterial({color:0x323938});
+  slab(0.045,0.023,0.065,-1.043,1.509,4.40,doorLamp);
+  const red = new THREE.MeshStandardMaterial({color:0x8d302a,roughness:0.55});
+  slab(0.044,0.021,0.051,-1.043,1.508,4.53,red);
+  slab(0.044,0.018,0.048,-1.043,1.507,4.61,gray);
+  // 左前扉側の黄色い握り棒。前方の視線の中央には出さない。
+  const grab = new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.91,12),
+    new THREE.MeshStandardMaterial({color:0xa98229,roughness:0.61}));
+  grab.position.set(0.91,1.89,4.76); cab.add(grab);
+  return (C, doorOpen) => {
+    for (const [gear,m] of lamps) m.color.setHex(gear===C.gear ? 0xffffff : 0x7c8182);
+    doorLamp.color.setHex(doorOpen ? 0xf4a52f : 0x323938);
+    if (hu.nSpeed && hu.nTacho) {
+      const speed=Math.abs(C.v)*3.6;
+      const rpm=Math.max(0,800+((C.rpm ?? 800)-800)*0.34);
+      hu.nSpeed.rotation.z=(135-270*Math.min(1,speed/120))*Math.PI/180;
+      hu.nTacho.rotation.z=(135-270*Math.min(1,rpm/3000))*Math.PI/180;
+    }
+  };
+}
 function makeRyobiBus(dest){
   const g = new THREE.Group();
   const Lb=10.5, W=2.49, y0=0.3, y1=3.1;
@@ -4911,17 +4994,28 @@ function makeRyobiBus(dest){
   // バンパー・ミラー
   const bump=new THREE.Mesh(new THREE.BoxGeometry(W+0.04,0.3,0.25), dark); bump.position.set(0,0.42,Lb/2+0.05); g.add(bump);
   const bump2=bump.clone(); bump2.position.z=-Lb/2-0.05; g.add(bump2);
-  const outer=[];
+  const outer=[], mirrors=[];
   const mirG=new THREE.MeshPhongMaterial({color:0x9fb3c2, shininess:90, specular:0xffffff});
   for(const s of [1,-1]){
     const arm=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.035,0.035), dark); arm.position.set(s*1.38,2.28,Lb/2-0.2); arm.rotation.y=s*0.35; g.add(arm);
     const arm2=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.5,0.03), dark); arm2.position.set(s*1.5,2.1,Lb/2-0.12); g.add(arm2);
     const mir=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.46,0.2), dark); mir.position.set(s*1.58,2.0,Lb/2-0.06); g.add(mir);
-    const mg=new THREE.Mesh(new THREE.PlaneGeometry(0.1,0.42), mirG); mg.position.set(s*1.58,2.0,Lb/2-0.162); mg.rotation.y=Math.PI; g.add(mg); outer.push(arm,arm2,mir,mg); }
+    mir.scale.x=1.34;
+    const lens = new THREE.PlaneGeometry(0.134,0.405);
+    const uv = lens.attributes.uv;
+    for (let i=0; i<uv.count; i++) uv.setX(i,1-uv.getX(i));
+    const mg=new THREE.Mesh(lens,mirG);
+    mg.position.set(s*1.58,2.0,Lb/2-0.164); mg.rotation.y=Math.PI; g.add(mg);
+    mirrors.push({face:mg, live:new THREE.MeshBasicMaterial({toneMapped:false})}); }
   outer.push(body, ac);
   // 運転席（運転席視点で表示）と車輪: vehicles.js（Veh.hi("busP")）。運転席の内側は車体の中に隠れていて、運転席視点のときだけ車体を消して見せる
-  const hi=Veh.hi("busP", { color:new THREE.Color(0xf2f3f1), wipers:false }), hu=hi.userData, cab=hu.cab; cab.visible=false; g.add(cab);
-  for(const ch of hu.body.children) if(ch!==cab && ch.geometry) ch.geometry.dispose();      // 使わない外観（キャブの車体）のぶんは捨てる
+  const hi=Veh.hi("busP", {color:new THREE.Color(0xf2f3f1)}), hu=hi.userData, cab=hu.cab;
+  const glass = hu.body.children[1];
+  const wipers = hu.body.children.slice(3);
+  for (const item of [glass, ...wipers]) cab.add(item);
+  const updateDash = dressAeroStar(hu);
+  cab.visible=false; g.add(cab);
+  hu.body.children[0].geometry.dispose();
   const wheels=[], spin=[];
   for(const w of hu.wheels){ g.add(w.steer); wheels.push(w.steer); spin.push({ m:w.spin, grp:w.steer, front:w.front, r:w.r }); }
   // 扉（開閉するパネル: 左側面の外側に重ねる）
@@ -4930,7 +5024,7 @@ function makeRyobiBus(dest){
   const df=mkDoor(Lb/2-0.65, 1.0), dm=mkDoor(-0.12, 1.05);
   // 尾灯
   for(const s of [1,-1]){ const t=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.46,0.04), new THREE.MeshBasicMaterial({color:0x8a1010})); t.position.set(s*0.9,1.0,-Lb/2-0.025); g.add(t); }
-  g.userData={doors:[df,dm], wheels, spin, len:Lb, open:0, outer, cab, wheelG:{ rotation:{ z:0 } }, hiU:hu};
+  g.userData={doors:[df,dm], wheels, spin, len:Lb, open:0, outer, cab, mirrors, mirrorGlass:mirG, updateDash, wheelG:{ rotation:{ z:0 } }, hiU:hu};
   return g;
 }
 function setBusDoors(bus, t){      // t: 0=閉 1=開
@@ -5073,7 +5167,14 @@ const Bus = (() => {
   function begin(){
     if(!D) return false;
     model=makeRyobiBus(D.dest.replace("バスセンター","BC")); model.traverse(o=>{ if(o.isMesh) o.castShadow=true; });
-    Car.C.onDriverView=(drv)=>{ if(!model) return; for(const o of model.userData.outer) o.visible=!drv; model.userData.cab.visible=drv; if(drv) model.userData.hiU.update(Car.C); };
+    Car.C.onDriverView=(drv)=>{
+      if (!model) return;
+      const u = model.userData;
+      for (const o of u.outer) o.visible = !drv;
+      u.cab.visible = drv;
+      for (const {face,live} of u.mirrors) face.material = drv && live.map ? live : u.mirrorGlass;
+      if (drv) { u.hiU.update(Car.C); u.updateDash(Car.C, u.open > 0.1); }
+    };
     // 経路の帯（中心から 2.7m）は通れる（のりばの上屋・アーケードの下など、建物の範囲に重なる所）
     Car.C.passable=(x,z)=>{ for(let k=Math.max(0,st.idx-20);k<Math.min(P.n,st.idx+40);k++){ const dx=P.P[k*3]-x, dz=P.P[k*3+2]-z; if(dx*dx+dz*dz<7.3) return true; } return false; };
     Car.C.camCeil=(x,z)=>{ for(const r of CEIL) if(x>r[0]&&x<r[2]&&z>r[1]&&z<r[3]) return r[4]; return 1e9; };
@@ -5081,7 +5182,7 @@ const Bus = (() => {
     // のりば（岡山駅東口 13 番）の少し手前、経路の向きに
     // 前扉（車体中心から前へ 4.6m）が 13番のりばの標柱の横に来る位置
     const sc=D.stops[0].arc-4.6, p=pathPt(P, sc), t=pathTan(P, sc);
-    Car.C.x=p.x; Car.C.z=p.z; Car.C.yaw=Math.atan2(t.x,t.z); Car.C.h=Car.hAt(p.x,p.z); Car.C.view="chase";
+    Car.C.x=p.x; Car.C.z=p.z; Car.C.yaw=Math.atan2(t.x,t.z); Car.C.h=Car.hAt(p.x,p.z); Car.setView("driver");
     Object.assign(st, {idx:0, s:0, stopI:1, doors:true, doorT:1, dwell:0, dwellNeed:6, score:1000, pax:0, req:false, reqT:0, done:false, sigI:0, off:false, offT:0, comfortHits:0});
     st.waiting = D.stops.map((s,i)=> i===0 ? 7 : i===D.stops.length-1 ? 0 : Math.floor(Math.random()*(s.name==="天満屋"?7:4)));
     st.alight = D.stops.map(()=>0);
@@ -5350,7 +5451,7 @@ const Bus = (() => {
     const q=pathPt(P,s), t=pathTan(P,s); st.idx=Math.max(0,bi-2); return {x:q.x, z:q.z, yaw:Math.atan2(t.x,t.z)};
   }
   function onRoute(){ return !st.off; }
-  return { init, begin, end, tick, doorKey, nearestOnRoute, onRoute, bd, bdSummary, bdBuild, bdShift, bdModel, get active(){ return active; }, get data(){ return D; }, st, setLimit:(v)=>{ st.lim=v; } };
+  return { init, begin, end, tick, doorKey, nearestOnRoute, onRoute, bd, bdSummary, bdBuild, bdShift, bdModel, get active(){ return active; }, get data(){ return D; }, get mirrors(){ return model && model.userData.mirrors; }, st, setLimit:(v)=>{ st.lim=v; } };
 })();
 
 /* 放送文（バス）。読み仮名は tts に */
@@ -5467,15 +5568,19 @@ function updateCamera(){
     const V=VEH(), sE=S.pos-V.eyeBack, c=pointAt(sE), d=tangentAt(sE);
     if(!S._camD) S._camD=d.clone(); S._camD.lerp(d, 0.25).normalize();
     const D=S._camD;
-    camera.position.set(c.x, c.y+V.eyeH, c.z);
-    camera.lookAt(c.x+D.x*80, c.y+V.eyeH-1.6, c.z+D.z*80);
+    const left = V.hs ? 0 : 0.64;
+    camera.position.set(c.x + D.z * left, c.y+V.eyeH, c.z - D.x * left);
+    const pitch = V.hs ? 0.10 : 0.06;
+    camera.lookAt(camera.position.x+D.x*80, camera.position.y-pitch*80, camera.position.z+D.z*80);
   } else if(S.view==="cab"){
     // 先頭車体(A車)の中心と向き。カメラは車体前面の運転席位置に置き、車体の向きに沿って前を見る
     const V=VEH(), sA=S.pos+0.6-V.front/2, c=pointAt(sA), d=tangentAt(sA);
     if(!S._camD) S._camD=d.clone(); S._camD.lerp(d, 0.25).normalize();
     const D=S._camD, eye=c.clone().addScaledVector(D, V.front/2-0.42);
-    camera.position.set(eye.x, eye.y+2.35, eye.z);
-    camera.lookAt(eye.x+D.x*40, eye.y+2.35-0.9, eye.z+D.z*40);
+    const eyeH = V.oneH ? 1.98 : 2.35;
+    const grade = (pointAt(sA+3).y - pointAt(sA-3).y) / 6;
+    camera.position.set(eye.x, eye.y+eyeH, eye.z);
+    camera.lookAt(eye.x+D.x*40, eye.y+eyeH+(grade-0.065)*40, eye.z+D.z*40);
   } else {
     const side=new THREE.Vector3(t.z,0,-t.x), big=VEH().jr?(VEH().len>100?2.2:1.4):1, hp=VEH().jr?pointAt(S.pos-VEH().len*0.12):p;
     const b=hp.clone().addScaledVector(t,-32*big).addScaledVector(side,13*big);
@@ -6246,18 +6351,18 @@ const Cab = (() => {
 
   // ---- 計器（キャンバスで描画し、速度計は毎フレーム更新）----
   function gaugeCanvas() { const c = document.createElement("canvas"); c.width = c.height = 256; return c; }
-  function drawGauge(c, val, max, label, unit, red, ticks) {
+  function drawGauge(c, val, max, label, unit, red, ticks, dark=false) {
     const g = c.getContext("2d"), r = 118; g.clearRect(0, 0, 256, 256); g.save(); g.translate(128, 128);
     g.fillStyle = "#1c1c1c"; g.beginPath(); g.arc(0, 0, 127, 0, 7); g.fill();
-    g.fillStyle = "#f4f1e6"; g.beginPath(); g.arc(0, 0, r - 6, 0, 7); g.fill();
+    g.fillStyle = dark ? "#232827" : "#f4f1e6"; g.beginPath(); g.arc(0, 0, r - 6, 0, 7); g.fill();
     const a0 = Math.PI * 0.75, a1 = Math.PI * 2.25;
-    g.strokeStyle = "#222"; g.fillStyle = "#222"; g.font = "bold 20px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.strokeStyle = g.fillStyle = dark ? "#e2e5d9" : "#222"; g.font = "bold 20px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
     for (let k = 0; k <= ticks; k++) { const v = max * k / ticks, a = a0 + (a1 - a0) * k / ticks;
       g.lineWidth = 3; g.beginPath(); g.moveTo(Math.cos(a) * (r - 10), Math.sin(a) * (r - 10)); g.lineTo(Math.cos(a) * (r - 26), Math.sin(a) * (r - 26)); g.stroke();
       g.fillText(Number.isInteger(v) ? v : v.toFixed(1), Math.cos(a) * (r - 46), Math.sin(a) * (r - 46)); }
     g.font = "14px sans-serif"; g.fillText(label, 0, 38); g.fillText(unit, 0, 58);
     const a = a0 + (a1 - a0) * Math.min(1, Math.max(0, val / max));
-    g.strokeStyle = red ? "#c8261c" : "#111"; g.lineWidth = 6; g.lineCap = "round";
+    g.strokeStyle = dark ? "#e3e4c9" : red ? "#c8261c" : "#111"; g.lineWidth = 6; g.lineCap = "round";
     g.beginPath(); g.moveTo(-Math.cos(a) * 16, -Math.sin(a) * 16); g.lineTo(Math.cos(a) * (r - 22), Math.sin(a) * (r - 22)); g.stroke();
     g.fillStyle = "#333"; g.beginPath(); g.arc(0, 0, 10, 0, 7); g.fill(); g.restore();
   }
@@ -6325,7 +6430,7 @@ const Cab = (() => {
   const hitBV = cyl(0.3, 0.3, 0.2, hitM, 0.1, 0.09, 0, BV);
   // ================= v38: 新幹線（N700系）の運転台 =================
   // 参考: 実車の運転台の写真（曲面の計器盤・モニタ・黒い 2 本のハンドル）。配置は新幹線の標準（右手にマスコン・左手にブレーキハンドル）。
-  // マスコンは奥へ押すほど加速（切→P1〜P13）、ブレーキハンドルは手前へ引くほど強い（運転→B1〜B7→非常）。
+  // マスコンは手前に引くほど加速（切→P1〜P13）、ブレーキハンドルは手前へ引くほど強い（運転→B1〜B7→非常）。
   // 形・色・計器の並びは写真と公開資料からの簡略再現で、実車の寸法ではない。
   const HS = new THREE.Group(); HS.visible = false; root.add(HS);
   let isHS = false;
@@ -6375,8 +6480,12 @@ const Cab = (() => {
   const pillar = (sx) => { const p = hbox(0.06, 1.05, 0.06, HM.pillar, sx * 0.86, 0.12, -0.95, 0, 0, sx * 0.26); return p; };
   pillar(-1); pillar(1);
   //   hbox(0.028, 0.34, 0.05, HM.pillar, 0, 0.30, -0.92);                          // 中央の支柱
-  hbox(2.4, 0.07, 0.62, HM.ceil, 0, 0.455, -0.60);                            // 天井
-  hbox(2.4, 0.045, 0.05, HM.pillar, 0, 0.395, -0.93);                         // 窓の上枠
+  hbox(2.4, 0.13, 0.77, HM.ceil, 0, 0.43, -0.60);
+  hbox(1.68, 0.044, 0.095, HM.pillar, 0, 0.352, -0.96);
+  for (const side of [-1,1]) {
+    hbox(0.34, 0.65, 0.19, HM.ceil, side * 0.98, 0.132, -0.92, 0, side * 0.16, side * 0.27);
+    hbox(0.026, 0.58, 0.035, HM.black, side * 0.79, 0.12, -0.945, 0, 0, side * 0.27);
+  }
   hbox(0.30, 0.016, 0.12, HM.lamp, 0, 0.415, -0.62);                          // 天井灯
   hbox(0.34, 0.07, 0.14, HM.dark, 0.0, 0.36, -0.78);                          // 天井の操作盤
   for (let i = 0; i < 8; i++) hbox(0.026, 0.014, 0.01, HM.metal, -0.14 + i * 0.04, 0.358, -0.708);
@@ -6452,9 +6561,9 @@ const Cab = (() => {
     const mcT = MC_N ? api.getMC() / MC_N : 0, bvT = BV_N ? api.getBV() / BV_N : 0;
     if (!st.drag || st.drag.w !== "mc") hsFrac.mc += (mcT - hsFrac.mc) * Math.min(1, dt * 14);
     if (!st.drag || st.drag.w !== "bv") hsFrac.bv += (bvT - hsFrac.bv) * Math.min(1, dt * 14);
-    hsMC.piv.rotation.x = 0.30 - hsFrac.mc * 0.80;       // 手前（切）→ 奥（P13）
+    hsMC.piv.rotation.x = -0.34 + hsFrac.mc * 0.78;       // 奥（切）→ 手前（P13）
     hsBV.piv.rotation.x = -0.10 + hsFrac.bv * 0.78;      // 奥（運転）→ 手前（非常）
-    placeMarker(plMC, MC_N - api.getMC(), MC_N + 1); placeMarker(plBV, api.getBV(), BV_N + 1);
+    placeMarker(plMC, api.getMC(), MC_N + 1); placeMarker(plBV, api.getBV(), BV_N + 1);
     const bc = S.emergency ? 450 : Math.max(0, -S.notch) * (360 / Math.max(1, BV_N - 1)), mr = 880 + Math.sin(S.t * 0.2) * 6 - bc * 0.06;
     for (const [o, v, al] of [[gHS, S.speed, S.atcAllow == null ? null : S.atcAllow], [gMRh, mr, null], [gBCh, bc, null]]) { const q = Math.round(v / (o.max / 320)); if (q !== o.last || al !== o.al) { o.last = q; o.al = al; drawGaugeHS(o.c, v, o.max, o.label, o.unit, o.ticks, o.red, al); o.t.needsUpdate = true; } }
     drawATC(S); drawMON(S);
@@ -6465,9 +6574,7 @@ const Cab = (() => {
     root.position.set(Math.sin(S.t * 0.7) * 0.0006 * sh, Math.sin(S.t * 1.3) * 0.0006 * sh - (S.acc || 0) * 0.0008, 0);
   }
 
-  // ================= v44: JR 在来線（227系・223系）の運転台 =================
-  // 参考: JR 西日本の近郊形電車の運転台の写真（濃い灰色の机・左手のワンハンドルマスコン・計器盤の速度計と圧力計・中央のモニタ・右の表示灯）。
-  // ワンハンドル: 手前へ引くと力行（P1〜P4）、奥へ押すとブレーキ（B1〜）、いちばん奥が非常（EB）。形・配置は写真からの簡略再現で、実車の寸法ではない。
+  // JR西日本の近郊形。左は力行、右はブレーキ。227系は液晶表示、223系はアナログ計器。
   const JC = new THREE.Group(); JC.visible = false; root.add(JC);
   let isJC = false;
   const jm = (c, o) => new THREE.MeshPhongMaterial(Object.assign({ color: c, shininess: 28, specular: 0x202428 }, o || {}));
@@ -6488,27 +6595,29 @@ const Cab = (() => {
     const rim = new THREE.Mesh(new THREE.TorusGeometry(r + 0.004, 0.004, 8, 32), JM.metal); rim.position.set(x, y, 0.006); JP.add(rim);
     const o = Object.assign(cm, { label, unit, max, ticks, red, last: null }); jcG.push(o); return o; };
   const gJS = jcGauge(-0.40, -0.01, 0.105, "速度計", "km/h", 140, 7, false);
-  const gJP = jcGauge(-0.14, -0.01, 0.07, "圧力計", "kPa", 1000, 5, true);
+  const gJP = jcGauge(-0.16, -0.02, 0.066, "圧力計", "kPa", 1000, 5, true);
+  const jcAnalog = JP.children.slice(-6);
   // 中央のモニタ（運転状況）と、右の表示灯・スイッチ
   const dJM = jcMat(320, 200); jbox(0.36, 0.235, 0.012, JM.black, 0.20, -0.005, 0.0, 0, 0, 0, JP); { const m = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.2125), dJM.m); m.position.set(0.20, -0.005, 0.008); JP.add(m); }
   jbox(0.24, 0.24, 0.01, JM.dark, 0.58, -0.005, 0.0, 0, 0, 0, JP);
   const jcLamps = []; ["戸閉", "ATS", "力行", "制動", "非常", "EB"].forEach((t, i) => { const c = document.createElement("canvas"); c.width = 96; c.height = 48; const g = c.getContext("2d"); g.fillStyle = "#fff"; g.font = "bold 26px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(t, 48, 25);
     const tx = new THREE.CanvasTexture(c); const m = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 0.035), new THREE.MeshBasicMaterial({ color: 0x333a40, map: tx })); m.position.set(0.53 + (i % 2) * 0.1, 0.07 - Math.floor(i / 2) * 0.055, 0.007); JP.add(m); jcLamps.push(m); });
   for(let i = 0; i < 3; i++){ const k = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.02, 14), JM.metal); k.rotation.x = Math.PI / 2; k.position.set(0.53 + i * 0.05, -0.09, 0.012); JP.add(k); }
-  // 左手のワンハンドルマスコン（溝・目盛り板・T 字の握り）
-  jbox(0.15, 0.02, 0.36, JM.dark, -0.55, -0.322, -0.80);
-  jbox(0.03, 0.006, 0.31, JM.black, -0.55, -0.31, -0.80);
-  const JL = new THREE.Group(); JL.position.set(-0.55, -0.31, -0.80); JC.add(JL);
-  { const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, 0.13, 14), JM.metal); sh.position.y = 0.065; JL.add(sh);
-    const tg = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.16, 18), JM.black); tg.rotation.z = Math.PI / 2; tg.position.y = 0.14; JL.add(tg);
-    const dm = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.02, 12), JM.red); dm.position.set(0.0, 0.158, 0); JL.add(dm); }      // 握りの上のボタン（デッドマン装置の代わり）
-  const jcHit = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.32, 10), hitM); jcHit.position.y = 0.12; JL.add(jcHit);
-  const plJ = jcMat(96, 512); const plJm = new THREE.Mesh(new THREE.PlaneGeometry(0.075, 0.33), plJ.m); plJm.rotation.x = -Math.PI / 2 + 0.25; plJm.position.set(-0.44, -0.318, -0.80); JC.add(plJm);
-  const mkJ = new THREE.Mesh(new THREE.PlaneGeometry(0.082, 0.02), new THREE.MeshBasicMaterial({ color: 0xff9a1f, transparent: true, opacity: 0.6, depthTest: false })); mkJ.renderOrder = 5; plJm.add(mkJ);   // 目盛り板の上の印（板の座標で置く）
-  function paintJPlate(){ const c = plJ.c, g = c.getContext("2d"), w = c.width, h = c.height, labs = []; for(let i = MC_N; i >= 1; i--) labs.push("P" + i); labs.push("N"); for(let i = 1; i < BV_N; i++) labs.push("B" + i); labs.push("EB");
-    g.fillStyle = "#e7eaec"; g.fillRect(0, 0, w, h); g.textAlign = "center"; g.textBaseline = "middle"; const n = labs.length; g.font = "bold " + Math.min(34, Math.floor(h / n * 0.6)) + "px sans-serif";
-    labs.forEach((t, i) => { g.fillStyle = t === "EB" ? "#c01818" : t === "N" ? "#0b5aa8" : "#15191d"; g.fillText(t, w / 2, (i + 0.5) * h / n); g.fillStyle = "rgba(0,0,0,.22)"; g.fillRect(6, (i + 1) * h / n - 1, w - 12, 1.5); });
-    plJ.t.needsUpdate = true; plJ.n = n; }
+  function makeJLever(x, brake) {
+    jbox(0.16,0.022,0.31,JM.dark,x,-0.322,-0.76);
+    jbox(0.034,0.006,0.26,JM.black,x,-0.307,-0.76);
+    const pivot = new THREE.Group();
+    pivot.position.set(x,-0.308,-0.76); JC.add(pivot);
+    cyl(0.012,0.016,0.121,JM.metal,0,0.058,0,pivot);
+    box(brake ? 0.127 : 0.106,0.043,0.051,JM.black,0,0.129,0,pivot);
+    box(0.049,0.015,0.016,JM.metal,0,0.124,-0.032,pivot);
+    const hit = cyl(0.079,0.079,0.29,hitM,0,0.098,0,pivot);
+    const plate = new THREE.Group();
+    plate.position.set(x+0.115,-0.305,-0.749); plate.rotation.x=-1.42; JC.add(plate);
+    textPlate(plate,0,0,0.066,0.029,brake ? "制動" : "力行");
+    return {pivot,hit};
+  }
+  const jcMC = makeJLever(-0.51,false), jcBV = makeJLever(0.24,true);
   // 右側: 逆転器・警笛・戸閉のボタン、机の上の時刻表（行路表）差し
   jbox(0.12, 0.05, 0.14, JM.dark, 0.55, -0.305, -0.70); { const k = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.05, 10), JM.metal); k.position.set(0.55, -0.26, -0.70); JC.add(k); }
   for(const [x, c] of [[0.42, JM.red], [0.47, jm(0x1c62c4)], [0.66, jm(0xd8b21c)]]){ const b = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.018, 14), c); b.position.set(x, -0.322, -0.56); JC.add(b); }
@@ -6542,22 +6651,185 @@ const Cab = (() => {
     (S.stops || []).slice(0, 12).forEach((q, i) => { g.fillText(q.name, 16, 64 + i * 26); g.fillStyle = "rgba(0,0,0,.18)"; g.fillRect(12, 76 + i * 26, 232, 1); g.fillStyle = "#1a1c1e"; });
     ttJ.t.needsUpdate = true;
   }
-  const jcFrac = { h: 0 };
-  function jcPos(){ return api ? (api.getMC() > 0 ? api.getMC() : -api.getBV()) : 0; }     // 力行 +1〜+MC_N、ブレーキ −1〜−BV_N（−BV_N が非常）
+  const jcFrac = { mc:0, bv:0 };
   function updateJC(dt, S){
-    if(!st.drag) jcFrac.h += (jcPos() - jcFrac.h) * Math.min(1, dt * 14);
-    JL.rotation.x = jcFrac.h * 0.11;                                   // 手前（力行）へ倒すと正
-    const n = MC_N + 1 + BV_N, row = MC_N - jcPos(); if(plJ.n !== n) paintJPlate();
-    mkJ.position.set(0, 0.165 - (row + 0.5) / n * 0.33, 0.002);
+    for (const [key,lever,max,value] of [["mc",jcMC,MC_N,S.mc],["bv",jcBV,BV_N,S.bv]]) {
+      if (!st.drag || st.drag.w !== key) jcFrac[key] += (value / max - jcFrac[key]) * Math.min(1, dt * 14);
+      lever.pivot.rotation.x = key === "mc" ? -0.24 + jcFrac[key] * 0.54 : 0.25 - jcFrac[key] * 0.54;
+    }
     const bc = S.emergency ? 450 : Math.max(0, -S.notch) * (380 / Math.max(1, BV_N - 1)), mr = 820 + Math.sin(S.t * 0.2) * 8 - bc * 0.05;
     for(const [o, v] of [[gJS, S.speed], [gJP, mr]]){ const q = Math.round(v / (o.max / 280)); if(q !== o.last){ o.last = q; drawGauge(o.c, v, o.max, o.label, o.unit, o.red, o.ticks);
         if(o === gJP){ const g = o.c.getContext("2d"), a0 = Math.PI * 0.75, a1 = Math.PI * 2.25, a = a0 + (a1 - a0) * Math.min(1, bc / o.max); g.save(); g.translate(128, 128); g.strokeStyle = "#c8261c"; g.lineWidth = 5; g.lineCap = "round"; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(a) * 90, Math.sin(a) * 90); g.stroke(); g.restore(); }
         o.t.needsUpdate = true; } }
+    if (urara.visible) drawUraraPressure(mr, bc);
     drawJMON(S); drawJTT(S);
     const on = [!S.doorOpen, true, S.notch > 0, S.notch < 0, !!S.emergency, !!S.emergency], cols = [0xe0a020, 0x37c46a, 0x37c46a, 0xf0b030, 0xe04030, 0xe04030];
     jcLamps.forEach((l, i) => l.material.color.setHex(on[i] ? cols[i] : 0x333a40));
     const sh = Math.min(1, S.speed / 60);
     root.position.set(Math.sin(S.t * 9.1) * 0.0012 * sh, Math.sin(S.t * 11.7) * 0.0016 * sh - (S.acc || 0) * 0.0009, 0);
+  }
+
+  // 9200形: 1011号の運転台写真を基に、黒い計器盤と低い前窓を独立して組む。
+  // https://commons.wikimedia.org/wiki/File:Okayama_Electric_Tramway_1011_driving_cab.jpg
+  const LC = new THREE.Group(); LC.visible = false; root.add(LC);
+  const LM = { top: pm(0x414445), edge: pm(0x252729), face: pm(0x343738),
+    rubber: pm(0x111416), shell: pm(0x737776), steel: pm(0x7e8689), wiper: pm(0x17191a) };
+  box(1.88, 0.062, 0.59, LM.top, 0, -0.38, -0.86, LC);
+  box(1.80, 0.28, 0.04, LM.edge, 0, -0.51, -0.55, LC);
+  box(1.86, 0.075, 0.09, LM.rubber, 0, -0.26, -1.25, LC);
+  box(1.75, 0.10, 0.14, LM.shell, 0, 0.64, -1.22, LC);
+  for (const side of [-1, 1]) {
+    box(0.10, 1.10, 0.14, LM.shell, side * 0.89, 0.18, -1.22, LC).rotation.z = side * 0.23;
+    box(0.034, 1.00, 0.035, LM.rubber, side * 0.83, 0.20, -1.18, LC).rotation.z = side * 0.23;
+  }
+  const LG = new THREE.Group();
+  LG.position.set(0, -0.28, -1.025); LG.rotation.x = -0.84; LC.add(LG);
+  box(1.42, 0.31, 0.038, LM.face, 0, 0, -0.02, LG);
+  box(1.44, 0.021, 0.06, LM.edge, 0, 0.15, -0.015, LG);
+  textPlate(LG, -0.60, 0, 0.125, 0.108, "", "#17232f");
+  function lcd(parent, x, y, w, h, px, py) {
+    const card = mkCanvasMat(px, py);
+    box(w + 0.018, h + 0.018, 0.012, M.dark, x, y, 0.008, parent);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(w, h), card.m);
+    screen.position.set(x, y, 0.016); parent.add(screen);
+    return card;
+  }
+  function textPlate(parent, x, y, w, h, label, bg = "#272a2c") {
+    const t = tex(256, 64, (g, px, py) => {
+      g.fillStyle = bg; g.fillRect(0, 0, px, py);
+      g.fillStyle = "#e9e9e2"; g.font = "bold 36px sans-serif";
+      g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText(label, px / 2, py / 2, px - 10);
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({map:t}));
+    m.position.set(x, y, 0.017); parent.add(m);
+  }
+  const lcSpeed = mkCanvasMat(256, 256);
+  const lcDial = new THREE.Mesh(new THREE.CircleGeometry(0.103, 40), lcSpeed.m);
+  lcDial.position.set(-0.025, -0.012, 0.015); LG.add(lcDial);
+  const lcRim = new THREE.Mesh(new THREE.TorusGeometry(0.105, 0.006, 10, 40), LM.rubber);
+  lcRim.position.copy(lcDial.position); LG.add(lcRim);
+  const lcStatus = lcd(LG, 0.34, 0.020, 0.22, 0.12, 320, 160);
+  const lcLamps = ["戸閉","力行","制動","非常"].map((name, i) => {
+    const x = -0.43 + i * 0.081;
+    textPlate(LG, x, 0.068, 0.068, 0.022, name);
+    const lamp = new THREE.MeshBasicMaterial({color:0x222829});
+    box(0.045, 0.025, 0.012, lamp, x, 0.101, 0.016, LG);
+    return lamp;
+  });
+  for (const [i, col] of [0x9d2220, 0x2b784c, 0xcb8a39, 0x99a1a0, 0x262a2b, 0x262a2b].entries()) {
+    const x = -0.45 + (i % 3) * 0.09;
+    const y = -0.016 - Math.floor(i / 3) * 0.07;
+    box(0.056, 0.048, 0.018, LM.edge, x, y, 0.014, LG);
+    cyl(0.016, 0.016, 0.016, pm(col), x, y, 0.029, LG).rotation.x = Math.PI / 2;
+  }
+  for (const x of [-0.54, 0.54]) for (const y of [-0.126, 0.126]) {
+    cyl(0.006, 0.006, 0.006, LM.steel, x, y, 0.008, LG).rotation.x = Math.PI / 2;
+  }
+  const lcLever = new THREE.Group();
+  lcLever.position.set(0.38, -0.322, -0.78); lcLever.scale.setScalar(0.83); LC.add(lcLever);
+  box(0.26, 0.092, 0.32, LM.edge, 0.38, -0.367, -0.78, LC);
+  box(0.167, 0.01, 0.247, LM.steel, 0.38, -0.316, -0.78, LC);
+  box(0.025, 0.012, 0.16, LM.rubber, 0.38, -0.309, -0.78, LC);
+  cyl(0.014, 0.020, 0.115, LM.steel, 0, 0.055, 0, lcLever);
+  const lcGrip = new THREE.Mesh(new THREE.SphereGeometry(0.038,20,14),LM.rubber);
+  lcGrip.position.y=0.128; lcLever.add(lcGrip);
+  const grabPoints = [[-0.21,-0.38,-0.64],[-0.20,-0.31,-0.63],[-0.15,-0.287,-0.632],
+    [-0.015,-0.287,-0.632],[0.025,-0.31,-0.63],[0.03,-0.38,-0.64]].map(p=>new THREE.Vector3(...p));
+  LC.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(grabPoints),24,0.011,7,false),LM.steel));
+  const lcHit = cyl(0.082, 0.082, 0.25, hitM, 0, 0.105, 0, lcLever);
+
+  function windowWiper(parent, x, y, z, length, rest, sweep) {
+    const pivot = new THREE.Group(); pivot.position.set(x, y, z); parent.add(pivot);
+    const m = LM.wiper;
+    box(0.012, length * 0.74, 0.012, m, 0, length * 0.37, 0, pivot);
+    box(0.025, length * 0.59, 0.009, m, 0, length * 0.70, 0.002, pivot);
+    pivot.rotation.z = rest;
+    return (t, rain) => {
+      const f = (t % 2.7) / 1.25;
+      pivot.rotation.z = rest + (rain && f < 1 ? sweep * (1 - Math.cos(f * 2 * Math.PI)) / 2 : 0);
+    };
+  }
+  const lcWipe = windowWiper(LC, 0.09, -0.23, -1.21, 0.54, 1.41, -1.62);
+  // Urara: 貫通扉の縦枠とデジタル速度表示。223系のアナログ速度計とは切り替える。
+  const urara = new THREE.Group(); JC.add(urara);
+  box(0.079, 0.88, 0.11, JM.pillar, 0.52, 0.222, -1.035, urara);
+  box(0.014, 0.86, 0.018, JM.wall, 0.566, 0.22, -1.017, urara);
+  const uPanel = new THREE.Group();
+  uPanel.position.copy(JP.position); uPanel.rotation.copy(JP.rotation); uPanel.scale.copy(JP.scale); urara.add(uPanel);
+  const uSpeed = lcd(uPanel, -0.456, 0.0, 0.38, 0.23, 384, 216);
+  const uPressure = lcd(uPanel,-0.165,-0.005,0.139,0.200,164,224);
+  const jcWipe = windowWiper(JC, -0.26, -0.17, -0.98, 0.52, -1.40, 1.47);
+  const hsWipe = windowWiper(HS, 0.03, 0.32, -0.91, 0.38, 1.72, 1.42);
+  const legacyWipers = new THREE.Group(); root.add(legacyWipers);
+  const legacyWipe = windowWiper(legacyWipers, -0.21, -0.35, -1.24, 0.47, -1.42, 1.53);
+  const legacyPillars = box(0.055, 0.93, 0.07, M.frame, 0.39, 0.18, -1.28);
+  let isLC = false;
+  let lcPosition = 0;
+
+  function drawUrara(S) {
+    const speed = Math.round(S.speed), lim = limitAt(S.pos);
+    const key = speed + "|" + lim + "|" + S.doorOpen;
+    if (uSpeed.key === key) return;
+    uSpeed.key = key;
+    const g = uSpeed.c.getContext("2d");
+    g.fillStyle="#131a1e"; g.fillRect(0,0,384,216);
+    g.fillStyle="#2d3d46"; g.fillRect(0,0,384,33);
+    g.fillStyle="#d5dedf"; g.font="bold 22px sans-serif"; g.fillText("速度",13,25);
+    g.fillStyle="#e8f0ec"; g.font="bold 75px monospace"; g.textAlign="right"; g.fillText(speed,153,104);
+    g.font="22px sans-serif"; g.textAlign="left"; g.fillText("km/h",164,103);
+    g.fillStyle="#35444a"; g.fillRect(16,129,350,17);
+    g.fillStyle="#6dd9ab"; g.fillRect(16,129,350*Math.min(1,speed/140),17);
+    g.strokeStyle="#cad5d6"; g.lineWidth=2;
+    for (let i=0;i<=7;i++) { const x=16+i*50; g.beginPath(); g.moveTo(x,151); g.lineTo(x,159); g.stroke(); }
+    g.font="15px monospace"; g.fillStyle="#a8b9bd";
+    g.fillText("0",16,178); g.fillText("70",180,178); g.fillText("140",337,178);
+    g.fillStyle=S.doorOpen?"#ebbd6c":"#7ed598"; g.font="bold 19px sans-serif";
+    g.fillText(S.doorOpen?"戸開":"戸閉",16,207);
+    if (Number.isFinite(lim)) { g.textAlign="right"; g.fillStyle="#e4cd82"; g.fillText("制限 "+lim,367,25); g.textAlign="left"; }
+    uSpeed.t.needsUpdate=true;
+  }
+  function drawUraraPressure(mr, bc) {
+    const key = Math.round(mr / 5) + "|" + Math.round(bc / 10);
+    if (uPressure.key === key) return;
+    uPressure.key = key;
+    const g = uPressure.c.getContext("2d");
+    g.fillStyle="#21292e"; g.fillRect(0,0,164,224);
+    g.font="bold 19px sans-serif"; g.fillStyle="#d7e2e4"; g.fillText("空気圧  kPa",10,26);
+    for (const [i,label,pressure,max] of [[0,"MR",mr,1000],[1,"BC",bc,500]]) {
+      const y=52+i*80;
+      g.fillStyle="#b8c8cc"; g.fillText(label+" "+Math.round(pressure),10,y+20);
+      g.fillStyle="#52626b"; g.fillRect(10,y+30,145,11);
+      g.fillStyle=i ? "#d5ad60" : "#a3cbb7"; g.fillRect(10,y+30,145*Math.min(1,pressure/max),11);
+    }
+    uPressure.t.needsUpdate=true;
+  }
+  function updateLC(dt, S) {
+    const n = S.notch;
+    if (!st.drag) lcPosition += (n - lcPosition) * Math.min(1, dt * 15);
+    lcLever.rotation.x = lcPosition * 0.104;
+    const speed = Math.round(S.speed * 2) / 2;
+    if (lcSpeed.key !== speed) {
+      lcSpeed.key = speed;
+      drawGauge(lcSpeed.c, speed, 60, "速度計", "km/h", true, 6, true);
+      lcSpeed.t.needsUpdate = true;
+    }
+    const lampsOn = [!S.doorOpen, n > 0, n < 0, !!S.emergency];
+    lcLamps.forEach((m, i) => m.color.setHex(lampsOn[i] ? [0x76d265,0x76d265,0xf1af45,0xeb4240][i] : 0x25292c));
+    const nxt = S.stops && S.stops[S.stopIndex];
+    const label = S.emergency ? "非常" : n > 0 ? "P" + n : n < 0 ? "B" + (-n) : "N";
+    const key = label + "|" + (nxt ? nxt.name : "") + "|" + S.doorOpen;
+    if (lcStatus.key !== key) {
+      lcStatus.key = key;
+      const g = lcStatus.c.getContext("2d");
+      g.fillStyle = "#202824"; g.fillRect(0, 0, 320, 160);
+      g.fillStyle = "#bcdc91"; g.font = "bold 56px monospace"; g.fillText(label, 15, 65);
+      g.font = "25px sans-serif"; g.textAlign = "right"; g.fillText(S.doorOpen ? "戸開" : "戸閉", 303, 54);
+      g.textAlign = "left"; g.fillRect(15, 80, 290, 2);
+      g.font = "bold 29px sans-serif"; g.fillText(nxt ? nxt.name : "終点", 15, 129, 290);
+      lcStatus.t.needsUpdate = true;
+    }
+    root.position.set(0, -(S.acc || 0) * 0.0009, 0);
   }
 
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
@@ -6566,39 +6838,58 @@ const Cab = (() => {
     const r = renderer.domElement.getBoundingClientRect();
     ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, camC);
-    const L2 = isHS ? [hsMC.hit, hsBV.hit] : isJC ? [jcHit, jcHit] : [hitMC, hitBV];
+    const L2 = isHS ? [hsMC.hit, hsBV.hit] : isLC ? [lcHit] : isJC ? [jcMC.hit, jcBV.hit] : [hitMC, hitBV];
     const h = ray.intersectObjects(L2, false);
     return h.length ? (h[0].object === L2[0] ? "mc" : "bv") : null;
   }
   function onDown(ev) {
     if (!Cab.active || !api) return;
+    if (ev.button !== 0 || st.drag) return;
     const w = pick(ev); if (!w) return;
     ev.preventDefault();
-    st.drag = { w, x0: ev.clientX, y0: ev.clientY, h0: jcFrac.h, f0: w === "mc" ? hsFrac.mc : hsFrac.bv, a0: w === "mc" ? api.getMC() * MC_STEP : api.getBV() * BV_STEP, id: ev.pointerId };
+    st.drag = { w, x0: ev.clientX, y0: ev.clientY, h0: lcPosition, f0: (isJC ? jcFrac : hsFrac)[w], a0: w === "mc" ? api.getMC() * MC_STEP : api.getBV() * BV_STEP, id: ev.pointerId };
     try { renderer.domElement.setPointerCapture(ev.pointerId); } catch (e) {}
   }
   function onMove(ev) {
     if (!st.drag) { if (Cab.active) renderer.domElement.style.cursor = pick(ev) ? "grab" : ""; return; }
-    if (isJC) {   // v44: ワンハンドル: 下へドラッグ（手前へ引く）＝力行、上へ（奥へ押す）＝ブレーキ。1 段 = 28px
-      let f = st.drag.h0 + (ev.clientY - st.drag.y0) / 28; f = Math.max(-BV_N, Math.min(MC_N, f)); jcFrac.h = f; const n = Math.round(f);
-      if (n > 0){ if (api.getBV() !== 0) api.setBV(0); if (api.getMC() !== n) api.setMC(n); } else { if (api.getMC() !== 0) api.setMC(0); if (api.getBV() !== -n) api.setBV(-n); }
-      return; }
-    if (isHS) {   // 新幹線: マスコンは上へ（奥へ押す）、ブレーキは下へ（手前へ引く）でノッチが増える
-      const dy = ev.clientY - st.drag.y0, w = st.drag.w, per = 200; let f = st.drag.f0 + (w === "mc" ? -dy : dy) / per; f = Math.max(0, Math.min(1, f)); hsFrac[w] = f;
+    if (!Cab.active || !S.running || S.view !== "cab") { onUp(); return; }
+    if (ev.pointerId !== st.drag.id) return;
+    if (isLC) {
+      const f = Math.max(-BV_N, Math.min(MC_N, st.drag.h0 + (ev.clientY - st.drag.y0) / 28));
+      const n = Math.round(f);
+      if (n !== S.notch && (!S.doorOpen || n <= 0)) setNotch(n);
+      lcPosition = S.doorOpen ? Math.min(0, f) : f;
+      return;
+    }
+    if (isJC) {
+      const w = st.drag.w, max = w === "mc" ? MC_N : BV_N;
+      const delta = ev.clientY - st.drag.y0;
+      const f = Math.max(0, Math.min(1, st.drag.f0 + (w === "mc" ? delta : -delta) / (max * 28)));
+      const n = Math.round(f * max);
+      if (w === "mc") { if (n !== S.mc) api.setMC(n); } else if (n !== S.bv) api.setBV(n);
+      jcFrac[w] = w === "mc" && S.doorOpen ? 0 : f;
+      return;
+    }
+    if (isHS) {   // 新幹線: マスコンとブレーキをそれぞれ手前へ引くとノッチが増える
+      const dy = ev.clientY - st.drag.y0, w = st.drag.w, per = 200; let f = st.drag.f0 + dy / per; f = Math.max(0, Math.min(1, f)); hsFrac[w] = w === "mc" && S.doorOpen ? 0 : f;
       const N = w === "mc" ? MC_N : BV_N, n = Math.round(f * N); if (n !== (w === "mc" ? api.getMC() : api.getBV())) (w === "mc" ? api.setMC : api.setBV)(n); return; }
     const dx = ev.clientX - st.drag.x0;
     const ang = st.drag.a0 - dx * 0.011;          // 右へドラッグ = 右回り
     if (st.drag.w === "mc") { const n = Math.max(0, Math.min(MC_N, Math.round(ang / MC_STEP))); st.mcAng = Math.max(MC_N * MC_STEP, Math.min(0.05, ang)); if (n !== api.getMC()) api.setMC(n); }
     else { const n = Math.max(0, Math.min(BV_N, Math.round(ang / BV_STEP))); st.bvAng = Math.max(BV_N * BV_STEP, Math.min(0.05, ang)); if (n !== api.getBV()) api.setBV(n); }
   }
-  function onUp() { st.drag = null; }
+  function onUp(ev) { if (!st.drag || !ev || ev.pointerId === st.drag.id) st.drag = null; }
   renderer.domElement.addEventListener("pointerdown", onDown);
   addEventListener("pointermove", onMove);
   addEventListener("pointerup", onUp); addEventListener("pointercancel", onUp);
+  renderer.domElement.addEventListener("lostpointercapture", onUp);
+  addEventListener("blur", () => onUp());
 
   function update(dt, S) {
-    if (isHS) { updateHS(dt, S); return; }
-    if (isJC) { updateJC(dt, S); return; }
+    if (isHS) { hsWipe(S.t, Env.st.rain); updateHS(dt, S); return; }
+    if (isJC) { jcWipe(S.t, Env.st.rain); updateJC(dt, S); if (urara.visible) drawUrara(S); return; }
+    if (isLC) { lcWipe(S.t, Env.st.rain); updateLC(dt, S); return; }
+    legacyWipe(S.t, Env.st.rain);
     // ハンドル角: ドラッグ中は指に追従、それ以外はノッチ位置へ滑らかに
     if (!st.drag || st.drag.w !== "mc") st.mcAng += (api.getMC() * MC_STEP - st.mcAng) * Math.min(1, dt * 14);
     if (!st.drag || st.drag.w !== "bv") st.bvAng += (api.getBV() * BV_STEP - st.bvAng) * Math.min(1, dt * 14);
@@ -6615,26 +6906,35 @@ const Cab = (() => {
     root.position.set(Math.sin(S.t * 13.1) * 0.0025 * sh, Math.sin(S.t * 17.3) * 0.003 * sh - (S.acc || 0) * 0.0012, 0);
   }
   function render(r) {
-    camC.aspect = camera.aspect; camC.fov = camera.fov * (isHS ? 0.95 : 1); camC.updateProjectionMatrix();   // v39.3: 新幹線は運転台だけ少し拡大して計器を読みやすく（外の景色の画角は変えない）
+    camC.aspect = camera.aspect; camC.fov = camera.fov; camC.updateProjectionMatrix();
     r.clearDepth(); r.render(sceneC, camC);
   }
   function screenPos() {   // テスト用: ハンドル位置の画面座標
     const r = renderer.domElement.getBoundingClientRect(), out = {};
-    for (const [k, o] of [["mc", knob], ["bv", grip]]) { const v = new THREE.Vector3(); o.getWorldPosition(v); v.project(camC); out[k] = [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; }
+    const controls = isLC ? [["mc", lcHit]] : isJC ? [["mc", jcMC.hit], ["bv", jcBV.hit]] :
+      isHS ? [["mc", hsMC.hit], ["bv", hsBV.hit]] : [["mc", knob], ["bv", grip]];
+    for (const [k, o] of controls) { const v = new THREE.Vector3(); o.getWorldPosition(v); v.project(camC); out[k] = [r.left + (v.x + 1) / 2 * r.width, r.top + (1 - v.y) / 2 * r.height]; }
     return out;
   }
-  function setNotches(np, nb, hs, kind) {   // np: 力行ノッチ数、nb: 常用ブレーキ段数（非常はその次）、hs: 新幹線配置（マスコン右・ブレーキ弁左）、kind: "one"=在来線のワンハンドル / "jr2"=在来線の 2 ハンドル（115系・キハ47）
+  function setNotches(np, nb, hs, kind) {   // np: 力行ノッチ数、nb: 常用ブレーキ段数（非常はその次）、hs: 新幹線配置（マスコン右・ブレーキ弁左）、kind: 9200形・227系・223系・国鉄形の区別
     MC_N = np; BV_N = nb + 1; MC_STEP = -1.44 / np; BV_STEP = -1.8 / BV_N;
-    isHS = !!hs; isJC = !hs && kind === "one"; { const u = document.getElementById("ui"); if(u) u.classList.toggle("hs", isHS || isJC); } HS.visible = isHS; JC.visible = isJC; for (const ch of root.children) if (ch !== HS && ch !== JC) ch.visible = !isHS && !isJC; if (!isHS) root.position.set(0, 0, 0);
-    if (isJC){ paintJPlate(); dJM.key = ""; ttJ.key = ""; jcG.forEach(o => o.last = null); jcFrac.h = 0; }
+    isHS = !!hs; isJC = kind === "commuter" || kind === "urara"; isLC = kind === "momo";
+    urara.visible = kind === "urara"; jcAnalog.forEach(m => m.visible = !urara.visible);
+    for (const ch of root.children) ch.visible = !isHS && !isJC && !isLC;
+    HS.visible = isHS; JC.visible = isJC; LC.visible = isLC;
+    legacyPillars.visible = !isHS && !isJC && !isLC && kind !== "jr2";
+    const ui = document.getElementById("ui");
+    if (ui) ui.classList.toggle("hs", isHS || isJC || isLC);
+    root.position.set(0, 0, 0); lcPosition = 0; onUp();
+    if (isJC){ dJM.key = ""; ttJ.key = ""; jcG.forEach(o => o.last = null); jcFrac.mc = 0; jcFrac.bv = 0; }
     // v44: 在来線の 2 ハンドル（115系・キハ47）は、路面電車の木目の机ではなく国鉄形の淡い緑灰色の塗装に
     if (kind === "jr2"){ if (!M._woodMap) M._woodMap = M.wood.map; M.wood.map = null; M.wood.color.setHex(0x8fa197); M.panel.color.setHex(0xc9d2cc); M.frame.color.setHex(0x55625b); }
     else if (M._woodMap){ M.wood.map = M._woodMap; M.wood.color.setHex(0xffffff); M.panel.color.setHex(0xe9e3d3); M.frame.color.setHex(0x4a4038); }
     M.wood.needsUpdate = true;
-    if (isHS) { const lm = []; for (let i = np; i >= 1; i--) lm.push(String(i)); lm.push("切"); paintPlate(plMC, lm, false);
+    if (isHS) { const lm = ["切"]; for (let i = 1; i <= np; i++) lm.push(String(i)); paintPlate(plMC, lm, false);
       const lb = ["運"]; for (let i = 1; i <= nb; i++) lb.push(String(i)); lb.push("非"); paintPlate(plBV, lb, true); dAtc.key = ""; dMon.key = ""; hsG.forEach(o => o.last = null); }
     for(const [p, fn, n] of [[mcPlate, paintMC, np], [bvPlate, paintBV, BV_N]]){ const m = p.material.map, c = m.image; fn(c.getContext("2d"), c.width, c.height, n); m.needsUpdate = true; }
-    MC.position.x = hs ? 0.3 : -0.42; BV.position.x = hs ? -0.42 : 0.3; { const e = document.getElementById("cabhint"); if(e) e.textContent = isJC ? "左のワンハンドル: 下へドラッグ＝力行（手前へ引く）／上へ＝ブレーキ（奥へ押す）　キー: マスコン W/S・ブレーキ ↓/↑・非常 Space" : hs ? "右: マスコン（上へドラッグ＝加速） ／ 左: ブレーキ（下へドラッグ＝強く）　キー: W/S・↓/↑・非常 Space" : "左のマスコン・右のブレーキハンドルを左右にドラッグして回せます（キー: マスコン W/S、ブレーキ ↓/↑）"; } st.mcAng = Math.max(MC_N * MC_STEP, st.mcAng); st.bvAng = Math.max(BV_N * BV_STEP, st.bvAng);
+    MC.position.x = hs ? 0.3 : -0.42; BV.position.x = hs ? -0.42 : 0.3; { const e = document.getElementById("cabhint"); if(e) e.textContent = isJC ? "左はマスコン（手前で力行）、右はブレーキ（奥で制動）。W/S・↓/↑・Spaceで非常。" : isLC ? "右のワンハンドル：手前（下）に引くと力行、奥（上）に押すとブレーキ。W・↑で力行側、S・↓で制動側。Spaceで非常。" : hs ? "右: マスコン（下へドラッグ＝加速） ／ 左: ブレーキ（下へドラッグ＝強く）　キー: W/S・↓/↑・非常 Space" : "左のマスコン・右のブレーキハンドルを左右にドラッグして回せます（キー: マスコン W/S、ブレーキ ↓/↑）"; } st.mcAng = Math.max(MC_N * MC_STEP, st.mcAng); st.bvAng = Math.max(BV_N * BV_STEP, st.bvAng);
   }
   return { update, render, setNotches, bind(a) { api = a; }, setDial(max, ticks) { gSpeed.max = max; gSpeed.ticks = ticks; gSpeed.last = -1; }, active: false, dragging: () => !!st.drag, screenPos };
 })();
@@ -7089,6 +7389,7 @@ const Car = (() => {
     }
   }
   function hud() {
+    $("carui").classList.toggle("bus-driver", S.mode === "bus" && C.view === "driver");
     $("car-speed").textContent = Math.round(Math.abs(C.v) * 3.6);
     $("car-gd").classList.toggle("on", C.gear === "D"); $("car-gr").classList.toggle("on", C.gear === "R");
     $("car-gearlbl").textContent = P.bike ? (C.fall ? "転倒中" : (C.gear === "R" ? "R 押し歩き" : (C.gearN || 1) + "速") + "　傾き " + Math.round(Math.abs(C.lean) * 57.3) + "°" + (C.lean > 0.02 ? " ←" : C.lean < -0.02 ? " →" : "")) : C.gear === "R" ? "R 後退" : "D 前進"; $("car-gearlbl").classList.toggle("rev", C.gear === "R");
@@ -7125,7 +7426,7 @@ const Car = (() => {
     const fx = (x - G.x0) / G.step - 0.5, fz = (z - G.z0) / G.step - 0.5; const i = Math.max(0, Math.min(G.nx - 2, Math.floor(fx))), j = Math.max(0, Math.min(G.nz - 2, Math.floor(fz)));
     const tx = Math.min(1, Math.max(0, fx - i)), tz = Math.min(1, Math.max(0, fz - j)), k = j * G.nx + i;
     return ((hk(k, yref) * (1 - tx) + hk(k + 1, yref) * tx) * (1 - tz) + (hk(k + G.nx, yref) * (1 - tx) + hk(k + G.nx + 1, yref) * tx) * tz) / 100; }
-  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, gridH, blocked, addBlock, clearBlock, setProfile, setExt, setTaxi, inG, get G() { return G; }, get P() { return P; } };
+  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, gridH, blocked, addBlock, clearBlock, setProfile, setView, setExt, setTaxi, inG, get G() { return G; }, get P() { return P; } };
 })();
 
 /* ---------------- 運転 ---------------- */
@@ -7325,7 +7626,7 @@ function setMC(n){ n=Math.max(0,Math.min(NP(),n)); if(n>0 && S.doorOpen){ setSub
 function setBV(n){ S.bv=Math.max(0,Math.min(NB()+1,n)); applyHandles(); }
 function setNotch(n){ if(n>0){ S.bv=0; setMC(n); } else if(n<0){ S.mc=0; setBV(-n); } else { S.mc=0; setBV(0); } }
 function powerUp(){ if(S.bv>0) setBV(S.bv-1); else setMC(S.mc+1); }
-function brakeUp(){ if(S.mc>0) setMC(S.mc-1); else setBV(Math.min(NB(),S.bv+1)); }
+function brakeUp(){ if(S.emergency) return; if(S.mc>0) setMC(S.mc-1); else setBV(Math.min(NB(),S.bv+1)); }
 function emergency(){ S.mc=0; setBV(NB()+1); }
 function toggleView(){ S.view=S.view==="cab"?"chase":"cab"; $("view-toggle").textContent=S.view==="cab"?"⟲":"⌂"; $("ui").classList.toggle("cab", S.view==="cab"); }
 document.addEventListener("keydown",e=>{ if(typing()) return; if((S.mode==="car"||S.mode==="bus") && !e.repeat && (e.key==="t"||e.key==="T")){ rescue(); return; } }, true);
@@ -7347,9 +7648,10 @@ document.addEventListener("keydown",e=>{ if(typing()) return; if(S.mode==="bus" 
 $("bus-doorbtn").addEventListener("click",()=>Bus.doorKey());
 $("rescue-btn").addEventListener("click",rescue);
 document.addEventListener("keydown",e=>{ if(!S.running || e.repeat || typing()) return; switch(e.key){
-  // マスコン: W 進める / S 戻す、ブレーキハンドル: ↓ 強める / ↑ 緩める（それぞれ独立）
-  case "w": case "W": e.preventDefault(); setMC(S.mc+1); break; case "s": case "S": e.preventDefault(); setMC(S.mc-1); break;
-  case "ArrowDown": e.preventDefault(); setBV(Math.min(S.bv>=NB()+1?NB()+1:NB(), S.bv+1)); break; case "ArrowUp": e.preventDefault(); setBV(S.bv-1); break;
+  case "w": case "W": e.preventDefault(); if (VEH().oneH) powerUp(); else setMC(S.mc+1); break;
+  case "s": case "S": e.preventDefault(); if (VEH().oneH) brakeUp(); else setMC(S.mc-1); break;
+  case "ArrowDown": e.preventDefault(); if (VEH().oneH && !S.emergency) brakeUp(); else setBV(Math.min(S.bv>=NB()+1?NB()+1:NB(), S.bv+1)); break;
+  case "ArrowUp": e.preventDefault(); if (VEH().oneH) powerUp(); else setBV(S.bv-1); break;
   case "c": case "C": setNotch(0); break; case "d": case "D": doorAction(); break;
   case " ": e.preventDefault(); emergency(); break; case "v": case "V": toggleView(); break;
   case "h": case "H": doHorn(); break; } });
@@ -7608,10 +7910,14 @@ const Heli = (() => {
 
 function beginRide(){ leaveJR(); Clock.reset(); setupRoute(S.key,false); if(S.vehicle && S.vehicle!=="momo") setVehicle(S.vehicle); S.baseKey=S.key; S._camD=null; mapCache=null; $("route-name").textContent=S.route.name; $("next-stop").textContent=S.stops[1].name;
   $("stop-seq").textContent="1 / "+(S.stops.length-1); $("menu").style.display="none"; $("ui").classList.add("on"); $("finish-overlay").classList.remove("on");
-  S.mode="tram"; Car.stop(); $("carui").classList.remove("on"); buildNotchBar(); S.mc=0; S.bv=0; applyHandles();
+  S.mode="tram"; Car.stop(); $("carui").classList.remove("on");
+  Cab.setNotches(NP(), NB(), false, VEH().oneH ? "momo" : null);
+  buildNotchBar(); S.mc=0; S.bv=0; applyHandles();
   $("ui").classList.toggle("cab", S.view==="cab");
   S.running=true; buildNotchBar(); updateNotchBar(); Dia.build();
-  setSubtitle((S.key.endsWith("_r") ? S.stops[0].name : "岡山駅前（駅前広場の新停留場）") + "。ドアを閉めて、ブレーキハンドルを運転位置に戻し、マスコンを入れてください。");
+  const departure = VEH().oneH ? "ドアを閉めて、ハンドルを手前の力行側へ。" :
+    "ドアを閉めて、ブレーキハンドルを運転位置に戻し、マスコンを入れてください。";
+  setSubtitle((S.key.endsWith("_r") ? S.stops[0].name : "岡山駅前（駅前広場の新停留場）") + "。" + departure);
   Snd.init(); Snd.hush(); S._appr=false; setTimeout(annStart, 600);
   Trams.populate(S.key, S.pos, S.vehicle); Traffic.reset(); }
 /* ---------------- v35: JR・新幹線を運転する ---------------- */
@@ -7640,7 +7946,7 @@ function beginJR(){
   if(!JRSEL || !JRSEL.def){ alert("JR の線路データを読み込めませんでした。"); return; }
   Clock.reset(); const def=JRSEL.def, vk=JRSEL.vkey, r=JR.buildRoute(def, vk);
   S.routes[def.key]=r; S.vehicle=vk; S.mode="tram"; Car.stop(); $("carui").classList.remove("on");
-  setupRoute(def.key,false); setVehicle(vk); S.baseKey=def.key; S._camD=null; mapCache=null; JR.begin(r); Cab.setDial(VEH().dial, Math.round(VEH().dial/VEH().dstep)); Cab.setNotches(NP(), NB(), !!VEH().hs, VEH().oneH ? "one" : "jr2"); buildNotchBar(); S.mc=0; S.bv=0; applyHandles();
+  setupRoute(def.key,false); setVehicle(vk); S.baseKey=def.key; S._camD=null; mapCache=null; JR.begin(r); Cab.setDial(VEH().dial, Math.round(VEH().dial/VEH().dstep)); Cab.setNotches(NP(), NB(), !!VEH().hs, VEH().mk === "u227" ? "urara" : VEH().mk === "ml223" ? "commuter" : "jr2"); buildNotchBar(); S.mc=0; S.bv=0; applyHandles();
   $("route-name").textContent=S.route.name; $("next-stop").textContent=S.stops[1]?S.stops[1].name:S.stops[0].name; $("stop-seq").textContent="1 / "+Math.max(1,S.stops.length-1);
   $("menu").style.display="none"; $("ui").classList.add("on"); $("finish-overlay").classList.remove("on"); $("turnback").style.display="none";
   buildNotchBar(); S.mc=0; S.bv=0; applyHandles(); $("ui").classList.toggle("cab", S.view==="cab");
@@ -8733,11 +9039,11 @@ const JR = (() => {
   Object.assign(VEHICLES, {
     jr_n700:   J("N700系 16両（山陽新幹線）", "n700", 16, { vmax:300, knee:80, hs:true, np:13, nb:7, hsA:2.6, hsK:[135,205], acc:[0,0.8,1.5,2.1,2.6], bdec:[0,0.45,0.85,1.25,1.65,2.05,2.4,2.7], ebk:3.1, drag:[0.03,0.0002,0.0000068], dial:320, dstep:40, eyeBack:7.0, eyeH:2.85, cmf:3.0, desc:"最高 300km/h・マスコン P1〜P13／ブレーキ B1〜B7＋非常・起動 2.6km/h/s・約3分で 270km/h（公表値に合わせた簡略モデル）・ATC あり" }),
     jr_n700k:  J("N700系 8両（九州直通）", "n700k", 8, { vmax:300, knee:80, hs:true, np:13, nb:7, hsA:2.6, hsK:[135,205], acc:[0,0.8,1.5,2.1,2.6], bdec:[0,0.45,0.85,1.25,1.65,2.05,2.4,2.7], ebk:3.1, drag:[0.03,0.00022,0.0000072], dial:320, dstep:40, eyeBack:7.0, eyeH:2.85, cmf:3.0, desc:"8両編成・最高 300km/h・P1〜P13／B1〜B7＋非常・ATC あり" }),
-    jr_u227_3: J("227系 3両（Urara）", "u227", 3, { oneH:true, vmax:120, knee:55, acc:[0,0.9,1.6,2.2,2.6], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.0000205], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"最高 120km/h・起動 2.5km/h/s・常用最大減速 4.0km/h/s" }),
-    jr_u227_4: J("227系 4両（Urara）", "u227", 4, { oneH:true, vmax:120, knee:55, acc:[0,0.9,1.6,2.2,2.6], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.0000205], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"4両編成" }),
-    jr_u227_5: J("227系 5両（Urara）", "u227", 5, { oneH:true, vmax:120, knee:55, acc:[0,0.9,1.6,2.2,2.6], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.0000205], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"5両編成" }),
+    jr_u227_3: J("227系 3両（Urara）", "u227", 3, { vmax:120, knee:55, acc:[0,0.9,1.6,2.2,2.6], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.0000205], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"最高 120km/h・起動 2.5km/h/s・常用最大減速 4.0km/h/s" }),
+    jr_u227_4: J("227系 4両（Urara）", "u227", 4, { vmax:120, knee:55, acc:[0,0.9,1.6,2.2,2.6], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.0000205], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"4両編成" }),
+    jr_u227_5: J("227系 5両（Urara）", "u227", 5, { vmax:120, knee:55, acc:[0,0.9,1.6,2.2,2.6], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.0000205], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"5両編成" }),
     jr_y115_4: J("115系 4両（黄色）", "y115", 4, { vmax:110, knee:45, acc:[0,0.7,1.2,1.6,1.9], bdec:[0,0.7,1.5,2.3,3.0,3.6], ebk:4.2, drag:[0.07,0.0008,0.000026], dial:120, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.5, desc:"最高 110km/h・起動 1.9km/h/s（主電動機が旧式で加速は緩やか）", motor:"dc" }),
-    jr_ml223:  J("223系 5両（快速マリンライナー）", "ml223", 5, { oneH:true, vmax:130, knee:70, acc:[0,1.0,1.7,2.3,2.7], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.000022], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"最高 130km/h（線区の制限は 95km/h とした）" }),
+    jr_ml223:  J("223系 5両（快速マリンライナー）", "ml223", 5, { vmax:130, knee:70, acc:[0,1.0,1.7,2.3,2.7], bdec:[0,0.8,1.6,2.4,3.2,4.0], ebk:4.5, drag:[0.064,0.0005,0.000022], dial:140, dstep:20, eyeBack:1.4, eyeH:2.65, cmf:3.8, desc:"最高 130km/h（線区の制限は 95km/h とした）" }),
     jr_kiha47: J("キハ47 2両（ディーゼル）", "kiha47", 2, { vmax:95, knee:35, acc:[0,0.6,1.0,1.3,1.6], bdec:[0,0.7,1.4,2.1,2.8,3.5], ebk:4.0, drag:[0.07,0.0008,0.000028], dial:100, dstep:20, eyeBack:1.4, eyeH:2.7, cmf:3.5, desc:"最高 95km/h・起動 1.6km/h/s", motor:"dc" }),
   });
 }
@@ -8784,11 +9090,12 @@ const Mirrors = (() => {
   }
   // v15: 電車の運転台視点。前面の左右の角（車体の外 0.3m・レール面から 2.3m・前面から 0.4m 後ろ）から後ろを写す
   function renderTram(renderer, scene) {
-    if (!(S.mode === "tram" && S.running && S.view === "cab" && S.track)) return;
+    if (!(S.mode === "tram" && S.running && S.view === "cab" && S.track) || VEH().jr) return;
     const W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
     frameN++;
     if (frameN % 2 === 0) {
       const V = VEH(), sF = S.pos - 0.4, p = pointAt(sF), t = tangentAt(sF - 3);
+      for (const k of ["L","R"]) { M[k].cam.aspect = 0.64; M[k].cam.updateProjectionMatrix(); }
       const sx = t.z, sz = -t.x;                        // 進行方向の左
       const half = (V.len > 15 ? 1.2 : 1.15) + 0.3, up = 2.3;
       for (const [k, sg] of [["L", 1], ["R", -1]]) {
@@ -8803,14 +9110,14 @@ const Mirrors = (() => {
       renderer.setRenderTarget(null); renderer.shadowMap.autoUpdate = sm; if (S.car) S.car.visible = vis;
     }
     ocam.left = 0; ocam.right = W; ocam.top = H; ocam.bottom = 0; ocam.updateProjectionMatrix();
-    const mw = Math.min(W * 0.15, 210), mh = mw * RT_H / RT_W, y = H * 0.5;
-    place(M.L.q, 18 + mw / 2, y, mw, mh); place(M.R.q, W - 18 - mw / 2, y, mw, mh);
+    const mw = Math.min(W * 0.048, 70), mh = mw * 1.55, y = H * 0.53;
+    place(M.L.q, 13 + mw / 2, y, mw, mh); place(M.R.q, W - 13 - mw / 2, y, mw, mh);
     M.C.q.img.visible = M.C.q.frame.visible = false;
     renderer.autoClear = false; renderer.clearDepth(); renderer.render(ov, ocam); renderer.autoClear = true;
   }
   function render(renderer, scene) {
     const C = Car.C; if (!C.active || C.view !== "driver") return;
-    const bus = Car.P === undefined ? false : Car.P.len > 8, bk = C.profile === "bike", tr = C.profile === "truck" || bk;   // v41.7: トラックは左右ミラーだけ（荷台でルームミラーは使えない）。v41.19: バイクも左右（ハンドルのミラーの位置から後ろを写す）
+    const bus = C.profile === "bus", bk = C.profile === "bike", tr = C.profile === "truck" || bk;   // v41.7: トラックは左右ミラーだけ（荷台でルームミラーは使えない）。v41.19: バイクも左右（ハンドルのミラーの位置から後ろを写す）
     const W = renderer.domElement.clientWidth, H = renderer.domElement.clientHeight;
     frameN++;
     const use = (bus || tr) ? ["L", "R"] : ["L", "R", "C"];
@@ -8818,17 +9125,30 @@ const Mirrors = (() => {
       // ミラーには自分の車体（バスの外板）も写す
       if (C.onDriverView) C.onDriverView(false);
       const sm = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
-      if (bus) { aim(M.L, C, Car.P, 1.45, 5.7, 2.1, 14, 3); aim(M.R, C, Car.P, -1.45, 5.7, 2.1, 14, 3); }
-      else if (bk) { aim(M.L, C, Car.P, 0.31, 0.23, 1.2, 9, 5); aim(M.R, C, Car.P, -0.31, 0.23, 1.2, 9, 5); }
+      if (bus) {
+        // 高い縦長の鏡。車体の側面と歩道が片方に残るよう、実物の取付位置から後ろへ向ける。
+        aim(M.L, C, Car.P, 1.58, 5.08, 2.0, 11, 8);
+        aim(M.R, C, Car.P, -1.58, 5.08, 2.0, 11, 8);
+        for (const [i,k] of ["L","R"].entries()) {
+          M[k].cam.aspect = 0.134 / 0.405; M[k].cam.updateProjectionMatrix();
+          const mirror = Bus.mirrors && Bus.mirrors[i];
+          if (mirror && !mirror.live.map) { mirror.live.map = M[k].rt.texture; mirror.live.needsUpdate = true; }
+        }
+      } else for (const k of ["L","R"]) {
+        if (M[k].cam.aspect !== RT_W / RT_H) {
+          M[k].cam.aspect = RT_W / RT_H; M[k].cam.updateProjectionMatrix();
+        }
+      }
+      if (bk) { aim(M.L, C, Car.P, 0.31, 0.23, 1.2, 9, 5); aim(M.R, C, Car.P, -0.31, 0.23, 1.2, 9, 5); }
       else if (tr) { aim(M.L, C, Car.P, 1.4, 2.55, 1.95, 12, 3); aim(M.R, C, Car.P, -1.4, 2.55, 1.95, 12, 3); }
-      else { aim(M.L, C, Car.P, 0.98, 0.55, 1.02, 16, 2); aim(M.R, C, Car.P, -0.98, 0.55, 1.02, 16, 2); aim(M.C, C, Car.P, -0.1, -0.2, 1.28, 0, 1); }
+      else if (!bus) { aim(M.L, C, Car.P, 0.98, 0.55, 1.02, 16, 2); aim(M.R, C, Car.P, -0.98, 0.55, 1.02, 16, 2); aim(M.C, C, Car.P, -0.1, -0.2, 1.28, 0, 1); }
       for (const k of use) { renderer.setRenderTarget(M[k].rt); renderer.clear(); renderer.render(scene, M[k].cam); }
       renderer.setRenderTarget(null); renderer.shadowMap.autoUpdate = sm;
       if (C.onDriverView) C.onDriverView(true);
     }
-    // 画面への配置（ピクセル）: 左右のミラーは画面の端・高さ中ほど、ルームミラーは上中央
+    if (bus) return;    // バスは車体に固定した立体ミラーへ映す。
     ocam.left = 0; ocam.right = W; ocam.top = H; ocam.bottom = 0; ocam.updateProjectionMatrix();
-    const mw = Math.min(W * 0.15, 220), mh = mw * RT_H / RT_W, y = H * 0.44;   // v42: 少し小さく（景色をふさがない）
+    const mw = Math.min(W * 0.15, 220), mh = mw * RT_H / RT_W, y = H * 0.44;
     place(M.L.q, 18 + mw / 2, y, mw, mh); place(M.R.q, W - 18 - mw / 2, y, mw, mh);
     const cw = Math.min(W * 0.26, 360), ch = cw * 0.28;
     place(M.C.q, W / 2, H - 92 - ch / 2, cw, ch);
