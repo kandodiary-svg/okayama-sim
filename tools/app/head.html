@@ -619,6 +619,33 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
 #boot-err[hidden]{ display:none; }
 #boot-err button{ margin-left:10px; padding:5px 14px; border:0; border-radius:999px; background:#ffe9e4; color:#5a1f1a; font:inherit; font-weight:700; cursor:pointer; }
 #boot-err button[hidden]{ display:none; }
+.drive-focus .ui.cab .mission,
+.drive-focus .ui.cab .rack,
+.drive-focus .ui.cab .minimap,
+.drive-focus .ui.cab .cabhint,
+.drive-focus .ui.cab .cabspeed,
+.drive-focus .bus-driver .bpanel,
+.drive-focus .bus-driver .brack,
+.drive-focus .bus-driver #bus-map,
+.drive-focus .bus-driver .car-meter,
+.drive-focus:has(#ui.cab) #locchip,
+.drive-focus:has(#carui.on.bus-driver) #locchip,
+.drive-focus .ui.cab .subtitle.caption-stale { display:none; }
+.drive-focus .ui.cab .subtitle {
+  top:auto; left:50%; bottom:calc(92px + env(safe-area-inset-bottom,0px)); right:auto;
+  transform:translateX(-50%); width:max-content; max-width:calc(100% - 24px);
+}
+[data-drive-focus] { width:auto; padding:0 8px; font-size:11px; white-space:nowrap; }
+[data-drive-focus][aria-pressed="true"] { border-color:var(--amber); color:var(--amber); }
+#ui:not(.cab) [data-drive-focus],
+#carui:not(.bus-driver) [data-drive-focus] { display:none; }
+.focus-short { display:none; }
+@media (max-width:640px) {
+  [data-drive-focus] { width:38px; padding:0; }
+  .focus-full { display:none; }
+  .focus-short { display:inline; }
+  .topright { flex-wrap:wrap; justify-content:flex-end; }
+}
 </style>
 
 <canvas id="world"></canvas>
@@ -806,6 +833,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn stbtn" type="button" title="スタンプ帳（J）">スタンプ<small>J</small></button>
       <button class="iconbtn ttbtn" id="tt-btn" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn" id="view-toggle" title="視点切替">⟲</button>
+      <button class="iconbtn" type="button" data-drive-focus aria-label="運転席に集中" aria-pressed="false"><span class="focus-full">運転席に集中</span><span class="focus-short" aria-hidden="true">集中</span></button>
       <button class="iconbtn" id="sound-btn" type="button" data-sound-toggle title="音を消す" aria-label="音を消す" aria-pressed="false">音</button>
       <button class="iconbtn" id="help-btn">?</button>
       <button class="iconbtn homebtn" id="ui-menu" type="button" title="メニューに戻る">メニュー</button>
@@ -841,7 +869,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
 
   <div class="minimap"><canvas id="mini-map" width="112" height="140"></canvas></div>
 
-  <div class="cabhint" id="cabhint">左のマスコン・右のブレーキハンドルを左右にドラッグして回せます（キー: マスコン W/S、ブレーキ ↓/↑）</div>
+  <div class="cabhint" id="cabhint">左のマスコン・右のブレーキハンドルをドラッグ。Q/E で左右を確認できます。</div>
   <div class="cabspeed"><b id="cabspd">0</b> km/h</div>
   <section class="subtitle"><span id="subtitle">停車中です。ドアを閉めて、力行ノッチを入れてください。</span></section>
 
@@ -891,6 +919,7 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
       <button class="iconbtn ttbtn" id="tt-btn2" type="button" title="時刻表（I）" style="display:none">時刻表<small>I</small></button>
       <button class="iconbtn rescue" id="rescue-btn" title="すぐそばの道路へ戻る（T）">道路に戻る <small>T</small></button>
       <button class="iconbtn" id="car-view" title="視点切替">⟲</button>
+      <button class="iconbtn" type="button" data-drive-focus aria-label="運転席に集中" aria-pressed="false"><span class="focus-full">運転席に集中</span><span class="focus-short" aria-hidden="true">集中</span></button>
       <button class="iconbtn" type="button" data-sound-toggle title="音を消す" aria-label="音を消す" aria-pressed="false">音</button>
       <button class="iconbtn homebtn" id="car-menu" type="button" title="メニューに戻る">メニュー</button>
     </div>
