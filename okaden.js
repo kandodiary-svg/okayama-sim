@@ -5854,6 +5854,64 @@ function mkPath(track){
   for(let i=0;i<n;i++){ P[i*3]=track[i][0]; P[i*3+1]=track[i][1]; P[i*3+2]=track[i][2]; if(i) C[i]=C[i-1]+Math.hypot(track[i][0]-track[i-1][0], track[i][2]-track[i-1][2]); }
   return {P, C, n, len:C[n-1]};
 }
+function roadTurnPath(points, incoming, outgoing){
+  const a=points[0], b=points.at(-1);
+  const chord=Math.hypot(b[0]-a[0],b[2]-a[2]);
+  const u=pathPt(incoming,Math.max(0,incoming.len-2.5));
+  const v=pathPt(outgoing,Math.min(2.5,outgoing.len));
+  const dx=a[0]-u.x, dz=a[2]-u.z, ex=v.x-b[0], ez=v.z-b[2];
+  const ul=Math.hypot(dx,dz)||1, vl=Math.hypot(ex,ez)||1;
+  const ux=dx/ul, uz=dz/ul, vx=ex/vl, vz=ez/vl;
+  if(chord<0.06){
+    if(ux*vx+uz*vz<0.9) return null;
+    const path=mkPath(points); path.radius=Infinity; return path;
+  }
+  if(ux*vx+uz*vz < -0.82 && chord<22) return null;
+  const inspect=(pts)=>{
+    let px=ux,pz=uz,length=0,maxTurn=0,minR=Infinity;
+    let lastStep=0;
+    for(let i=1;i<pts.length;i++){
+      const x=pts[i][0]-pts[i-1][0],z=pts[i][2]-pts[i-1][2], step=Math.hypot(x,z);
+      if(step<0.015) continue;
+      const angle=Math.acos(Math.max(-1,Math.min(1,(px*x+pz*z)/step)));
+      maxTurn=Math.max(maxTurn,angle);
+      if(angle>0.025) minR=Math.min(minR,(lastStep?(lastStep+step)*0.5:step)/angle);
+      px=x/step; pz=z/step; length+=step; lastStep=step;
+    }
+    const end=Math.acos(Math.max(-1,Math.min(1,px*vx+pz*vz)));
+    if(end>0.025) minR=Math.min(minR,lastStep/end);
+    return {bend:Math.max(maxTurn,end),length,minR};
+  };
+  const original=inspect(points);
+  let chosen=points, quality=original;
+  if(original.bend>0.24 && chord>=1.1){
+    for(const factor of [0.30,0.46,0.61,0.74]){
+      const h=chord*factor, n=Math.max(7,Math.ceil(chord/1.45)), candidate=[a];
+      let displacement=0;
+      for(let i=1;i<n;i++){
+        const t=i/n, f=1-t, q0=f*f*f,q1=3*f*f*t,q2=3*f*t*t,q3=t*t*t;
+        const x=q0*a[0]+q1*(a[0]+ux*h)+q2*(b[0]-vx*h)+q3*b[0];
+        const z=q0*a[2]+q1*(a[2]+uz*h)+q2*(b[2]-vz*h)+q3*b[2];
+        let nearest=Infinity;
+        for(let k=1;k<points.length;k++){
+          const p=points[k-1], q=points[k], dx=q[0]-p[0], dz=q[2]-p[2];
+          const f=Math.max(0,Math.min(1,((x-p[0])*dx+(z-p[2])*dz)/(dx*dx+dz*dz||1)));
+          nearest=Math.min(nearest,(x-p[0]-dx*f)**2+(z-p[2]-dz*f)**2);
+        }
+        displacement=Math.max(displacement,nearest);
+        candidate.push([x,a[1]+(b[1]-a[1])*t,z]);
+      }
+      candidate.push(b);
+      const q=inspect(candidate);
+      if(displacement<=Math.min(6.25,0.33*chord*chord) && q.length<=Math.max(chord*1.7,original.length*1.15) &&
+        q.bend+0.025<quality.bend){ chosen=candidate; quality=q; }
+    }
+  }
+  if(quality.bend>1.12 && chord<13) return null;
+  const P=mkPath(chosen);
+  P.radius=quality.minR;
+  return P;
+}
 function pathIdx(p, s){ let lo=0, hi=p.n-1; while(hi-lo>1){ const m=(lo+hi)>>1; if(p.C[m]<=s) lo=m; else hi=m; } return lo; }
 function pathPt(p, s, out){
   out=out||new THREE.Vector3();
@@ -6063,7 +6121,7 @@ const Trams = (()=>{
 const PLAYER_POS={on:false,x:0,z:0,r:1,pts:[]};
 const PCAR_REF={o:null};
 const Traffic = (()=>{
-  let D=null, segs=[], NL=0, sigNodes=null, jnode=null, meshes=null, ready=false;
+  let D=null, segs=[], NL=0, jnode=null, meshes=null, ready=false;
   const cars=[]; const MAXN=240;
   // v24: 車種を増やし（日本の街の構成に近い割合）、形を細かく（車輪は円柱、ボンネット・窓の傾き、灯火・ナンバーは塗装色に染まらない）
   // 割合は仮定: 普通車 20%・軽（背の高い型 16%・一般 8%）・ミニバン 14%・SUV 8%・商用バン 6%・軽トラ 4%・2t 箱車 5%・4t 車 3%・路線バス 5%・タクシー 6%・バイク 5%
@@ -6086,25 +6144,38 @@ const Traffic = (()=>{
   function init(data){
     D=data; NL=D.lanes.length; segs=[];
     D.lanes.forEach((l,i)=>{ const P=mkPath(trafficPts(D, l)); segs.push({i, P, v:l.v, c:l.c, sig:l.sig, next:[], node:l.to, lane:true, k:l.k, n:l.n, nm:l.nm, imp:l.imp||1, sw:l.sw===undefined?1:l.sw}); });
-    D.conns.forEach((c,i)=>{ const P=mkPath(trafficPts(D, c)); const s={i:NL+i, P, v:c.v, next:[c.b], node:c.node, lane:false, kind:c.k, from:c.a}; segs.push(s); segs[c.a].next.push(NL+i); });
+    D.conns.forEach(c=>{
+      const a=segs[c.a], b=segs[c.b];
+      if(!a || !b || c.a===c.b || a.P.n<2 || b.P.n<2) return;
+      const P=roadTurnPath(trafficPts(D,c),a.P,b.P);
+      if(!P) return;
+      const curve=Math.sqrt(1.8*P.radius)*3.6;
+      const junction=segs.length, speed=Math.min(c.v,curve);
+      segs.push({i:junction,P,v:speed,next:[c.b],node:c.node,lane:false,kind:c.k,from:c.a});
+      a.next.push(junction);
+    });
     // v29: 出現させる車線を近くから選ぶための升目（250m）。範囲を広げると、全部の車線から無作為に選んでは近くに当たらない
     BK = new Map();
     for(let i=0;i<NL;i++){ const P=segs[i].P, seen=new Set();
       for(let k=0;k<P.n;k+=5){ const key=Math.floor(P.P[k*3]/BKS)+","+Math.floor(P.P[k*3+2]/BKS); if(seen.has(key)) continue; seen.add(key); let a=BK.get(key); if(!a){ a=[]; BK.set(key,a); } a.push(i); }
       const key=Math.floor(P.P[(P.n-1)*3]/BKS)+","+Math.floor(P.P[(P.n-1)*3+2]/BKS); if(!seen.has(key)){ let a=BK.get(key); if(!a){ a=[]; BK.set(key,a); } a.push(i); } }
-    sigNodes=new Set(D.sig_nodes);
     // 信号の無い交差点（別方向から2本以上の車線が入る節点）は1台ずつ通す
-    const dirs=new Map();
-    for(const c of D.conns){ const a=segs[c.a].P; const n=a.n; const dx=a.P[(n-1)*3]-a.P[(n-2)*3], dz=a.P[(n-1)*3+2]-a.P[(n-2)*3+2]; const q=Math.round(Math.atan2(dz,dx)/(Math.PI/6));
-      let s=dirs.get(c.node); if(!s){ s=new Set(); dirs.set(c.node,s); } s.add(q); }
-    jnode=new Map(); for(const [n,s] of dirs) if(s.size>=2 && !sigNodes.has(n)) jnode.set(n, {owner:null, from:-1, t:0});
-    // v14: 各区間から先へ走れる距離（上限 400m）。行き止まりへ入らないように使う
+
+    const approaches=new Map();
+    for(const q of segs){
+      if(q.lane) continue;
+      let incoming=approaches.get(q.node);
+      if(!incoming) approaches.set(q.node,incoming=new Set());
+      incoming.add(q.from);
+    }
+    jnode=new Map();
+    for(const [node,from] of approaches) if(from.size>1) jnode.set(node,{active:[], waiting:[], pairs:new Map()});
     for(const g of segs) g.reach=g.P.len;
     for(let it=0; it<40; it++){ let ch=false; for(const g of segs){ let m=0; for(const j of g.next) m=Math.max(m, segs[j].reach); const r=Math.min(400, g.P.len+m); if(r>g.reach+0.01){ g.reach=r; ch=true; } } if(!ch) break; }
     buildMeshes(); ready=true;
   }
-  function chooseNext(seg){
-    let nx=seg.next; if(!nx.length) return -1;
+  function chooseNext(seg,type){
+    let nx=seg.next.filter(i=>!type || !Number.isFinite(segs[i].P.radius) || segs[i].P.radius>=type.l*0.43); if(!nx.length) return -1;
     const good=nx.filter(j=>segs[j].reach>=250); if(good.length) nx=good;     // 行き止まりの方へは曲がらない
     if(seg.lane){ let tot=0; const w=nx.map(j=>{ const k=segs[j].kind; let x = k==="s"?4:1.2;
       // v41.11: 道の大きさ（imp）で行き先を偏らせる。大きな道→細い道へは入りにくく、細い道→大きな道へは出やすく（細い道に車がたまらないように）
@@ -6116,15 +6187,15 @@ const Traffic = (()=>{
     let tot=segs[c.plan[0]].P.len - c.s;
     for(let i=1;i<c.plan.length;i++) tot+=segs[c.plan[i]].P.len;
     c.endAhead=false;
-    while(tot<170 && c.plan.length<10){ const last=segs[c.plan[c.plan.length-1]]; const n=chooseNext(last); if(n<0){ c.endAhead=true; break; } c.plan.push(n); tot+=segs[n].P.len; }
+    while(tot<170 && c.plan.length<10){ const last=segs[c.plan[c.plan.length-1]]; const n=chooseNext(last,c.type); if(n<0){ c.endAhead=true; break; } c.plan.push(n); tot+=segs[n].P.len; }
   }
   /* 計画した経路上で、先頭から d 先の点 */
   function aheadPt(c, d, out){
     let s=c.s+d, i=0;
     while(i<c.plan.length-1 && s>segs[c.plan[i]].P.len){ s-=segs[c.plan[i]].P.len; i++; }
-    return pathPt(segs[c.plan[i]].P, s, out);
+    const path=segs[c.plan[i]].P;
+    return pathPt(path,Math.min(s,path.len),out);
   }
-  let pmap=null;
   let BK=null; const BKS=250; let _cand=null, _candKey="";
   function nearLanes(center, rmax){
     const key=Math.round(center.x/50)+","+Math.round(center.z/50)+","+rmax; if(key===_candKey) return _cand;
@@ -6156,8 +6227,8 @@ const Traffic = (()=>{
       const d=Math.hypot(p.x-center.x, p.z-center.z); if(d<rmin||d>rmax) continue;
       if(avoidView){ const v=new THREE.Vector3(p.x-camera.position.x, 0, p.z-camera.position.z); const f=new THREE.Vector3(); camera.getWorldDirection(f); f.y=0; if(d<320 && v.normalize().dot(f.normalize())>0.2) continue; }
       if(Obs.hit(p.x,p.z,7,null,null,p.y)) continue;
-      if(cars.some(o=>o!==c && o.x!==undefined && Math.hypot(o.x-p.x,o.z-p.z)<9)) continue;
-      const T=pickType(); c.type=T; c.plan=[seg.i]; c.s=s; c.v=Math.min(seg.v/3.6*0.9, nearSig?1.5:12); c.passedG=undefined; c.passedT=0; c.stopT=0; c.v0=(0.98+Math.random()*0.2)*(T.name==="bus"||T.name==="truck4"?0.88:T.name==="truck"?0.95:1); /* v41.11: 流れに乗る速さ（制限の 98〜118%。以前は 72〜90%） */ c.dead=false; c.deadT=0; c.wait=0; c.ghost=0; c.blockedBy=null; c.hold=null; c.honkT=0; c.honkDly=0; c.jamT=0; c.nd=0; c.spImp=seg.imp;
+      if(cars.some(o=>o!==c && o.type && o.x!==undefined && Math.hypot(o.x-p.x,o.z-p.z)<9)) continue;
+      const T=pickType(); c.type=T; c.plan=[seg.i]; c.history=[]; c.junctionWait=0; c.junctionHold=false; c.s=s; c.v=Math.min(seg.v/3.6*0.9, nearSig?1.5:12); c.passedG=undefined; c.passedT=0; c.stopT=0; c.v0=(0.98+Math.random()*0.2)*(T.name==="bus"||T.name==="truck4"?0.88:T.name==="truck"?0.95:1); /* v41.11: 流れに乗る速さ（制限の 98〜118%。以前は 72〜90%） */ c.dead=false; c.deadT=0; c.blockedBy=null; c.honkT=0; c.honkDly=0; c.nd=0; c.spImp=seg.imp;
       c.color=new THREE.Color(T.name==="bus" ? ["#f3efe2","#e9eef2","#f2e7cf"][Math.floor(Math.random()*3)] : T.name==="taxi" ? (Math.random()<0.8?"#1d2440":"#1c1d20") : T.name==="taxi2" ? (Math.random()<0.5?"#e9d23c":"#f2f2ef") : (T.name==="van"||T.name==="keitruck") ? (Math.random()<0.85?"#f2f2f0":paint()) : (T.name==="truck"||T.name==="truck4") ? ["#f2f2f0","#f2f2f0","#2c5d9a","#3a8a4a","#d9d9d6"][Math.floor(Math.random()*5)] : paint());
       planAhead(c); pose(c); return true;
     }
@@ -6166,14 +6237,74 @@ const Traffic = (()=>{
   function pickType(){ let r=Math.random(); for(const T of TYPES){ if((r-=T.p)<=0) return T; } return TYPES[0]; }
   const _a=new THREE.Vector3(), _b=new THREE.Vector3(), _q=new THREE.Vector3();
   function pose(c){
-    const hl=c.type.l/2; aheadPtBack(c, hl*0.8, _a); aheadPtBack(c, -hl*0.8, _b);
+    const axle=c.type.l*0.30; aheadPtBack(c,axle,_a); aheadPtBack(c,-axle,_b);
     c.x=(_a.x+_b.x)/2; c.y=(_a.y+_b.y)/2; c.z=(_a.z+_b.z)/2;
     c.dx=_a.x-_b.x; c.dz=_a.z-_b.z; const L=Math.hypot(c.dx,c.dz)||1; c.dx/=L; c.dz/=L;
     c.pitch=Math.atan2(_a.y-_b.y, L);
   }
   // 後ろ側（現在の区間の手前）は、区間の始点より前なら直線延長
-  function aheadPtBack(c, d, out){ if(d>=0) return aheadPt(c, d, out); return pathPt(segs[c.plan[0]].P, c.s+d, out); }
-  function prio(c){ const s=segs[c.plan[0]]; const k=s.lane ? (c.plan[1]!=null ? segs[c.plan[1]].kind : "s") : s.kind; return k==="s"?3:k==="l"?2:1; }
+
+  function aheadPtBack(c,d,out){
+    if(d>=0) return aheadPt(c,d,out);
+    let s=c.s+d, i=c.history.length-1;
+    let path=segs[c.plan[0]].P;
+    while(s<0 && i>=0){ path=segs[c.history[i--]].P; s+=path.len; }
+    return pathPt(path,Math.max(0,s),out);
+  }
+  function pathsConflict(J,a,b){
+    if(a===b || a.from===b.from || a.next[0]===b.next[0]) return true;
+    const key=Math.min(a.i,b.i)+":"+Math.max(a.i,b.i);
+    if(J.pairs.has(key)) return J.pairs.get(key);
+    const p=new THREE.Vector3(), q=new THREE.Vector3();
+    let spans=false;
+    const n=Math.max(1,Math.ceil(a.P.len/1.25)), m=Math.max(1,Math.ceil(b.P.len/1.25));
+    for(let i=0;i<=n && !spans;i++){
+      pathPt(a.P,a.P.len*i/n,p);
+      for(let j=0;j<=m;j++){
+        pathPt(b.P,b.P.len*j/m,q);
+        if(Math.abs(p.y-q.y)<2.4 && (p.x-q.x)**2+(p.z-q.z)**2<2.5**2){ spans=true; break; }
+      }
+    }
+    J.pairs.set(key,spans);
+    return spans;
+  }
+  function queueJunctions(dt,t){
+    for(const J of busyJunctions){ J.active.length=0; J.waiting.length=0; }
+    busyJunctions.clear();
+    for(const c of cars){
+      c.junctionHold=false;
+      if(!c.type) continue;
+      const seg=segs[c.plan[0]], previous=c.history.at(-1);
+      const prev=previous===undefined?null:segs[previous], half=c.type.l/2;
+      const active=!seg.lane?seg:prev && !prev.lane && c.s<half+1?prev:null;
+      if(active){
+        const J=jnode.get(active.node);
+        if(J){ busyJunctions.add(J); J.active.push({c,turn:active}); }
+      }
+      if(!seg.lane || c.plan.length<2){ c.junctionWait=0; continue; }
+      const turn=segs[c.plan[1]], J=jnode.get(turn.node);
+      const d=seg.P.len-c.s-half, stop=seg.sig?seg.sig.s-c.s-half:Infinity;
+      const sig=seg.sig?phaseState(seg.sig.g,seg.sig.ph,t):0;
+      if(!J || d>27 || (stop>0.15 && (sig===2 || (sig===1 && stop>c.v*c.v/7)))){ c.junctionWait=0; continue; }
+      busyJunctions.add(J);
+      if(d<-0.15){ J.active.push({c,turn}); continue; }
+      c.junctionWait = d<10 && c.v<2 ? c.junctionWait+dt : 0;
+      J.waiting.push({c,turn,d});
+    }
+    for(const J of busyJunctions){
+      const order=q=>Math.max(0,q.d)/Math.max(2.3,q.c.v)+(q.turn.kind==="r"?1.8:q.turn.kind==="l"?0.65:0)-Math.min(9,q.c.junctionWait)*0.4;
+      J.waiting.sort((a,b)=>order(a)-order(b)||a.c.id-b.c.id);
+      for(const e of J.waiting){
+        const conflict=J.active.some(o=>o.c!==e.c && pathsConflict(J,o.turn,e.turn)) ||
+          J.waiting.some(o=>o!==e && o.turn.from!==e.turn.from &&
+            e.turn.kind==="r" && o.turn.kind==="s" && o.d<14 && o.c.v>2 &&
+            pathsConflict(J,o.turn,e.turn) && order(o)<order(e)+2.0);
+        e.c.junctionHold=conflict;
+        if(!conflict && e.d<5.0) J.active.push(e);
+      }
+    }
+  }
+  const busyJunctions=new Set();
   function register(){
     for(const c of cars){ if(!c.type) continue; Obs.addBody(c.x+c.dx*c.type.l/2, c.z+c.dz*c.type.l/2, c.dx, c.dz, c.type.l, c.type.w/2+0.1, c, c.y); }
   }
@@ -6193,17 +6324,18 @@ const Traffic = (()=>{
       let add=0; while(cars.length<MAXN && nAct<cap && add++<30){ const c={id:cars.length}; if(spawnCar(c, center, 20, 420, false)){ cars.push(c); nAct++; } else break; }
     }
     const wetK = Env.st.rain ? 0.86 : 1, gapK = Env.st.rain ? 1.3 : 1;   // v41.14: 雨は車間を 3 割広く、強いブレーキを控える
+    queueJunctions(dt,simT);
     for(const c of cars){
       if(!c.type) continue;
-      const seg=segs[c.plan[0]]; const hl=c.type.l/2;
+      const seg=segs[c.plan[0]], hl=c.type.l/2;
       // v41.8: クラクション（利用者）を聞いた車。少し間をおいて（反応時間）から、譲り合い待ち・歩行者待ちを解いて前へ進む（赤信号は守る）
-      if(c.honkT>0){ c.honkT-=dt; if(c.honkDly>0) c.honkDly-=dt; } const hk = c.honkT>0 && !(c.honkDly>0);
+      if(c.honkT>0){ c.honkT-=dt; if(c.honkDly>0) c.honkDly-=dt; }
       let vlim = (seg.lane ? seg.v : Math.min(segs[segs[c.plan[0]].next[0]].v, seg.v)) / 3.6 * c.v0 * wetK;   // v41.14: 雨では巡航を 14% 落とす
-      let gap=1e9, gsrc=0, sigHold=false, jw=null;   // sigHold: 信号待ち  jw: 譲り合いで待っている相手
+      let gap=1e9, gsrc=0, sigHold=false;   // sigHold: 信号待ち  jw: 譲り合いで待っている相手
       // 前方の曲がり（接続の制限速度）
       let acc=seg.P.len-c.s;
-      for(let i=1;i<c.plan.length && acc<150;i++){ const q=segs[c.plan[i]]; if(!q.lane){ const vc=q.v/3.6; vlim=Math.min(vlim, Math.sqrt(vc*vc+2*2.4*Math.max(0,acc-hl))); } acc+=q.P.len; }
-      if(!seg.lane){ vlim=Math.min(vlim, seg.v/3.6); }
+      for(let i=1;i<c.plan.length && acc<150;i++){ const q=segs[c.plan[i]]; if(!q.lane){ const vc=q.v/3.6; vlim=Math.min(vlim, Math.sqrt((vc*wetK)**2+2*1.75*Math.max(0,acc-hl))); } acc+=q.P.len; }
+      if(!seg.lane){ vlim=Math.min(vlim,seg.v/3.6*wetK); }
       // 信号（現在の車線と次の車線）
       acc=0;
       for(let i=0;i<c.plan.length && acc<170;i++){
@@ -6213,32 +6345,37 @@ const Traffic = (()=>{
           if(d>-0.3 && !(c.passedG===q.sig.g && simT-c.passedT<15)){ const st=phaseState(q.sig.g, q.sig.ph, simT);
             if(st===2 || (st===1 && d > c.v*c.v/2/3.5)) { if(d<gap){ gap=d; gsrc=1; } sigHold=true; break; } } }
         // 信号の無い交差点: 空くまで車線の終わりで待つ
-        if(q.lane && i+1<c.plan.length){ const J=jnode.get(q.node);
-          if(J){ const d=base+q.P.len-hl; if(d<18){ if(!hk && !(c.ghost>0) && J.owner && J.owner!==c && J.from!==q.i && simT-J.t<5){ if(d>-0.5){ if(d<gap){ gap=d; gsrc=2; } jw=J.owner; } }
-            // 止まったままの持ち主は、場所取りの時刻を更新しない（5 秒で他の車に譲る＝交差点どうしの待ち合いで固まらない）
-            else if(d<6){ if(J.owner!==c || J.from!==q.i || c.v>0.3){ J.owner=c; J.from=q.i; J.t=simT; } } } } }
+
+        if(i===0 && c.junctionHold){
+          const d=q.P.len-c.s-hl;
+          if(d<gap){ gap=d; gsrc=2; }
+        }
         acc += i===0 ? q.P.len-c.s : q.P.len;
       }
       // 進路上の障害物（車・電車・プレイヤー）
       const look=Math.min(125, 8 + c.v*c.v/2/3.2 + c.v*1.4);   // v41.11: 速くなったぶん遠くまで見る（止まるのに要る距離）
-      const self=c, pr=prio(c);
-      // 相手も自分を待っているときは、優先度の低い方が待つ（電車に対しては車が先に抜ける＝線路上に居座らない）
-      const e0r=(q)=>0.85;
-      let pedSk=false;
-      const skip=(o)=> c.ghost>0 && o.type ? true : o.leg ? o.blockedBy===c : (hk && o.ped && ((o.x-c.x)*c.dx+(o.z-c.z)*c.dz) > hl+2.2) ? (pedSk=true) : (o.type && (
-        // 対向車（向きが逆）は、進路の中心から 1.2m 以内に車体の中心がある時だけ（狭い道のすれ違いで止まらない）
-        ((o.dx*c.dx+o.dz*c.dz) < -0.5 && Math.hypot(o.x-_q.x, o.z-_q.z) > 1.2 + o.type.l*0.5) ||
-        (o.blockedBy===c && (prio(o)<pr || (prio(o)===pr && o.id>c.id)))));
+
+      const self=c;
       c.blockedBy=null;
-      for(let d=0.6; d<=look; d+= d<36 ? 1.8 : 2.4){ aheadPt(c, hl+d, _q); const e=Obs.hit(_q.x,_q.z, e0r(_q), self,skip,_q.y); if(e){ const g_=d-0.4-e.r*0.3; if(g_<gap){ gap=g_; gsrc=e.o.ped?3:e.o.type?4:e.o.leg?5:6; } c.blockedBy=e.o; break; } }
-      if(!c.blockedBy && jw && jw.type) c.blockedBy=jw;   // 交差点の持ち主待ち（クラクションの伝言・待ち合い輪の検出に使う）
-      if(pedSk) vlim=Math.min(vlim, 2.0);   // 歩行者が前にいるときは、人をよけさせながら徐行で進む
-      // 前がつかえているなら、その前の車にもクラクションを伝える（先頭の車から順に動き出す）
+      for(let d=0.5;d<=look;d+=d<24?1.15:2.0){
+        aheadPt(c,hl+d,_q);
+        const e=Obs.hit(_q.x,_q.z,c.type.w/2+0.16,self,null,_q.y);
+        if(e){
+          const g=d-0.38;
+          if(g<gap){ gap=g; gsrc=e.o.ped?3:e.o.type?4:e.o.leg?5:6; }
+          c.blockedBy=e.o; break;
+        }
+      }
       if(c.honkT>0 && c.blockedBy && c.blockedBy.type && !(c.blockedBy.honkT>c.honkT-0.5)){ c.blockedBy.honkT=c.honkT; c.blockedBy.honkDly=0.4+Math.random()*0.8; }
       // 交差点の先が詰まっていたら、交差点に入らず手前で待つ（交差点内で止まって横の流れをふさがない）
-      if(c.plan.length>=3 && seg.lane && !(c.ghost>0)){ const cn=segs[c.plan[1]], ex=segs[c.plan[2]]; if(cn && !cn.lane && ex){
-          const dEnd=seg.P.len-c.s-hl; if(dEnd<14 && dEnd>-0.5){ pathPt(ex.P, Math.min(ex.P.len, c.type.l+2.5), _q);
-            const e=Obs.hit(_q.x,_q.z,1.4,self,(o)=>!o.type || o===c || o.v>1.5,_q.y); if(e){ if(dEnd<gap){ gap=dEnd; gsrc=7; } if(!c.blockedBy) c.blockedBy=e.o; } } } }
+      if(c.plan.length>=3 && seg.lane){ const cn=segs[c.plan[1]], ex=segs[c.plan[2]]; if(cn && !cn.lane && ex){
+          const dEnd=seg.P.len-c.s-hl; if(dEnd<22 && dEnd>-0.5){
+            for(const s of [1.4,c.type.l*0.6,c.type.l+1.8]){
+              pathPt(ex.P,Math.min(ex.P.len,s),_q);
+              const e=Obs.hit(_q.x,_q.z,c.type.w/2+0.25,self,o=>!o.type || o.v>2.0,_q.y);
+              if(e){ if(dEnd<gap){ gap=dEnd; gsrc=7; } if(!c.blockedBy) c.blockedBy=e.o; break; }
+            }
+          } } }
       // 道の終わり（行き止まり）では手前で止まる
       if(c.endAhead){ let rem=segs[c.plan[0]].P.len-c.s; for(let i=1;i<c.plan.length;i++) rem+=segs[c.plan[i]].P.len; { const g_=rem-hl-1; if(g_<gap){ gap=g_; gsrc=8; } } }
       // 利用者の車・バス: 進路の前方（左右 3.2m・扇形）にいれば止まる（割り込み・横切りにも対応）
@@ -6257,23 +6394,21 @@ const Traffic = (()=>{
       c.v=Math.max(0, c.v + a*dt); if(gap<2.2 && c.v<0.5) c.v=Math.max(0,c.v-3*dt);
       // 行き詰まり（お互いに相手待ち）の解消
       // 相手待ちが輪になっている（または重なっている）ときだけ、少しの間ほかの車を無視して抜ける
-      let cyc=false; if(c.v<0.2 && c.blockedBy && c.blockedBy.type){ let o=c.blockedBy; for(let k=0;k<8 && o && o.type;k++){ if(o===c){ cyc=true; break; } o=o.blockedBy; }
-        if(Math.hypot(c.blockedBy.x-c.x, c.blockedBy.z-c.z)<2.5) cyc=true; }
-      const nearP = PLAYER_POS.on && Math.hypot(PLAYER_POS.x-c.x, PLAYER_POS.z-c.z) < 30;
-      if(cyc && (!nearP || hk)){ c.wait+=dt; if(c.wait>(hk?1.5:4)){ c.ghost=hk?2.0:2.5; c.wait=0; } } else c.wait=Math.max(0,c.wait-dt);
-      // 信号待ちでもないのに 25 秒以上動けない車（交差点どうしの待ち合い・出口待ちの輪）は、3 秒だけ他の車を無視して抜ける。利用者のそばでは 45 秒待ってから。
-      c.jamT = (c.v<0.2 && !sigHold) ? (c.jamT||0)+dt : 0;
-      if(c.jamT>(nearP?45:25) && !(c.ghost>0)){ c.ghost=3.0; c.jamT=Math.min(c.jamT,10); }
-      // 長く止まったまま（信号待ちではない）の車は入れ替える（見えていない所で）
+
       c.stopT = c.v<0.3 ? (c.stopT||0)+dt : 0;
       if(c.stopT>35 && !inView(c.x,c.z)) { c.dead=true; c.deadT=99; }
       if(c.endAhead && c.stopT>3) { c.dead=true; c.deadT=(c.deadT||0)+dt; }
-      c.ghost=Math.max(0,c.ghost-dt);
       // v41.11: 細い道を 150m 以上走った車は、見えない所で（大通りに）入れ替える。細い道は数が多く、いったん入るとなかなか大通りへ出てこないため、車がたまってしまう
       if(seg.lane){ if(seg.imp<2.0){ c.nd=(c.nd||0)+c.v*dt; if(c.nd>(seg.imp<1.4?150:300) && !c.dead && !inView(c.x,c.z)){ c.dead=true; c.deadT=99; c.nd=0; } } else c.nd=0; }
       // 進める
-      c.s+=c.v*dt;
-      while(c.plan.length>1 && c.s>segs[c.plan[0]].P.len+hl){ const q=segs[c.plan[0]]; c.s-=q.P.len; if(!q.lane){ const J=jnode.get(q.node); if(J && J.owner===c) J.owner=null; } c.plan.shift(); }
+      const room=gsrc===0?Infinity:Math.max(0,gap-(gsrc===3?1.0:0.42));
+      const ds=Math.min(c.v*dt,room);
+      if(ds<c.v*dt){ c.v=ds/Math.max(dt,1e-4); c.brake=true; }
+      c.s+=ds;
+      while(c.plan.length>1 && c.s>=segs[c.plan[0]].P.len){
+        const id=c.plan.shift(); c.history.push(id); c.s-=segs[id].P.len;
+        if(c.history.length>12) c.history.shift();
+      }
       if(c.endAhead && c.v<0.2){ let rem=segs[c.plan[0]].P.len-c.s; for(let i=1;i<c.plan.length;i++) rem+=segs[c.plan[i]].P.len; if(rem<hl+4){ c.dead=true; c.deadT=(c.deadT||0)+dt; } }
       planAhead(c);
       pose(c);
@@ -6301,7 +6436,11 @@ const Traffic = (()=>{
       c.honkT=8; c.honkDly=0.5+Math.random()*1.0; n++; }
     return n;
   }
-  function reset(){ cars.length=0; if(jnode) for(const J of jnode.values()) J.owner=null; }
+  function reset(){
+    cars.length=0;
+    for(const J of busyJunctions){ J.active.length=0; J.waiting.length=0; }
+    busyJunctions.clear(); respT=0;
+  }
   /* プレイヤーの車の出発点: 指定点に近い、指定方向の車線 */
   function startPose(x, z, dirx, dirz){
     let best=null, bd=1e9;
@@ -8945,6 +9084,13 @@ const Car = (() => {
   function addBlock(x, z, r) { if (!G || !G.B) return; for (let dz = -r; dz <= r; dz += 1) for (let dx = -r; dx <= r; dx += 1) { const i = Math.floor((x + dx - G.x0) / G.bstep), j = Math.floor((z + dz - G.z0) / G.bstep); if (i < 0 || j < 0 || i >= G.bnx || j >= G.bnz) continue; G.B[j * G.brow + (i >> 3)] |= (1 << (7 - (i & 7))); } }
 
   // ---- 車体 ----
+  function pedestrianSurface(x,z){
+    if(!G || !inG(x,z)) return 0;
+    const i=Math.floor((x-G.x0)/G.bstep), j=Math.floor((z-G.z0)/G.bstep);
+    if(G.B && i>=0 && j>=0 && i<G.bnx && j<G.bnz &&
+      ((G.B[j*G.brow+(i>>3)]>>(7-(i&7)))&1)) return 9;
+    return G.K[cell(x,z)];
+  }
   const car = new THREE.Group();
   const body = new THREE.Group(); car.add(body);
   // v41.9: 自分の車は vehicles.js の曲面の車体（窓は透明・車内あり・車輪は回る/曲がる）
@@ -9374,7 +9520,7 @@ const Car = (() => {
     const fx = (x - G.x0) / G.step - 0.5, fz = (z - G.z0) / G.step - 0.5; const i = Math.max(0, Math.min(G.nx - 2, Math.floor(fx))), j = Math.max(0, Math.min(G.nz - 2, Math.floor(fz)));
     const tx = Math.min(1, Math.max(0, fx - i)), tz = Math.min(1, Math.max(0, fz - j)), k = j * G.nx + i;
     return ((hk(k, yref) * (1 - tx) + hk(k + 1, yref) * tx) * (1 - tz) + (hk(k + G.nx, yref) * (1 - tx) + hk(k + G.nx + 1, yref) * tx) * tz) / 100; }
-  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, gridH, blocked, addBlock, clearBlock, setProfile, setView, setExt, setTaxi, inG, resetBusRide, get G() { return G; }, get P() { return P; } };
+  return { C, setGrid, tick, updateCam, hud, start, stop, bindUI, hAt, kindAt, gridH, pedestrianSurface, blocked, addBlock, clearBlock, setProfile, setView, setExt, setTaxi, inG, resetBusRide, get G() { return G; }, get P() { return P; } };
 })();
 
 /* ---------------- 運転 ---------------- */
@@ -10114,27 +10260,51 @@ const Peds = (() => {
   }
   function init(J){
     if(!J || !J.nodes) return;
-    NODE = J.nodes; ADJ = NODE.map(() => []);
+    NODE=J.nodes; ADJ=NODE.map(()=>[]); CELLS.clear();
     // v48: 駅前広場へ延ばした軌道（芝生の軌道敷）の上を、工事前の歩道の線に沿って人が歩いていた。軌道の中心から 2.2m 以内を 4m 以上続けて通る辺は使わない（横断は短いので残る）
     const TRK = new Set(); if(S.routes) for(const k of ["higashi", "seiki", "higashi_r", "seiki_r"]){ const t = S.routes[k] && S.routes[k].track; if(!t) continue;
       for(let i = 1; i < t.length; i++){ const a = t[i - 1], b = t[i]; if(a[0] > -4 && b[0] > -4) continue; const L = Math.hypot(b[0] - a[0], b[2] - a[2]), n = Math.max(1, Math.ceil(L));
         for(let j = 0; j <= n; j++){ const x = a[0] + (b[0] - a[0]) * j / n, z = a[2] + (b[2] - a[2]) * j / n; for(let dx = -1; dx <= 1; dx++) for(let dz = -1; dz <= 1; dz++) TRK.add(Math.floor(x + dx * 1.1) + "," + Math.floor(z + dz * 1.1)); } } }
-    const onTrk = (e) => { if(!TRK.size) return false; const P = e[8]; let run = 0;
-      for(let k = 1; k < P.length / 2; k++){ const x0 = P[2*k-2], z0 = P[2*k-1], x1 = P[2*k], z1 = P[2*k+1], L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(L));
-        for(let j = 0; j < n; j++){ const x = x0 + (x1 - x0) * j / n, z = z0 + (z1 - z0) * j / n; if(TRK.has(Math.floor(x) + "," + Math.floor(z))){ if(++run >= 4) return true; } else run = 0; } }
-      return false; };
-    // v62: 駅前広場の車路（バスの環状路・タクシープール・降車場）の中を 5m 以上続けて通る辺も使わない
-    const onPlz = (e) => { const P = e[8]; let run = 0; for(let k = 1; k < P.length / 2; k++){ const x0 = P[2*k-2], z0 = P[2*k-1], x1 = P[2*k], z1 = P[2*k+1], L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(L));
-      for(let j = 0; j < n; j++){ const x = x0 + (x1 - x0) * j / n, z = z0 + (z1 - z0) * j / n; if(Plaza.isRoad(x, z)){ if(++run >= 5) return true; } else run = 0; } } return false; };
-    const nE0 = J.edges.length; J.edges = J.edges.filter(e => !onTrk(e) && !onPlz(e)); if(J.edges.length < nE0) console.log("peds: dropped edges on the plaza tracks", nE0 - J.edges.length);
-    E = J.edges.map((e, i) => {
+
+    // 横断歩道以外で車道や新しい駅前軌道を長くたどるデータは除く。
+    const valid=({0:a,1:b,2:k,8:points})=>{
+      if(a===b || a<0 || b<0 || a>=NODE.length || b>=NODE.length || points.length<4) return false;
+      let bad=0, length=0, hasSpan=false;
+      for(let i=2;i<points.length;i+=2){
+        const ax=points[i-2], az=points[i-1], dx=points[i]-ax, dz=points[i+1]-az;
+        const l=Math.hypot(dx,dz);
+        if(l<0.05) continue;
+        hasSpan=true;
+        const n=Math.ceil(l/2.0), step=l/n;
+        for(let q=0;q<n;q++){
+          const x=ax+dx*(q+0.5)/n,z=az+dz*(q+0.5)/n;
+          const surface=Car.pedestrianSurface(x,z);
+          const road=k!==1 && (Plaza.isRoad(x,z) || TRK.has(Math.floor(x)+","+Math.floor(z)));
+          const inTraffic=k!==1 && k!==5 && surface===1;
+          if(road || inTraffic || surface===9){ bad+=step; if(bad>=(k===5?8:5)) return false; }
+          else bad=0;
+          length+=step;
+        }
+      }
+      return hasSpan && length>0.12;
+    };
+    const edges=J.edges.filter(valid);
+    E = edges.map((e,i)=>{
       const P = new Float32Array(e[8]), n = P.length / 2, cum = new Float32Array(n);
       for(let k = 1; k < n; k++) cum[k] = cum[k - 1] + Math.hypot(P[2*k] - P[2*k-2], P[2*k+1] - P[2*k-1]);
       const o = { a: e[0], b: e[1], k: e[2], w: e[3], lat: e[4], g: e[5], ph: e[6], bike: e[7], P, cum, L: cum[n - 1], i };
       ADJ[o.a].push(i); ADJ[o.b].push(i);
       // 出現用の升目（辺の中点）
-      const mx = (P[0] + P[2*n-2]) / 2, mz = (P[1] + P[2*n-1]) / 2, key = Math.floor(mx / CS) + "," + Math.floor(mz / CS);
-      let c = CELLS.get(key); if(!c){ c = []; CELLS.set(key, c); } c.push(i);
+      const cells=new Set();
+      for(let s=0; s<o.L+CS/3; s+=CS/3){
+        const p=at(o,Math.min(o.L,s),{});
+        const key=Math.floor(p.x/CS)+","+Math.floor(p.z/CS);
+        if(cells.has(key)) continue;
+        cells.add(key);
+        let list=CELLS.get(key);
+        if(!list) CELLS.set(key,list=[]);
+        list.push(i);
+      }
       return o;
     });
     buildMeshes(); buildPedSignals(); ready = true;
@@ -10161,8 +10331,8 @@ const Peds = (() => {
       box(0.36, 0.52, 0.21, 0, 1.19, 0, 1); box(0.33, 0.1, 0.2, 0, 0.9, 0, 2);   // 胴・腰
       for(const sx of [-1, 1]){
         box(0.13, 0.5, 0.14, sx*0.09, 0.62, 0, 2, sx < 0 ? 1 : 2);         // 太もも〜すね
-        box(0.12, 0.36, 0.13, sx*0.09, 0.2, 0, 2, sx < 0 ? 1 : 2);
-        box(0.11, 0.07, 0.25, sx*0.09, 0.035, 0.04, 3, sx < 0 ? 1 : 2);     // 靴
+        box(0.12, 0.36, 0.13, sx*0.09, 0.2, 0, 2, sx < 0 ? 5 : 6);
+        box(0.11, 0.07, 0.25, sx*0.09, 0.035, 0.04, 3, sx < 0 ? 7 : 8);     // 靴
         box(0.09, 0.3, 0.1, sx*0.235, 1.28, 0, 1, sx < 0 ? 3 : 4);          // 上腕
         box(0.08, 0.26, 0.09, sx*0.235, 1.0, 0.01, 1, sx < 0 ? 3 : 4);      // 前腕
         box(0.07, 0.09, 0.08, sx*0.235, 0.83, 0.01, 0, sx < 0 ? 3 : 4);     // 手
@@ -10198,28 +10368,58 @@ const Peds = (() => {
     g.setAttribute("aPart", new THREE.Float32BufferAttribute(part, 1)); g.setAttribute("aLimb", new THREE.Float32BufferAttribute(limb, 1));
     return g;
   }
-  function mat(bike){
-    const m = new THREE.MeshLambertMaterial({ vertexColors: true });
-    m.onBeforeCompile = (sh) => {
-      sh.uniforms.uRain = U.uRain;
-      sh.vertexShader = sh.vertexShader.replace("#include <common>", `#include <common>
-        attribute float aPart; attribute float aLimb; attribute vec2 iAnim; attribute vec3 iTop; attribute vec3 iBot; attribute vec3 iHair; attribute vec3 iExtra; uniform float uRain;`)
-        .replace("#include <begin_vertex>", `vec3 transformed = vec3(position);
-          float sw = sin(iAnim.x) * iAnim.y;
-          if(aLimb > 0.5){
-            float leg = step(aLimb, 2.5);
-            float piv = ${bike ? "0.95" : "0.92"} * leg + 1.43 * (1.0 - leg);
-            float sgn = (abs(aLimb - 1.0) < 0.1 || abs(aLimb - 4.0) < 0.1) ? 1.0 : -1.0;
-            float ang = sgn * sw * (leg > 0.5 ? ${bike ? "0.75" : "0.55"} : 0.42);
-            if(aLimb > 3.5) ang *= (1.0 - uRain);
-            float c = cos(ang), s = sin(ang); float y = transformed.y - piv, z = transformed.z;
-            transformed.y = piv + y * c - z * s; transformed.z = y * s + z * c;
-          }
-          ${bike ? "" : "if(aPart > 4.5 && aPart < 7.5) transformed = mix(vec3(0.0, 1.0, 0.0), transformed, uRain); if(aLimb < 0.5) transformed.y += abs(cos(iAnim.x)) * 0.025 * min(iAnim.y * 3.0, 1.0);"}
-          ${bike ? "if(aPart > 4.5 && aPart < 5.5) transformed = vec3(0.0);" : ""}`)
-        .replace("#include <color_vertex>", `vColor = vec3(1.0);
-          vec3 skin = vec3(0.92, 0.75, 0.62);
-          vColor = aPart < 0.5 ? skin : aPart < 1.5 ? iTop : aPart < 2.5 ? iBot : aPart < 3.5 ? vec3(0.09, 0.085, 0.08) : aPart < 4.5 ? iHair : aPart < 5.5 ? iExtra : aPart < 6.5 ? iExtra : vec3(0.55, 0.56, 0.58);`);
+
+  function animateMaterial(m,bike,color){
+    m.customProgramCacheKey=()=>bike?"bicycle-gait":"pedestrian-gait";
+    m.onBeforeCompile=(sh)=>{
+      sh.uniforms.uRain=U.uRain;
+      sh.vertexShader=sh.vertexShader.replace("#include <common>", "#include <common>\n"+[
+        "attribute float aPart; attribute float aLimb; attribute vec2 iAnim; uniform float uRain;",
+        color?"attribute vec3 iTop; attribute vec3 iBot; attribute vec3 iHair; attribute vec3 iExtra;":""
+      ].join("\n")).replace("#include <begin_vertex>","vec3 transformed=vec3(position);\n"+(bike ?
+        [
+          "if(aLimb>0.5){",
+          "  float ang=(aLimb<1.5?1.0:-1.0)*sin(iAnim.x)*iAnim.y*0.48;",
+          "  float c=cos(ang),s=sin(ang),y=transformed.y-0.95,z=transformed.z;",
+          "  transformed.y=0.95+y*c-z*s; transformed.z=y*s+z*c;",
+          "}"
+        ].join("\n") :
+        [
+          "float amp=iAnim.y;",
+          "float phase=iAnim.x;",
+          "float bob=(0.009-0.017*cos(phase*2.0))*amp;",
+          "if((aLimb>0.5 && aLimb<2.5) || aLimb>4.5){",
+          "  float side=mod(aLimb,2.0);",
+          "  float t=fract(phase/6.2831853+side*0.5);",
+          "  float swing=clamp((t-0.62)/0.38,0.0,1.0);",
+          "  float stride=t<0.62 ? 0.5-t/0.62 : -0.5+swing*swing*(3.0-2.0*swing);",
+          "  vec2 hip=vec2(0.87+bob,0.0);",
+          "  vec2 foot=vec2(0.052+amp*0.105*sin(swing*3.14159265),amp*0.78*stride);",
+          "  vec2 limb=foot-hip; float len=length(limb);",
+          "  vec2 knee=(foot+hip)*0.5+vec2(limb.y,-limb.x)/max(len,0.01)*sqrt(max(0.0,0.428*0.428-len*len*0.25));",
+          "  if(aLimb>=6.5){ transformed.yz+=foot-vec2(0.052,0.0); }",
+          "  else {",
+          "    bool upper=aLimb<2.5; vec2 a=upper?hip:knee,b=upper?knee:foot;",
+          "    float y=upper?0.87:0.38; float r=upper?0.49:0.328;",
+          "    vec2 d=normalize(b-a);",
+          "    transformed.yz=mix(a,b,(y-transformed.y)/r)+vec2(d.y,-d.x)*transformed.z;",
+          "  }",
+          "} else {",
+          "  transformed.y+=bob;",
+          "  if(aLimb>2.5){",
+          "    float sign_=aLimb<3.5?-1.0:1.0;",
+          "    float ang=sign_*cos(phase)*amp*0.25*(aLimb>3.5?1.0-uRain:1.0);",
+          "    float c=cos(ang),s=sin(ang),y=transformed.y-1.43,z=transformed.z;",
+          "    transformed.y=1.43+y*c-z*s; transformed.z=y*s+z*c;",
+          "  }",
+          "}",
+          "if(aPart>4.5 && aPart<7.5) transformed=mix(vec3(0.0,1.0,0.0),transformed,uRain);"
+        ].join("\n")));
+      if(color) sh.vertexShader=sh.vertexShader.replace("#include <color_vertex>",[
+        "vColor=vec3(1.0);",
+        "vec3 skin=vec3(0.92,0.75,0.62);",
+        "vColor=aPart<0.5?skin:aPart<1.5?iTop:aPart<2.5?iBot:aPart<3.5?vec3(0.09,0.085,0.08):aPart<4.5?iHair:aPart<6.5?iExtra:vec3(0.55,0.56,0.58);"
+      ].join("\n"));
     };
     return m;
   }
@@ -10228,7 +10428,10 @@ const Peds = (() => {
       const g = geo(kind);
       g.setAttribute("iAnim", new THREE.InstancedBufferAttribute(new Float32Array(N * 2), 2).setUsage(THREE.DynamicDrawUsage));
       for(const a of ["iTop", "iBot", "iHair", "iExtra"]) g.setAttribute(a, new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3));
-      const m = new THREE.InstancedMesh(g, mat(kind === "bike"), N); m.count = 0; m.frustumCulled = false; m.castShadow = true; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      const bike=kind==="bike";
+      const m=new THREE.InstancedMesh(g,animateMaterial(new THREE.MeshLambertMaterial({vertexColors:true}),bike,true),N);
+      m.customDepthMaterial=animateMaterial(new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking}),bike,false);
+      m.count=0; m.frustumCulled = false; m.castShadow = true; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(m); return m;
     };
     meshP = mk("ped", MAXP); meshB = mk("bike", MAXB);
@@ -10256,8 +10459,13 @@ const Peds = (() => {
   let pool = null, poolW = 0, poolAt = null, target = 0;
   function rebuildPool(cx, cz){
     pool = []; poolW = 0; let wl = 0;
-    for(const c of nearCells(cx, cz, R_IN)) for(const ei of c){ const e = E[ei]; const p = at(e, e.L / 2, {}); if(Math.hypot(p.x - cx, p.z - cz) > R_IN) continue;
-      const nk = e.k === 5 ? NARROW_K : 1; const w = e.w * e.L * nk; if(w <= 0) continue; poolW += w; pool.push([poolW, ei]); wl += w; }
+    const unique=new Set(nearCells(cx,cz,R_IN).flat());
+    for(const ei of unique){
+      const e=E[ei];
+      if(e.k===1 || e.L<0.8) continue;
+      const p=at(e,e.L/2,{});
+      if(Math.hypot(p.x-cx,p.z-cz)>R_IN+e.L/2) continue;
+      const nk=e.k===5?NARROW_K:1, w=e.w*Math.min(e.L,150)*nk; if(w <= 0) continue; poolW += w; pool.push([poolW, ei]); wl += w; }
     target = Math.min(MAXP + MAXB, Math.round(wl * DENS * timeK()));
     poolAt = { x: cx, z: cz };
   }
@@ -10270,41 +10478,120 @@ const Peds = (() => {
       if(bike && (!e.bike || e.k === 2 || e.k === 4)) continue;
       if(!bike && e.k === 6 && Math.random() < 0.7) continue;
       if(e.k === 1) continue;   // v35: 横断歩道の途中には出さない（赤信号の真ん中に現れる人をなくす）
-      const s = Math.random() * e.L; at(e, s, _p);
-      if(avoidView && inView(_p.x, _p.z)) continue;
+      const s=Math.random()*e.L; at(e,s,_p);
+      if(Math.hypot(_p.x-poolAt.x,_p.z-poolAt.z)>R_IN || (avoidView && inView(_p.x,_p.z))) continue;
       o.e = ei; o.dir = Math.random() < 0.5 ? 1 : -1; o.s = s; o.bike = bike;
       const kid = !bike && Math.random() < 0.06, old = !bike && !kid && Math.random() < 0.14;
       o.v0 = bike ? 3.4 + Math.random() * 1.6 : kid ? 1.1 + Math.random() * 0.4 : old ? 0.85 + Math.random() * 0.3 : 1.15 + Math.random() * 0.4;
       o.sc = kid ? 0.62 + Math.random() * 0.12 : 0.92 + Math.random() * 0.14; o.v = o.v0;
-      o.side = Math.random() * 2 - 1; o.latC = null; o.wait = 0; o.stand = !bike && Math.random() < 0.08 ? 6 + Math.random() * 30 : 0; o.face = Math.random() * 6.283;
-      o.ph = Math.random() * 6.283; o.hit = 0;
+      o.side=Math.random()*2-1; o.nextE=-1; o.wait=0; o.waitBack=0;
+      o.stand=!bike && (e.k===0 || e.k===2) && Math.random()<0.05 ? 4+Math.random()*14 : 0;
+      o.yaw=Math.atan2(_p.dx*o.dir,_p.dz*o.dir);
+      o.ph=Math.random()*6.283; o.hit=0; o.walk=0;
+      const ground=walkPoint(e,s,o.dir,walkOffset(o,e,s),_p);
+      if(!ground) continue;
+      o.x=ground.x; o.z=ground.z; o._y=Car.hAt(o.x,o.z);
       o.top = pick(TOPS); o.bot = pick(BOTS); o.hair = old ? (Math.random() < 0.6 ? "#b8b3ad" : "#7a7672") : pick(HAIR); o.ext = bike ? pick(FRAME) : pick(UMB); o.skin = Math.random();
       o.ped = true; o.dirty = true; o.on = true; return true;
     }
     return false;
   }
   /* 横位置（進む向きの右が +）: 細い道は人は右端・自転車は左端、歩道・横断歩道は幅の中でばらける */
-  function latOf(o, e){ const hy = o.hurryT > 0 ? 1.18 : 1;   // v41.8: クラクションを聞いた人は道の端へ寄る
-    if(e.k === 5) return o.bike ? -e.lat * (0.8 + 0.2 * Math.abs(o.side)) * hy : e.lat * (0.8 + 0.2 * Math.abs(o.side)) * hy; return o.side * e.lat; }
-  function chooseNext(o, node){
-    const L = ADJ[node]; let best = -1, sum = 0; const cand = [];
-    for(const ei of L){ if(ei === o.e && L.length > 1) continue; const e = E[ei]; if(o.bike && (!e.bike || e.k === 4 || e.k === 2)) continue;
-      let w = Math.max(0.05, e.w); if(e.k === 1) w *= 0.55; else if(e.k === 5) w *= 0.5; cand.push([ei, w]); sum += w; }
-    if(!cand.length) return o.e;
-    let r = Math.random() * sum; for(const [ei, w] of cand){ if((r -= w) <= 0){ best = ei; break; } } return best < 0 ? cand[0][0] : best;
+
+  function walkOffset(o,e,s){
+    const end=Math.min(s,e.L-s);
+    const blend=Math.max(0,Math.min(1,end/(e.k===5?3.6:1.35)));
+    const width=e.k===5?Math.min(2.3,Math.max(0.28,e.lat-0.17)):
+      e.k===2?Math.min(1.45,e.lat*0.74):e.k===1?Math.min(0.58,e.lat*0.6):Math.min(0.39,e.lat*0.72);
+    const side=e.k===5?(o.bike?-(0.92+0.08*Math.abs(o.side)):(0.82+0.18*Math.abs(o.side))):0.35+o.side*0.42;
+    return side*width*blend;
   }
-  // 横断してよいか（辺 e を node 側から渡り始める時）
-  function mayCross(e, t, w){
-    if(e.k !== 1) return true;
-    if(e.g >= 0) return pedState(e.g, e.ph, t) === 0;
-    // v41.8: 信号のない横断歩道。渡る線の上に車体（止まっている車・自転車の上）がなければ渡る。
-    //        （以前は横断歩道の中心から 9m 以内に止まった車がいると渡れず、歩行者を待って止まった車と、車を待つ歩行者が、お互いに待って動かなくなっていた）
-    //        12 秒以上渡れずにいる人・クラクションを聞いた人は、止まっている車の横でも渡る（車を待つ歩行者と、歩行者を待つ車の行き詰まり対策）
-    const m = at(e, e.L / 2, _p), R = Math.max(9, e.L / 2 + 5); let h = null, force = !!(w && (w.hurryT > 0 || w.wt > 12));
-    const nS = Math.max(2, Math.ceil(e.L / 1.5)); for(let i = 0; i <= nS && !h && !force; i++){ const q = at(e, e.L * i / nS, _p); h = Obs.hit(q.x, q.z, 0.5, null, (o) => !!(o && o.ped)); }
-    const mm = at(e, e.L / 2, _p), mx = mm.x, mz = mm.z;
-    if(!h) h = Obs.hit(mx, mz, R + 14, null, (o) => !(o && o.type && o.v > 2.5));   // 速い車が近づいている間は渡らない
-    return !h;
+  function walkPoint(e,s,dir,side,out){
+    const p=at(e,s,out);
+    const a=at(e,s-0.62,_before), b=at(e,s+0.62,_after);
+    const tx=b.x-a.x,tz=b.z-a.z,length=Math.hypot(tx,tz)||1;
+    const x=p.x,z=p.z,fx=tx/length*dir,fz=tz/length*dir;
+    for(const offset of [side,side*0.45,0,-0.33,0.33,-0.67,0.67,-1.05,1.05]){
+      const px=x-fz*offset,pz=z+fx*offset, surface=Car.pedestrianSurface(px,pz);
+      const nodeApproach=Math.min(s,e.L-s)<1.7;
+      if(surface===9 || (e.k!==1 && Plaza.isRoad(px,pz)) ||
+        (e.k!==1 && e.k!==5 && surface===1 && !nodeApproach)) continue;
+      p.x=px; p.z=pz; p.dx=fx; p.dz=fz;
+      return p;
+    }
+    return null;
+  }
+  function chooseNext(o,e,node){
+    const p=at(e,o.dir>0?e.L:0,{}), fx=p.dx*o.dir,fz=p.dz*o.dir;
+    const inRoad=e.k===1 && Car.pedestrianSurface(p.x,p.z)===1;
+    const cand=[];
+    for(const i of ADJ[node]){
+      if(i===o.e) continue;
+      const next=E[i];
+      if(o.bike && (!next.bike || next.k===4 || next.k===2)) continue;
+      const heading=next.a===node?1:-1, q=at(next,heading>0?0:next.L,{});
+      const dot=heading*(q.dx*fx+q.dz*fz);
+      const continuous=e.k===1 && next.k===1 && dot>0.65;
+      const preference=continuous?7:(next.k===5?0.48:next.k===1?0.60:1);
+      const weight=Math.max(0.04,next.w)*preference*(1.20+0.70*dot);
+      cand.push([i,weight,continuous]);
+    }
+    const chain=inRoad?cand.filter(c=>c[2]):[];
+    const routes=chain.length?chain:cand;
+    if(!routes.length) return o.e;
+    let r=Math.random()*routes.reduce((sum,c)=>sum+c[1],0);
+    for(const [i,weight] of routes) if((r-=weight)<=0) return i;
+    return routes.at(-1)[0];
+  }
+  function mayCross(e,t,o,node){
+    if(e.k!==1) return true;
+    const n=Math.max(2,Math.ceil(e.L/1.4)), speed=o.bike?2.6:Math.max(0.95,o.v0||1.2);
+    const forward=e.a===node?1:-1;
+    if(e.g>=0){
+      const signal=S.scene?.isects?.[e.g];
+      const begin=e.ph===0?0:MAIN_G+Y_T+AR;
+      const elapsed=signal?((t+signal.off)%CYCLE+CYCLE)%CYCLE-begin:0;
+      const end=e.ph===0?MAIN_G:CROSS_G;
+      if(pedState(e.g,e.ph,t)!==0 || end-elapsed<e.L/speed+1.4) return false;
+    }
+    const p=at(e,forward>0?0:e.L,{});
+    const y=Car.hAt(p.x,p.z,o._y);
+    for(let i=0;i<=n;i++){
+      const along=e.L*i/n, q=at(e,forward>0?along:e.L-along,{});
+      const radius=e.g>=0?8.0:12.5;
+      const hit=Obs.hit(q.x,q.z,radius,o,(car)=>{
+        if(car.ped) return true;
+        if(!car.type || car.v<0.65) return true;
+        const dx=q.x-car.x,dz=q.z-car.z;
+        const f=dx*car.dx+dz*car.dz, lat=Math.abs(dx*car.dz-dz*car.dx);
+        const eta=(f-car.type.l/2)/car.v;
+        return lat>car.type.w/2+0.65 || eta<0 || eta>along/speed+2.0;
+      },y);
+      if(hit || Obs.hit(q.x,q.z,0.48,o,other=>!!other.ped,y)) return false;
+    }
+    return true;
+  }
+  const _before={}, _after={};
+  function walkPose(o,e,dt){
+    const s=Math.max(0,Math.min(e.L,o.s));
+    const p=walkPoint(e,s,o.dir,walkOffset(o,e,s),_p);
+    if(!p){
+      o.walk*=Math.max(0,1-dt*10);
+      return false;
+    }
+    const {x,z,dx:fx,dz:fz}=p;
+    const dx=x-o.x,dz=z-o.z,distance=Math.hypot(dx,dz);
+    const speed=dt>0?distance/dt:0;
+    const moving=distance>0.0001 && o.stand<=0 && o.wait<=0;
+    const desired=moving?Math.atan2(dx,dz):e.k===1?Math.atan2(fx,fz):o.yaw;
+    const delta=Math.atan2(Math.sin(desired-o.yaw),Math.cos(desired-o.yaw));
+    o.yaw+=Math.max(-4.8*dt,Math.min(4.8*dt,delta));
+    o.x=x; o.z=z; o.fx=Math.sin(o.yaw); o.fz=Math.cos(o.yaw);
+    const h=Car.hAt(x,z,o._y);
+    o._y+=(h-o._y)*Math.min(1,dt*(e.k===4?18:14));
+    o.walk+=(Math.min(1,(moving?speed:0)/0.75)-o.walk)*Math.min(1,dt*11);
+    o.ph=(o.ph+Math.min(distance,Math.max(0.03,o.v*dt*1.65))*(o.bike?2.4:6.2831853/(1.26*o.sc)))%6.2831853;
+    return true;
   }
   /* v35: 横断歩道の現示を、車線側（信号の停止線）から決め直す。
      OSM の横断歩道の向きと交差点の「主道路」の向きがずれる斜めの交差点で、車と歩行者が同時に青になっていた（57/1595 組）。
@@ -10325,13 +10612,11 @@ const Peds = (() => {
     console.log("peds: crosswalk phases fixed", ch, "of", tot);
   }
   let respT = 0, poolT = 0;
-  const PEDREG = [];
   function register(){
     // 横断歩道を渡っている人と、自分の車の近く（45m）の人は障害物（車・電車が止まる。自分の車が当たると衝突）
-    PEDREG.length = 0;
     const px = PLAYER_POS.on ? PLAYER_POS.x : 1e9, pz = PLAYER_POS.on ? PLAYER_POS.z : 1e9;
     for(const L of [peds, bikes]) for(const o of L){ if(!o.on || o.x === undefined) continue; const e = E[o.e];
-      if(e.k === 1 || Math.abs(o.x - px) + Math.abs(o.z - pz) < 45){ Obs.add(o.x, o.z, o.bike ? 0.6 : 0.35, o, o._y); } }
+      if(e.k===1 || e.k===5 || Math.abs(o.x-px)+Math.abs(o.z-pz)<55){ Obs.add(o.x, o.z, o.bike ? 0.6 : 0.35, o, o._y); } }
   }
   function update(dt, t, center){
     if(!ready) return; fixPhases();
@@ -10353,46 +10638,55 @@ const Peds = (() => {
     for(const L of [peds, bikes]){
       for(const o of L){
         if(!o.on) continue;
-        let e = E[o.e];
-        // 立ち止まっている人
-        if(o.stand > 0){ o.stand -= dt; o.v = 0; }
-        else if(o.wait > 0){ o.wait -= dt; o.v = 0;
-          const nxt = E[o.nextE]; if(nxt && o.wait <= 0 && !mayCross(nxt, t, o)) o.wait = 0.5; }
-        else o.v += (o.v0 * (e.k === 1 && e.g >= 0 && pedState(e.g, e.ph, t) > 0 ? 1.35 : 1) * (o.hurryT > 0 ? (o.bike ? 1.25 : 1.7) : 1) - o.v) * Math.min(1, dt * 2);
-        o.wt = (o.nextE >= 0 && o.v === 0 && !(o.stand > 0)) ? (o.wt || 0) + dt : 0;   // 横断歩道の手前で待っている時間
-        if(o.hurryT > 0) o.hurryT -= dt;
-        if(o.v > 0 && o.wait <= 0 && o.stand <= 0){
-          o.s += o.dir * o.v * dt;
-          if(o.s < 0 || o.s > e.L){
-            const node = o.s < 0 ? e.a : e.b, over = o.s < 0 ? -o.s : o.s - e.L;
-            const ni = chooseNext(o, node), ne = E[ni];
-            if(ne.k === 1 && !mayCross(ne, t, o)){ o.s = o.s < 0 ? 0 : e.L; o.nextE = ni; o.wait = 0.5; o.v = 0; o.waitSpot = (o.id % 5) * 0.45; }
-            else { o.e = ni; e = ne; o.dir = ne.a === node ? 1 : -1; o.s = o.dir > 0 ? Math.min(ne.L, over) : Math.max(0, ne.L - over); o.nextE = -1; o.waitSpot = 0; }
-          }
-        } else if(o.wait <= 0 && o.nextE >= 0 && o.stand <= 0 && o.v === 0){
-          // 待っていた横断歩道が青になった
-          const node = o.s <= 0 ? e.a : e.b, ne = E[o.nextE];
-          if(ne && mayCross(ne, t, o)){ o.e = o.nextE; e = ne; o.dir = ne.a === node ? 1 : -1; o.s = o.dir > 0 ? 0 : ne.L; o.nextE = -1; o.waitSpot = 0; o.v = 0.3; }
+
+        let e=E[o.e];
+        const lastE=o.e,lastS=o.s,lastDir=o.dir;
+        const end=o.dir>0?e.L:0, node=o.dir>0?e.b:e.a, left=Math.abs(end-o.s);
+        if(o.stand>0){ o.stand-=dt; o.v=0; walkPose(o,e,dt); continue; }
+        o.wait=Math.max(0,o.wait-dt);
+        if(o.nextE<0 && left<3.2){
+          o.nextE=chooseNext(o,e,node);
+          // 信号待ちの位置を減速前に決め、止まったあとに後退させない。
+          o.waitBack=E[o.nextE].k===1 && e.k!==1 ? Math.min(left,0.38+(o.id%5)*0.19):0;
         }
-        // 位置
-        at(e, o.s - o.dir * (o.waitSpot || 0), _p);
-        const fx = _p.dx * o.dir, fz = _p.dz * o.dir, rx = -fz, rz = fx;       // 右 = (-fz, fx)（x 東・z 南）
-        const lt = latOf(o, e); o.latC = o.latC == null ? lt : o.latC + (lt - o.latC) * Math.min(1, dt * 1.5);
-        o.x = _p.x + rx * o.latC; o.z = _p.z + rz * o.latC; o.fx = fx; o.fz = fz;
-        o.ph += dt * (o.bike ? o.v * 1.9 : o.v * 5.2);
+        const target=o.v0*(e.k===4?0.66:e.k===1 && o.bike?0.57:1);
+        const next=o.nextE>=0?E[o.nextE]:null;
+        const p=e.k===1 && next?.k===1?at(e,end,_p):null;
+        const inRoad=!!p && Car.pedestrianSurface(p.x,p.z)===1;
+        const blockedCross=next?.k===1 && !inRoad;
+        let canStep=!blockedCross;
+        if(blockedCross && left<=o.waitBack+0.8 && o.wait<=0){
+          canStep=mayCross(next,t,o,node);
+          if(!canStep) o.wait=0.28;
+        }
+        const limit=blockedCross && !canStep?Math.max(0,left-o.waitBack):left;
+        const slow=blockedCross && !canStep ? Math.min(target,Math.sqrt(2.4*limit)):target;
+        o.v+=(slow-o.v)*Math.min(1,dt*(slow<o.v?7:3.8));
+        const advance=Math.min(o.v*dt,limit);
+        o.s+=o.dir*advance;
+        if(advance<1e-5 && limit<1e-4) o.v=0;
+        if(left-advance<1e-4 && canStep){
+          const ni=o.nextE>=0?o.nextE:chooseNext(o,e,node), ne=E[ni];
+          if(ne.k!==1 || inRoad || mayCross(ne,t,o,node)){
+            o.e=ni; e=ne; o.dir=ne.a===node?1:-1; o.s=o.dir>0?0:ne.L; o.nextE=-1; o.waitBack=0;
+          }
+        }
+        if(!walkPose(o,e,dt)){
+          o.e=lastE; o.s=lastS; o.dir=-lastDir; o.v=0;
+          o.nextE=-1; o.wait=0; o.waitBack=0;
+        }
       }
     }
-    // 描画
     const vis = !hi;
     for(const [L, mesh] of [[peds, meshP], [bikes, meshB]]){
       const an = mesh.geometry.attributes.iAnim; let n = 0;
       if(vis) for(const o of L){
         if(!o.on) continue;
         const dx = o.x - camera.position.x, dz = o.z - camera.position.z; if(dx * dx + dz * dz > 260 * 260) continue;
-        const y = Car.hAt(o.x, o.z, o._y); o._y = y;   // v32: 橋の上を歩く人は橋の上（今の高さに近い段）
-        const yaw = o.stand > 0 ? o.face : Math.atan2(o.fx, o.fz);
+        const y=o._y;   // v32: 橋の上を歩く人は橋の上（今の高さに近い段）
+        const yaw=o.yaw;
         _q.setFromAxisAngle(_up, yaw); _v.set(o.x, y, o.z); _s.set(o.sc, o.sc, o.sc); _m.compose(_v, _q, _s); mesh.setMatrixAt(n, _m);
-        an.setXY(n, o.ph, o.v > 0.05 ? Math.min(1, o.v / (o.bike ? 2.5 : 1.0)) : 0);
+        an.setXY(n,o.ph,o.walk);
         if(o.slot !== n || o.dirty || o.mesh !== mesh){ setCols(mesh, n, o); o.slot = n; o.dirty = false; o.mesh = mesh; }
         n++;
       }
@@ -10448,7 +10742,7 @@ const Peds = (() => {
     for(const L of [peds, bikes]) for(const o of L){ if(!o.on || o.x === undefined) continue;
       const px = o.x - x, pz = o.z - z, fwd = px * fx + pz * fz; if(fwd < -2 || fwd > 40) continue;
       if(Math.abs(px * fz - pz * fx) > 5 + fwd * 0.1) continue;
-      o.hurryT = 5; if(o.stand > 0) o.stand = 0; n++; }
+      if(o.stand>0) o.stand=0; n++; }
     return n;
   }
   return { init, update, register, honk, pedState, get peds(){ return peds; }, get bikes(){ return bikes; }, get ready(){ return ready; }, get E(){ return E; } };
