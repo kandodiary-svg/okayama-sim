@@ -62,9 +62,9 @@ const Boot = window.OkadenBoot || { box(){}, hide(){}, fail(m, e){ console.error
    OKA_PAGE が無い時（古い 1 ページの版・試験）は今まで通り全部読む */
 const PAGE = window.OKA_PAGE || "all";
 const PAGE_VERSION = document.currentScript?.getAttribute("src")?.match(/[?&]v=([0-9a-f]{10})\b/)?.[1];
-const PMODE = (() => { try { const m = new URLSearchParams(location.search).get("m"); return ["tram", "jr", "bus", "car", "heli"].includes(m) ? m : "tram"; } catch(e){ return "tram"; } })();
+const PMODE = (() => { try { const m = new URLSearchParams(location.search).get("m"); return ["tram", "jr", "bus", "car", "heli", "walk"].includes(m) ? m : "tram"; } catch(e){ return "tram"; } })();
 const NEED = PAGE === "all" ? { outer: true, mw: true, hmax: true } : PAGE === "menu" ? { outer: false, mw: false, hmax: false }
-  : { outer: ["car", "heli", "jr"].includes(PMODE), mw: ["car", "heli"].includes(PMODE), hmax: PMODE === "heli" };   // 遠景の地形タイル・山陽道・屋上の高さ
+  : { outer: ["car", "heli", "jr", "walk"].includes(PMODE), mw: ["car", "heli"].includes(PMODE), hmax: PMODE === "heli" };   // 遠景の地形タイル・山陽道・屋上の高さ
 if(PAGE !== "all") document.body.classList.add("page-" + PAGE);
 const renderer = (() => {
   try { return new THREE.WebGLRenderer({canvas, antialias:true, powerPreference:"high-performance", logarithmicDepthBuffer:false}); }
@@ -2310,7 +2310,7 @@ window.__startGate = () => startGate();
 /* v46: play.html の読み込み中の画面（メニューの代わり）と、開始。メニューへ戻るボタンは index.html へ */
 const PlayOv = (() => {
   let el = null, bar = null, txt = null, done = false;
-  const NAMES = { tram: "路面電車", jr: "JR・新幹線", bus: "路線バス", car: "車・トラック・バイク", heli: "ヘリコプター" };
+  const NAMES = { walk:"徒歩", tram: "路面電車", jr: "JR・新幹線", bus: "路線バス", car: "車・トラック・バイク", heli: "ヘリコプター" };
   function mk(){ if(el || done || PAGE !== "play") return; el = document.createElement("div"); el.id = "playload";
     el.innerHTML = '<div class="pl-card"><div class="pl-brand">OKADEN <span>岡山シミュレーター</span></div><div class="pl-mode">' + NAMES[PMODE] + '</div><div class="pl-bar"><i></i></div><div class="pl-txt">読み込み中…</div><a class="pl-back" href="./">メニューへ戻る</a></div>';
     document.body.appendChild(el); bar = el.querySelector(".pl-bar i"); txt = el.querySelector(".pl-txt"); }
@@ -7779,8 +7779,8 @@ const Car = (() => {
   // v14: 建物に入っているか（1m のビット列。無ければ 2m 格子の種類）
   // v37: データ（PLATEAU）の範囲の外（山陽道など）は ext（MW）から高さ・種類・壁を得る
   let ext = null; const inG = (x, z) => G && x >= G.x0 && z >= G.z0 && x < G.x0 + G.nx * G.step && z < G.z0 + G.nz * G.step;
-  function blocked(x, z) {
-    if (ext && ext.blocked(x, z, C.h)) return 1;
+  function blocked(x, z, yref=C.h) {
+    if (ext && ext.blocked(x, z, yref)) return 1;
     if (ext && !inG(x, z)) return 0;
     if (G.B) { const i = Math.floor((x - G.x0) / G.bstep), j = Math.floor((z - G.z0) / G.bstep);
       if (i < 0 || j < 0 || i >= G.bnx || j >= G.bnz) return false;
@@ -8781,9 +8781,9 @@ function beginJR(){
   Trams.populate(null, 0, "none"); Traffic.reset(); }
 $("start").addEventListener("click",()=>{ if($("start").disabled) return; applyMenu(); const sel=document.querySelector(".mode-opt.on"); const m=sel ? sel.dataset.mode : S.mode;
   if(PAGE==="menu"){ try { Prefs.save(); } catch(e){} $("start").disabled=true; $("start-label").textContent="開始の準備中…";
-    const params=new URLSearchParams({m}); if(DriveView.focused) params.set("cab","1"); if(PAGE_VERSION) params.set("v",PAGE_VERSION);
+    const params=new URLSearchParams({m}); if(DriveView.focused) params.set("cab","1"); if(PAGE_VERSION) params.set("v",PAGE_VERSION); if(m==="walk") params.set("start",$("walk-start").value);
     location.href="play.html?"+params; return; }
-  if(m==="car") beginCar(); else if(m==="bus") beginBus(); else if(m==="heli") beginHeli(); else if(m==="jr") beginJR(); else beginRide(); });
+  if(m==="walk") Walk.start(); else if(m==="car") beginCar(); else if(m==="bus") beginBus(); else if(m==="heli") beginHeli(); else if(m==="jr") beginJR(); else beginRide(); });
 function beginHeli(){
   leaveJR(); Clock.reset(); S.mode="heli"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on"); $("carui").classList.remove("on"); $("heliui").classList.add("on");
   Car.stop(); setupRoute("higashi", true); S.pos=S.cum[0]+60;
@@ -8832,6 +8832,7 @@ document.querySelectorAll(".veh-opt").forEach(b=>b.addEventListener("click",()=>
    選んだ乗り物ごとに「あそびかた」（ミッション／自由）を覚える。路面電車とバスは Dia（ダイヤ運行）のオン・オフに、
    車とヘリはミッション（Quest）の有無に対応する。上の行先表示器は選んだ内容をそのまま映す */
 const MENU = {
+  walk:{ic:"walk",title:"徒歩でめぐる岡山",go:{free:"岡山駅前から歩く"},noplay:true},
   tram:{ ic:"tram", title:"路線と車両", go:{ mission:"ダイヤ運行をはじめる", free:"運転をはじめる" },
     play:{ mission:["ダイヤ運行","時刻表どおりに走り、遅れ・早発を採点します"], free:["自由運転","時刻も採点もなし。好きなように走ります"] } },
   jr:  { ic:"jr", title:"路線と車両", go:{ free:"運転をはじめる" }, noplay:true },
@@ -8851,7 +8852,7 @@ function applyMenu(){
   S.play = play;
   if(m === "tram" || m === "bus"){ const d = document.querySelector(".dia-opt"); if(d && d.classList.contains("on") !== mis) d.click(); }   // ダイヤ運行 = ミッション
   const show = (id, v) => { const e = $(id); if(e) e.style.display = v ? "" : "none"; };
-  show("play-wrap", !C.noplay); show("routes-wrap", m === "tram"); show("jr-wrap", m === "jr"); show("bus-note", m === "bus");
+  show("walk-note",m==="walk"); show("play-wrap", !C.noplay); show("routes-wrap", m === "tram"); show("jr-wrap", m === "jr"); show("bus-note", m === "bus");
   show("car-wrap", car); show("car-start-wrap", car && !mis); show("quest-wrap", (car || heli) && mis); show("heli-note", heli && !mis); show("heli-help", heli); show("car-note", car);
   $("mw-start-sel").style.display = (car && S.carStart === "mw") ? "" : "none";
   document.querySelectorAll(".play-opt").forEach(b => { b.classList.toggle("on", b.dataset.play === play); if(C.play){ const t = C.play[b.dataset.play]; b.querySelector(".po-t").firstChild.textContent = t[0]; b.querySelector(".po-s").textContent = t[1]; } });
@@ -8865,6 +8866,7 @@ function applyMenu(){
   if(m === "tram"){ l1 = "路面電車 " + txt(q("#routes .route-opt.on strong")); l2 = txt(q("#routes .route-opt.on .dir")).replace(/（.*$/, ""); }
   else if(m === "jr"){ l1 = txt(q("#jr-routes .route-opt.on strong")) || "JR・新幹線"; l2 = txt(q("#jr-vehs .veh-opt.on b")); }
   else if(m === "bus"){ l1 = "両備バス 314"; l2 = "西大寺線 岡山駅東口 → 東山"; }
+  else if(m==="walk"){ l1="徒歩"; l2="岡山駅前から出発"; }
   else if(car){ ic = truck ? "truck" : bike ? "bike" : "car"; const vl = truck ? "トラック" : bike ? "バイク" : "乗用車", qd = mis ? Quest.def(Quest.sel.car) : null;
     if(mis && qd){ l1 = qd.name; l2 = vl + "　" + "★".repeat(qd.star) + "☆".repeat(3 - qd.star); }
     else { l1 = (truck ? "トラックで" : bike ? "バイクで" : "車で") + "自由に走る"; l2 = vl + "　" + (S.carStart === "mw" ? "山陽自動車道 " + txt(q("#mw-place option:checked")).replace(/（.*$/, "") : "岡山駅前"); } }
@@ -8880,7 +8882,7 @@ function applyMenu(){
   if(!$("start").disabled) $("start-label").textContent = C.go[play] || C.go.free;
 }
 document.querySelectorAll(".mode-opt").forEach(b=>b.addEventListener("click",()=>{ document.querySelectorAll(".mode-opt").forEach(x=>x.classList.remove("on")); b.classList.add("on");
-  S.mode=["car","bus","heli"].includes(b.dataset.mode)?b.dataset.mode:"tram"; applyMenu(); }));
+  S.mode=["car","bus","heli","walk"].includes(b.dataset.mode)?b.dataset.mode:"tram"; applyMenu(); }));
 document.querySelectorAll(".play-opt").forEach(b=>b.addEventListener("click",()=>{ const o=document.querySelector(".mode-opt.on"); if(o) S.playBy[o.dataset.mode]=b.dataset.play; applyMenu(); }));
 document.querySelectorAll(".cveh-opt").forEach(b=>b.addEventListener("click",()=>{ S.cveh=b.dataset.cveh; applyMenu(); }));
 $("menu").addEventListener("click",(e)=>{ if(e.target.closest(".route-opt,.veh-opt,.hstart-opt,.cstart-opt,.cstart-dir,.time-opt,.rain-opt")) setTimeout(applyMenu,0); });
@@ -9545,6 +9547,19 @@ const JR = (() => {
       g.strokeStyle = "#7b8086"; g.lineWidth = 6; g.strokeRect(3, 3, w - 6, h - 6);
     });
   }
+  function platformAt(x,z,station){
+    let best=null;
+    for(const p of D?.platforms||[]){
+      if(station && p.st!==station) continue;
+      let inside=false;
+      for(let i=0,j=p.xy.length-1;i<p.xy.length;j=i++){
+        const a=p.xy[i],b=p.xy[j];
+        if((a[1]>z)!==(b[1]>z) && x<(b[0]-a[0])*(z-a[1])/(b[1]-a[1])+a[0]) inside=!inside;
+      }
+      if(inside && (!best || p.y>best.y)) best=p;
+    }
+    return best;
+  }
   function buildStations(){
     if(!D || !D.platforms || !D.platforms.length) return;
     const G = { top: [], side: [], white: [], yellow: [], roof: [], roofU: [], col: [], fence: [], fenceUV: [], lamp: [], bench: [] };
@@ -10185,7 +10200,7 @@ const JR = (() => {
       if(T.v > 3){ const reach = Math.min(280, 3 * T.v + 30); const dg = T.danger || (T.danger = { danger: true }); for(let d = 8; d <= reach; d += 10){ const s = T.s + T.dir * d; if(elAt(L, s)) continue; pt(L, s, _p); Obs.add(_p.x, _p.z, 3.0, dg, _p.y); } }
     }
   }
-  return { init, update, register, routeDefs, buildRoute, makePlayer, placePlayer, trainLen, begin, end, playerEl, playerTun, aheadGap, _spawn: spawn, get trains(){ return trains; }, get lines(){ return lines; }, get ready(){ return ready; }, get playing(){ return !!PL; }, MODELS };
+  return { init, update, register, routeDefs, platformAt, buildRoute, makePlayer, placePlayer, trainLen, begin, end, playerEl, playerTun, aheadGap, _spawn: spawn, get trains(){ return trains; }, get lines(){ return lines; }, get ready(){ return ready; }, get playing(){ return !!PL; }, MODELS };
 })();
 /* v35: JR の運転用車両。加速は「起動加速度（km/h/s）× 定出力域（knee km/h 以上は反比例）」、抵抗は km/h/s の 2 次式。
    数値は各形式の公表値（起動加速度・常用最大減速度）に近い値を使った簡略モデルで、実車の制御特性そのものではない */
@@ -10206,15 +10221,16 @@ const _cen=new THREE.Vector3();
 function simTraffic(dt){
   MWT.update(dt); Obs.clear(); Trams.registerAll(); Traffic.register(); Peds.register(); JR.register(); MWT.register();
   PLAYER_POS.on=false;
-  if((S.mode==="car"||S.mode==="bus") && Car.C.active){ const C=Car.C, fx=Math.sin(C.yaw), fz=Math.cos(C.yaw), bl=Car.P.len; Obs.addBody(C.x+fx*bl/2, C.z+fz*bl/2, fx, fz, bl, Car.P.wid/2+0.1, PCAR, C.h); _cen.set(C.x,0,C.z);
+  if(Walk.active){ Walk.register(); const p=Walk.position; _cen.set(p.x,0,p.z); }
+  else if((S.mode==="car"||S.mode==="bus") && Car.C.active){ const C=Car.C, fx=Math.sin(C.yaw), fz=Math.cos(C.yaw), bl=Car.P.len; Obs.addBody(C.x+fx*bl/2, C.z+fz*bl/2, fx, fz, bl, Car.P.wid/2+0.1, PCAR, C.h); _cen.set(C.x,0,C.z);
     PLAYER_POS.on=true; PLAYER_POS.x=C.x; PLAYER_POS.z=C.z; PLAYER_POS.r=Car.P.wid/2; PLAYER_POS.pts.length=0;
     for(let u=-bl/2; u<=bl/2+0.01; u+=Math.max(1.5, bl/6)) PLAYER_POS.pts.push([C.x+fx*u, C.z+fz*u]); }
   else if(S.track){ const len=VEH().len, jr=VEH().jr; for(let s=S.pos-1.3; s>S.pos-len; s-=2.6){ if(jr && JR.playerEl(s)) continue; const p=pointAt(s); Obs.add(p.x,p.z,1.25,Trams.PLAYER,p.y); } _cen.copy(pointAt(S.pos));
     if(jr && S.running && S.speed>10){ const v=S.speed/3.6, reach=Math.min(300,3*v+30); for(let d=8; d<=reach; d+=10){ if(JR.playerEl(S.pos+d)) continue; const p=pointAt(S.pos+d); Obs.add(p.x,p.z,3.0,Trams.PLAYER,p.y); } } }
   if(S.mode==="heli" && Heli.H.active){ const f=Heli.focus({x:0,z:0}); _cen.set(f.x, 0, f.z); }
-  else if(S.mode!=="car" && S.mode!=="bus" && !S.running) _cen.copy(camera.position);
+  else if(!Walk.active && S.mode!=="car" && S.mode!=="bus" && !S.running) _cen.copy(camera.position);
   const t = S.t;
-  Trams.update(dt, t); Traffic.update(dt, t, _cen); Peds.update(dt, t, _cen); JR.update(dt, t);
+  Trams.update(dt, t); Traffic.update(dt, t, _cen); Peds.update(dt, t, _cen); if(PMODE!=="walk") JR.update(dt, t);
 }
 /* ---------------- サイドミラー・ルームミラー（v15: 車・バスの運転席視点） ----------------
    ミラーの位置にカメラを置いて後ろ（少し外向き）を写し、左右反転して画面の左右（とルームミラーは上中央）に重ねる。
@@ -12503,6 +12519,559 @@ const TT = (() => {
   return { toggle, setOpen, tick, render, fillFinish, model, get open(){ return open; } };
 })();
 
+
+const Walk=(()=>{
+  const W={active:false,x:0,y:0,z:0,yaw:0,pitch:0,ride:null,feet:0,speed:0};
+  const services=[], keys=new Set(), own={ped:true}, focus=new THREE.Vector3();
+  const ui=$("walk-ui"), status=$("walk-status"), action=$("walk-action"), nearby=$("walk-nearby"), gate=$("walk-gate");
+  let shown=null, drag=null, press=new Map(), cabin=null, lastText="", boardKey="";
+  const bound=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const near=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
+  const interiors=new Map(), stationExits=new Map(), stationDecks=[], seatDir=new THREE.Vector3();
+  function platformAt(x,z,name){
+    const provided=JR.platformAt(x,z,name);
+    if(provided) return provided;
+    for(const d of stationDecks){
+      if(name && name!==d.st) continue;
+      const px=x-d.x,pz=z-d.z;
+      if(Math.abs(px*d.tx+pz*d.tz)<=d.halfL && Math.abs(px*d.tz-pz*d.tx)<=d.halfW) return d;
+    }
+    return null;
+  }
+  function stationDeck(p,t,name){
+    const group=new THREE.Group(), offset=3.02, halfW=1.46, halfL=18;
+    const x=p.x+t.z*offset,z=p.z-t.x*offset,y=p.y+0.95;
+    group.position.set(x,y,z);group.rotation.y=Math.atan2(t.x,t.z);
+    const add=(w,h,l,x,y,z,color)=>{
+      const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,l),new THREE.MeshLambertMaterial({color}));
+      m.position.set(x,y,z);m.receiveShadow=true;group.add(m);
+    };
+    add(halfW*2,0.96,halfL*2,0,-0.48,0,0x8b8c86);
+    add(0.11,0.018,halfL*2,-halfW+0.08,0.008,0,0xefede3);
+    for(let z=-halfL+0.22;z<halfL;z+=0.32) add(0.31,0.025,0.299,-halfW+0.63,0.011,z,0xd5a82c);
+    for(let z=-halfL+1;z<halfL;z+=2) add(0.026,0.023,1.94,halfW-0.14,0.012,z,0xc2c6c1);
+    scene.add(group);
+    stationDecks.push({x,z,y,tx:t.x,tz:t.z,halfL,halfW,st:name});
+    return {x:x-t.z*0.42,z:z+t.x*0.42,y,station:true};
+  }
+  function deck(x,z,y){
+    const pl=platformAt(x,z);
+    if(pl && (y===undefined || Math.abs(pl.y-y)<0.72)) return pl.y;
+    if((x>=-6 && x<=27 && z>=-4.45 && z<=-1.75 || x>=57.4 && x<=84.1 && z>=-5 && z<=-2.75) &&
+      (y===undefined || Math.abs(y-3.16)<0.72)) return 3.16;
+    return Car.hAt(x,z,y);
+  }
+  function usable(x,z,y){
+    const pl=platformAt(x,z);
+    if(pl && Math.abs(pl.y-y)<0.72) return true;
+    return Car.inG(x,z) && Car.pedestrianSurface(x,z)!==9 && !Car.blocked(x,z,y);
+  }
+  function landing(x,z){
+    for(let d=0;d<=10;d+=0.75) for(let i=0;i<(d?12:1);i++){
+      const px=x+d*Math.cos(i*Math.PI/6), pz=z+d*Math.sin(i*Math.PI/6);
+      if(!usable(px,pz) || Car.pedestrianSurface(px,pz)===1) continue;
+      return {x:px,z:pz,y:deck(px,pz,Car.hAt(px,pz))};
+    }
+    return null;
+  }
+  function stopPoint(line,stop){
+    if(stop.pole) return landing(...stop.pole);
+    const s=stop.cen??(stop.arc-3.8), p=pathPt(line.path,s), t=pathTan(line.path,s);
+    if(line.kind==="jr"){
+      for(const side of [1,-1]) for(let d=1.95;d<=8;d+=0.35) for(const u of [0,1,-1,2,-2,4,-4,7,-7]){
+        const x=p.x+t.z*side*d+t.x*u,z=p.z-t.x*side*d+t.z*u, f=platformAt(x,z,stop.name);
+        if(f && Math.abs(f.y-p.y)<2.2 && platformAt(x+t.z*side*0.40,z-t.x*side*0.40,stop.name)) return {x,z,y:f.y,station:true};
+      }
+      if(stop.name==="岡山") return stationDeck(p,t,stop.name);
+      for(const side of [1,-1]){
+        const spot=landing(p.x+t.z*10*side,p.z-t.x*10*side);
+        if(spot && Math.abs(p.y-spot.y)<4) return spot;
+      }
+      return null;
+    }
+    for(const side of [1,-1]){
+      const point=landing(p.x+t.z*2.8*side,p.z-t.x*2.8*side);
+      if(point) return point;
+    }
+    return null;
+  }
+  function add(kind,data,model,offset=0){
+    const path=mkPath(data.track), line={kind,path,model,stops:[],signals:data.signals||[],speed:data.speed,
+      label:data.label,dest:data.dest,travel:0,v:0,index:0,dwell:17,wait:0,done:false,pose:new THREE.Vector3(),dir:new THREE.Vector3()};
+    line.stops=data.stops.map(s=>({...s,entry:stopPoint(line,s)}));
+    if(kind==="jr") line.stops=line.stops.filter(s=>s.entry);
+    while(line.stops.length && !line.stops.at(-1).entry) line.stops.pop();
+    if(line.stops.filter(s=>s.entry).length<2) return;
+    line.key=String(services.length);
+    line.intervals=kind==="tram"?Trams.intervals(path):[];
+    line.held=0; line.first=true;
+    line.dest=line.stops.at(-1).name;
+    line.dwell=kind==="bus"||kind==="jr"?50:17;
+    line.dwellLength=line.dwell;
+    model.userData.walkKey=data.vkey;
+    line.doors=0; line.travel=line.stops[0].arc;
+    if(offset){
+      line.travel=Math.min(line.stops.at(-2).arc,line.travel+offset);
+      line.index=line.stops.findIndex(s=>s.arc>=line.travel);
+      line.dwell=0;
+    }
+    model.visible=true;
+    scene.add(model);
+    services.push(line); place(line);
+  }
+  function place(line){
+    const s=line.travel, path=line.path, g=line.model;
+    pathPt(path,s,line.pose); pathTan(path,s,line.dir);
+    if(line.kind==="bus"){
+      pathPt(path,s-4.6,g.position);
+      const t=pathTan(path,s-4.6);
+      g.rotation.y=Math.atan2(t.x,t.z);
+      setBusDoors(g,line.doors);
+    }else if(line.kind==="jr") JR.placePlayer(g,s,a=>pathPt(path,a));
+    else {
+      placeOn(g,path,s);
+      const joint=g.userData.j;
+      if(joint) joint.visible=true;
+    }
+  }
+  function buildServices(){
+    if(Bus.data?.stops?.length){
+      const b=Bus.data;
+      add("bus",{track:b.path,stops:b.stops,signals:b.signals,label:"両備バス 314 西大寺線",dest:b.dest},makeRyobiBus(b.dest.replace("バスセンター","BC")));
+    }
+    for(const [key,offset] of [["higashi",0],["higashi_r",0],["seiki",1220],["seiki_r",0]]){
+      const r=S.routes[key];
+      if(r) add("tram",{...r,label:"岡電 "+(key.startsWith("higashi")?"東山線":"清輝橋線")},makeVehicle("momo",r.dest),offset);
+    }
+    if(JR.ready){
+      const defs=JR.routeDefs();
+      for(const line of ["sanyo","uno"]){
+        const d=defs.find(r=>r.line===line && r.stops.findIndex(s=>s.name==="岡山")>=0 && r.stops.at(-1).name!=="岡山");
+        if(!d) continue;
+        const key=line==="uno"?"jr_u227_4":"jr_u227_3", r=JR.buildRoute(d,key), track=mkPath(r.track);
+        const stops=r.stops.slice(r.stops.findIndex(s=>s.name==="岡山")).filter(s=>!s.virt && Car.inG(pathPt(track,s.cen).x,pathPt(track,s.cen).z));
+        if(stops.length>=2) add("jr",{...r,stops,dest:stops.at(-1).name,label:d.name},JR.makePlayer(key));
+      }
+    }
+  }
+
+  function panel(kind){
+    const group=new THREE.Group(), tram=kind==="tram", bus=kind==="bus";
+    const width=tram?2.12:bus?2.32:2.70, length=tram?7.4:bus?8.6:16.8, hw=width/2;
+    const doorZ=tram?0:bus?0.55:0, opening=tram?1.12:bus?1.14:1.30;
+    const mat=(color)=>new THREE.MeshLambertMaterial({color});
+    const wood=mat(tram?0x704229:0xc4c2b8), wall=mat(tram?0xbd9d72:0xd9d9cf);
+    const rubber=mat(0x2c3233), metal=mat(0xbbc0bf), yellow=mat(bus?0xe9a52f:0xe2bd48);
+    const carpetTexture=canvasTex(128,128,(c,w,h)=>{
+      noise(c,w,h,tram?"#9b6537":bus?"#444446":"#787671",0.25,1800);
+      if(tram) for(let i=8;i<w;i+=15){c.fillStyle="#634126";c.fillRect(i,0,1,h);}
+    });
+    const fabricTexture=canvasTex(128,128,(c,w,h)=>{
+      noise(c,w,h,bus?"#294a74":tram?"#713e27":"#a44d69",0.34,2900);
+      if(!tram) for(let i=-12;i<128;i+=15) for(let j=4;j<128;j+=12){
+        c.fillStyle=bus?(i%3?"#517695":"#6e8a9a"):"#c48092";c.fillRect(i+j%6,j,4,2);
+      }
+    });
+    const fabric=new THREE.MeshLambertMaterial({map:fabricTexture}), floor=new THREE.MeshLambertMaterial({map:carpetTexture});
+    const lamp=new THREE.MeshBasicMaterial({color:0xf9f0d9});
+    const doors=[], seats=[];
+    function box(w,h,l,x,y,z,m,parent=group){
+      const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,l),m);
+      b.position.set(x,y,z);parent.add(b);return b;
+    }
+    function bar(radius,h,x,y,z,m,parent=group){
+      const b=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,h,10),m);
+      b.position.set(x,y,z);parent.add(b);return b;
+    }
+    const sign=(text,w,h,x,y,z,rot)=>{
+      const map=canvasTex(256,64,(c,a,b)=>{c.fillStyle="#243134";c.fillRect(0,0,a,b);exteriorLettering(c,text,a/2,b/2,26,"#fff6ca",a-12);});
+      const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map}));
+      m.position.set(x,y,z);m.rotation.y=rot;group.add(m);
+    };
+    box(width,0.08,length,0,-0.04,0,floor);
+    box(width,0.10,length,0,2.16,0,wall);
+    box(width*0.78,0.06,length,0,2.10,0,wall);
+    for(const side of [-1,1]){
+      const x=side*hw, leaf=side===-1?-1:1;
+      const segments=[[-length/2,doorZ-opening/2],[doorZ+opening/2,length/2]];
+      for(const [start,end] of segments){
+        const d=end-start, mid=(start+end)/2;
+        box(0.06,0.83,d,x,0.415,mid,wall);
+        box(0.08,0.21,d,x,1.99,mid,wood);
+        box(0.06,0.045,d,x,0.865,mid,metal);
+        for(let z=start+0.11;z<end;z+=tram?1.25:bus?1.14:1.48) box(0.075,1.16,0.10,x,1.41,z,wood);
+      }
+      box(0.10,0.22,opening+0.13,x,2.04,doorZ,wall);
+      for(const edge of [-1,1]) box(0.09,2.0,0.08,x,1,doorZ+edge*(opening/2+0.022),rubber);
+      for(const end of [-1,1]){
+        const p=new THREE.Group(); p.position.set(x,0,doorZ+end*opening*0.25); group.add(p);
+        box(0.055,0.83,opening*0.48,0,0.415,0,wall,p);
+        box(0.055,0.21,opening*0.48,0,1.94,0,wall,p);
+        for(const edge of [-1,1]) box(0.052,1.25,0.036,0,1.36,edge*opening*.22,rubber,p);
+        doors.push({p,base:p.position.z,dir:end,side});
+      }
+      box(0.043,0.015,opening,x-leaf*0.055,0.008,doorZ,yellow);
+      for(const z of [-1.0,1.42])bar(0.023,2.03,side*(hw-0.24),1.02,z,bus||!tram?yellow:metal);
+      box(0.052,0.05,length-0.7,side*(hw-0.35),1.97,0,bus?yellow:metal);
+      box(0.047,0.023,length-0.55,side*0.39,2.063,0,lamp);
+      const row=tram?[-2.35,2.30]:bus?[-3.45,-2.45,2.92,3.81]:[-6.4,-5.54,-4.68,-3.82,-2.96,-2.10,2.1,2.96,3.82,4.68,5.54,6.4];
+      for(const z of row){
+        const x0=side*(hw-0.29), depth=tram?1.62:0.43;
+        box(tram?0.43:0.48,0.105,depth,x0,0.47,z,tram?wood:fabric);
+        if(tram) box(0.085,0.49,depth,side*(hw-0.10),0.74,z,wood);
+        else {
+          const back=z+(!bus && Math.floor(Math.abs(z)*1.16)%2?0.18:-0.18);
+          box(0.49,0.57,0.09,x0,0.735,back,fabric);
+          if(!bus){
+            const inner=side*0.59;
+            box(0.41,0.105,depth,inner,0.47,z,fabric);
+            box(0.41,0.57,0.09,inner,0.735,back,fabric);
+            box(0.026,0.10,depth,side*0.81,0.70,z,metal);
+            seats.push({x:inner,z,w:0.42,d:depth+0.12});
+          }
+        }
+        box(0.06,0.43,depth*0.55,x0,0.22,z,metal);
+        seats.push({x:x0,z,w:0.52,d:depth+0.12});
+      }
+      for(let z=-length/2+0.88;z<length/2-0.6;z+=1.05){
+        if(bus && z<-2.5) continue;
+        bar(0.012,0.11,side*0.44,1.87,z,metal);
+        const loop=new THREE.Mesh(new THREE.TorusGeometry(0.065,0.010,7,16),tram?wood:wall);
+        loop.position.set(side*0.44,1.78,z);loop.rotation.y=Math.PI/2;group.add(loop);
+      }
+    }
+    for(const side of [-1,1]){
+      const z=side*length/2;
+      box(width,0.82,0.08,0,0.41,z,wood);
+      box(width,0.28,0.08,0,2.00,z,wall);
+      const windshield=bus && side>0;
+      const doorWidth=windshield?width-0.38:0.61;
+      const half=(width-doorWidth)/2;
+      for(const direction of [-1,1]) box(half,1.07,0.075,direction*(doorWidth+half)/2,1.35,z,wall);
+      const glass=new THREE.MeshLambertMaterial({color:0x84a8b3,transparent:true,opacity:0.18,side:THREE.DoubleSide,depthWrite:false});
+      box(doorWidth,0.88,0.02,0,1.37,z,glass);
+      box(doorWidth,0.13,0.08,0,0.88,z,wood);
+      box(doorWidth,0.13,0.08,0,1.87,z,wood);
+      sign(bus?"西大寺線":tram?"岡山電気軌道  MOMO":"普通  Urara",0.98,0.22,0,1.99,z-side*0.06,side>0?Math.PI:0);
+    }
+    if(tram || bus){
+      const z=length/2-0.71;
+      box(0.31,1.02,0.36,-0.62,0.51,z,bus?mat(0x626566):mat(0xc77928));
+      sign("運賃箱",0.29,0.09,-0.62,0.94,z-0.19,Math.PI);
+      if(bus){
+        box(0.43,0.75,1.25,0.74,0.38,3.42,wall);
+        box(0.77,0.24,0.23,-0.62,0.12,-3.69,yellow);
+      }
+    }
+    group.visible=false; group.userData={hw,length,doorZ,opening,doors,seats}; scene.add(group);return group;
+  }
+
+
+  function start(){
+    leaveJR(); Car.stop(); Clock.reset(); Snd.init(); Snd.hush();
+    S.mode="walk"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on");
+    if(S.car) S.car.visible=false;
+    Trams.clearAll(); Traffic.reset();
+    buildServices();
+    const startKind=new URLSearchParams(location.search).get("start");
+    const departing=services.find(l=>l.kind===startKind && l.stops[0].entry)||
+      services.find(l=>l.kind==="tram" && l.dest.startsWith("東山"));
+    if(departing) departing.initialOffer=true;
+    const first=departing?.stops[0].entry;
+    const start=first||landing(-74,-17)||landing(-31.2,-59.6);
+    if(!start){ Boot.fail("徒歩の開始地点を読み込めませんでした。",null,true); return; }
+    Object.assign(W,start,{active:true,yaw:0,pitch:0,ride:null});
+    document.body.classList.add("walk-active"); ui.hidden=false; orient();
+  }
+  function orient(){
+    const ride=W.ride, p=W.pitch;
+    let turn=0;
+    if(ride){
+      const s=ride.kind==="bus"?ride.travel-5.5:ride.kind==="jr"?ride.travel-VEHICLES[ride.model.userData.walkKey].len/2:ride.travel-3.65;
+      pathPt(ride.path,s,focus); pathTan(ride.path,s,seatDir);
+      turn=Math.atan2(seatDir.x,seatDir.z);
+      const floor=ride.kind==="bus"?0.36:ride.kind==="jr"?1.04:0.32;
+      cabin.position.set(focus.x,focus.y+floor,focus.z);
+      cabin.rotation.y=turn;
+      const cx=focus.x+seatDir.z*W.ix+seatDir.x*W.iz, cz=focus.z-seatDir.x*W.ix+seatDir.z*W.iz;
+      camera.position.set(cx,focus.y+floor+1.62,cz);
+      const entry=ride.stops[ride.index]?.entry;
+      const doorSide=ride.kind==="bus"?1:entry?Math.sign((entry.x-focus.x)*seatDir.z-(entry.z-focus.z)*seatDir.x):0;
+      for(const d of cabin.userData.doors){
+        const open=d.side===doorSide ? ride.doors : 0;
+        d.p.position.z=d.base+d.dir*cabin.userData.opening*0.49*open;
+      }
+    }else camera.position.set(W.x,W.y+1.66+Math.sin(W.feet*2)*0.025*Math.min(W.speed,1),W.z);
+    const q=camera.position, yaw=W.yaw+turn;
+    camera.lookAt(q.x+Math.sin(yaw)*Math.cos(p),q.y+Math.sin(p),q.z+Math.cos(yaw)*Math.cos(p));
+    if(camera.fov!==67){camera.fov=67;camera.updateProjectionMatrix();}
+  }
+  function announce(s){
+    if(!("speechSynthesis" in window) || !spoken || W.muted) return;
+    speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(s); u.lang="ja-JP"; u.rate=0.94; u.volume=0.65; speechSynthesis.speak(u);
+  }
+  let spoken=false;
+  function boardOrExit(){
+    if(!W.active) return;
+    spoken=true; Snd.init();
+    if(W.ride){
+      const r=W.ride, stop=r.stops[r.index];
+      if(r.dwell<=1.7 || r.doors<0.8 || !stop?.entry || !atDoor()) return;
+      r.model.visible=true; cabin.visible=false;
+      Object.assign(W,stop.entry,{ride:null,yaw:Math.atan2(r.dir.x,r.dir.z),pitch:0,speed:0});
+      if("speechSynthesis" in window)speechSynthesis.cancel(); orient(); refresh(true); return;
+    }
+    const options=boarding(), option=options.find(r=>r.key===$("walk-choices").value)||options[0];
+    if(!option) return;
+    W.ride=option; option.initialOffer=false; option.model.visible=false;
+    if(!interiors.has(option.kind)) interiors.set(option.kind,panel(option.kind));
+    cabin=interiors.get(option.kind); cabin.visible=true;
+    W.ix=0;W.iz=cabin.userData.doorZ; W.yaw=0.35; W.pitch=0; W.speed=0;
+    announce(option.dest+"行きです。次は、"+option.stops[option.index+1].name+"です。");
+    orient(); refresh(true);
+  }
+  function boarding(){
+    const list=[];
+    for(const r of services){
+      const stop=r.stops[r.index];
+      if(r.done || r.index>=r.stops.length-1 || r.dwell<=1.7 || r.doors<0.8 || !stop?.entry) continue;
+      const close=near(W,stop.entry);
+      if(close<(r.kind==="jr"?9:5.0) && Math.abs(W.y-stop.entry.y)<1.7) list.push({r,close});
+    }
+    return list.sort((a,b)=>a.close-b.close).map(x=>x.r);
+  }
+  function atDoor(){ return cabin && Math.abs(W.iz-cabin.userData.doorZ)<1.10; }
+  function movement(dt){
+    const has=k=>keys.has(k)||[...press.values()].includes(k);
+    const f=Number(has("w")||has("arrowup"))-Number(has("s")||has("arrowdown"));
+    const s=Number(has("d"))-Number(has("a"));
+    W.yaw+=dt*1.7*(Number(has("arrowright")||has("e"))-Number(has("arrowleft")||has("q")));
+    if(W.ride){
+      const g=cabin.userData, d=Math.hypot(f,s) || 1;
+      const dx=(Math.sin(W.yaw)*f+Math.cos(W.yaw)*s)*dt*1.25/d;
+      const dz=(Math.cos(W.yaw)*f-Math.sin(W.yaw)*s)*dt*1.25/d;
+      const inside=(x,z)=>Math.abs(x)<g.hw-0.21 && Math.abs(z)<g.length/2-0.29 &&
+        !g.seats.some(q=>Math.abs(q.x-x)<q.w/2+0.13 && Math.abs(q.z-z)<q.d/2+0.14);
+      if(inside(W.ix+dx,W.iz)) W.ix+=dx;
+      if(inside(W.ix,W.iz+dz)) W.iz+=dz;
+      return;
+    }
+    const length=Math.hypot(f,s), speed=(has("shift")?3.25:1.56);
+    const step=length?speed*dt/length:0;
+    const dx=(Math.sin(W.yaw)*f+Math.cos(W.yaw)*s)*step;
+    const dz=(Math.cos(W.yaw)*f-Math.sin(W.yaw)*s)*step;
+    const oldX=W.x,oldZ=W.z;
+    function advance(x,z){
+      if(!usable(x,z,W.y)) return false;
+      for(const [a,b] of [[0.24,0],[-0.24,0],[0,0.24],[0,-0.24]]) if(!usable(x+a,z+b,W.y)) return false;
+      const y=deck(x,z,W.y);
+      if(!Number.isFinite(y)||Math.abs(y-W.y)>0.68 || Obs.hit(x,z,0.2,own,o=>o.ped,y)) return false;
+      W.x=x; W.z=z; return true;
+    }
+    if(step && !advance(W.x+dx,W.z+dz)){
+      if(dx) advance(W.x+dx,W.z);
+      if(dz) advance(W.x,W.z+dz);
+    }
+    W.y=deck(W.x,W.z,W.y);
+    const distance=Math.hypot(W.x-oldX,W.z-oldZ);
+    W.speed+=(distance/Math.max(dt,0.001)-W.speed)*Math.min(1,dt*10);
+    W.feet=(W.feet+distance*4.4)%(Math.PI*2);
+  }
+  function tramClearance(line){
+    let gap=Infinity;
+    for(const q of line.intervals){
+      const block=Trams.blocks[q.b], d=q.s0-5-line.travel;
+      if(block.owner===line && line.travel-18>q.s1+1) block.owner=null;
+      if(line.travel-18>q.s1+1 || d>28) continue;
+      if(!block.owner) block.owner=line;
+      if(block.owner!==line && d>=-0.15) gap=Math.min(gap,Math.max(0,d));
+    }
+    return gap;
+  }
+  const probe=new THREE.Vector3();
+  function service(line,dt){
+    const stop=line.stops[line.index], last=line.index===line.stops.length-1;
+    if(line.done){
+      line.wait-=dt;
+      if(line.wait>0 || W.ride===line) return;
+      line.index=0; line.travel=line.stops[0].arc; line.done=false; line.dwell=line.dwellLength=17;
+      line.model.visible=true; place(line);return;
+    }
+    if(line.dwell>0){
+      line.held+=dt;
+      const waitForPlayer=line.first && line.index===0 && line.kind!=="tram" &&
+        stop.entry && near(W,stop.entry)>10 && line.held<160 && W.ride!==line;
+      const offer=line.initialOffer && line.first && !W.ride && stop.entry && near(W,stop.entry)<6;
+      if((!waitForPlayer && !offer) || line.dwell>8) line.dwell=Math.max(0,line.dwell-dt);
+      line.doors=bound(Math.min((line.dwellLength-line.dwell)/1.3,line.dwell/1.3),0,1);
+      if(last && W.ride===line && line.dwell<3) line.dwell=3;
+      if(line.dwell<=0){
+        if(last){line.done=true;line.wait=56;line.model.visible=false;for(const b of Trams.blocks)if(b.owner===line)b.owner=null;}
+        else {line.index++;line.first=false;line.requested=false;if(W.ride===line) announce("次は、"+line.stops[line.index].name+"です。");}
+      }
+    }else{
+      let gap=Math.min(stop.arc-line.travel,tramClearance(line));
+      for(const sg of line.signals){
+        const distance=(sg.stop??sg.s)-line.travel;
+        if(distance>=0 && distance<gap && sg.g!=null && phaseState(sg.g,sg.ph,S.t)===2) gap=distance;
+      }
+      if(line.kind!=="jr"){
+        const clearance=(line.kind==="bus"?1.1:0.8);
+        for(let d=clearance;d<Math.min(gap,4+line.v*2.6);d+=1.3){
+          pathPt(line.path,line.travel+d,probe);
+          const hit=Obs.hit(probe.x,probe.z,line.kind==="bus"?0.82:0.92,line,o=>o.walkService && (line.kind===o.kind && line.dir.x*o.dir.x+line.dir.z*o.dir.z< -0.6),probe.y);
+          if(hit){gap=Math.min(gap,d-clearance);break;}
+        }
+      }
+      const max=line.kind==="bus"?9.2:line.kind==="jr"?19:10.5;
+      let limit=max;
+      if(line.speed) for(const d of [0,6,14,28]){
+        const k=pathIdx(line.path,Math.min(line.path.len,line.travel+d));
+        const v=(line.speed[k]||max*3.6)/3.6;
+        limit=Math.min(limit,Math.sqrt(v*v+2*1.15*d));
+      }
+      const target=Math.min(limit,Math.sqrt(2*1.15*Math.max(0,gap)));
+      line.v+=bound(target-line.v,-1.85*dt,1.03*dt);
+      line.travel+=Math.min(Math.max(0,gap),line.v*dt);
+      if(stop.arc-line.travel<0.21 && line.v<1){
+        line.travel=stop.arc;line.v=0;line.dwell=line.dwellLength=17;
+        if(W.ride===line) announce(stop.name+"に到着しました。");
+      }
+      line.doors=0;
+    }
+    place(line);
+  }
+  let hudT=0;
+  function refresh(force){
+    if(!force && hudT>0) return;
+    hudT=0.24;
+    const r=W.ride, list=r?[]:boarding(), b=list[0];
+    const choice=$("walk-choices"), key=list.map(l=>l.key).join(",");
+    if(key!==boardKey){
+      const previous=choice.value;
+      choice.replaceChildren(...list.map(l=>new Option(l.label+" "+l.dest+"行き",l.key)));
+      if(list.some(l=>l.key===previous)) choice.value=previous;
+      boardKey=key;
+    }
+    $("walk-choices-label").hidden=list.length<2;
+    if(!r){
+      shown=null; let best=Infinity;
+      for(const l of services) for(const s of l.stops){
+        if(!s.entry) continue;
+        const d=near(W,s.entry);
+        if(d<best){best=d;shown={l,s,d};}
+      }
+    }
+    const s=r?.stops[r.index];
+    const access=stationAccess(); gate.hidden=!access; if(access) gate.textContent=access.name;
+    const allow=!!(r && r.dwell>1.7 && r.doors>=0.8 && s?.entry && atDoor());
+    $("walk-bell").hidden=r?.kind!=="bus";
+    $("walk-bell").disabled=!r || r.dwell>0 || !!r.requested;
+    const title=r?r.label+" · "+r.dest+"行き":"徒歩";
+    $("walk-title").textContent=title;
+    const text=r?(r.dwell>0?s.name+" 停車中":"次は "+s.name+(r.requested?" · 降車リクエスト済み":"")):
+      b?b.label+" "+b.dest+"行きが停車中":
+      shown?shown.s.name+"まで "+Math.round(shown.d)+" m":"近くの停留場を探してください";
+    if(text!==lastText){status.textContent=text;lastText=text;}
+    action.disabled=!(allow||b);
+    action.textContent=r?"降りる [F]":"乗る [F]";
+    nearby.textContent=r?(allow?"扉が開いています":r.dwell>0&&s?.entry?"車内を歩いて扉の近くへ":"停車して扉が開くと降りられます"):
+      shown?shown.l.label+" · "+shown.l.dest+"行き":"";
+  }
+  function tick(dt){
+    if(!W.active) return;
+    hudT-=dt;
+    for(const l of services) service(l,dt);
+    movement(dt);orient();refresh(false);
+    const p=W.ride?W.ride.pose:W;
+    Loc.update(dt,p.x,p.z,W.ride?"乗車中":"徒歩");
+  }
+  function register(){
+    if(!W.active) return;
+    if(!W.ride) Obs.add(W.x,W.z,0.33,own,W.y);
+    for(const l of services){
+      if(l.done || l.kind==="jr") continue;
+      l.walkService=true;
+      const front=l.pose, t=l.dir;
+      l.type=l.kind==="bus"?{name:"bus",l:10.5,w:2.49}:null;
+      l.x=front.x; l.z=front.z; l.dx=t.x; l.dz=t.z;
+      Obs.addBody(front.x,front.z,t.x,t.z,l.kind==="bus"?10.5:18,l.kind==="bus"?1.24:1.15,l,front.y);
+    }
+  }
+  const clear=()=>{keys.clear();press.clear();drag=null;};
+  addEventListener("blur",clear);
+  document.addEventListener("visibilitychange",()=>{if(document.hidden)clear();});
+  addEventListener("keydown",e=>{
+    if(!W.active || typing() || ["SELECT","INPUT","TEXTAREA"].includes(e.target?.tagName) || e.altKey || e.metaKey || e.ctrlKey) return;
+    const k=e.key.toLowerCase();
+    if(k==="f"){if(!e.repeat)boardOrExit(); e.preventDefault();return;}
+    if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright","q","e","shift"].includes(k)){
+      keys.add(k);e.preventDefault();
+    }
+  });
+  addEventListener("keyup",e=>keys.delete(e.key.toLowerCase()));
+  canvas.addEventListener("pointerdown",e=>{
+    if(!W.active || e.button!==0)return;
+    drag={id:e.pointerId,x:e.clientX,y:e.clientY};
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove",e=>{
+    if(!drag||drag.id!==e.pointerId) return;
+    W.yaw-=(e.clientX-drag.x)*0.0048;
+    W.pitch=bound(W.pitch+(drag.y-e.clientY)*0.0044,-1.05,1.05);
+    drag.x=e.clientX;drag.y=e.clientY;
+  });
+  for(const id of ["pointerup","pointercancel","lostpointercapture"]) canvas.addEventListener(id,()=>{drag=null;});
+  for(const b of ui.querySelectorAll("[data-walk]")){
+    b.addEventListener("pointerdown",e=>{press.set(e.pointerId,b.dataset.walk);b.setPointerCapture(e.pointerId);e.preventDefault();});
+    for(const event of ["pointerup","pointercancel","lostpointercapture"]) b.addEventListener(event,e=>press.delete(e.pointerId));
+  }
+  function stationExit(stop,platform){
+    if(stationExits.has(platform.st)) return stationExits.get(platform.st);
+    for(const d of [4,7,10,14,20,28,38,50]) for(let i=0;i<8;i++){
+      const a=i*Math.PI/4, spot=landing(stop.entry.x+Math.cos(a)*d,stop.entry.z+Math.sin(a)*d);
+      if(spot && !platformAt(spot.x,spot.z)){stationExits.set(platform.st,spot);return spot;}
+    }
+    stationExits.set(platform.st,null); return null;
+  }
+  function stationAccess(){
+    if(W.ride) return null;
+    const station=services.find(l=>l.kind==="jr" && l.stops[0].entry?.station);
+    if(!station) return null;
+    const platform=platformAt(W.x,W.z);
+    if(platform && Math.abs(platform.y-W.y)<0.48 && platform.st!=="岡山"){
+      const dep=services.flatMap(l=>l.kind==="jr"?l.stops:[]).find(s=>s.name===platform.st && s.entry?.station);
+      const spot=dep?stationExit(dep,platform):null;
+      if(spot) return {spot,name:platform.st+"駅の駅前へ"};
+    }
+    const entry=station.stops[0].entry;
+    if(!stationExits.has("岡山")) stationExits.set("岡山",landing(-31.2,-59.6));
+    const east=stationExits.get("岡山");
+    if(east && near(W,east)<9 && Math.abs(W.y-east.y)<1.1 && near(W,entry)>4) return {spot:entry,name:"岡山駅のホームへ"};
+    if(east && (platform?.st==="岡山" && Math.abs(W.y-platform.y)<0.72 || near(W,entry)<9 && Math.abs(W.y-entry.y)<1.1)) return {spot:east,name:"岡山駅東口へ"};
+    return null;
+  }
+  gate.addEventListener("click",()=>{
+    const access=stationAccess();
+    if(access){Object.assign(W,access.spot,{speed:0});orient();refresh(true);}
+  });
+  action.addEventListener("click",boardOrExit);
+  $("walk-bell").addEventListener("click",()=>{
+    const l=W.ride;
+    if(l?.kind!=="bus"||l.dwell>0||l.requested) return;
+    l.requested=true; Snd.init(); Snd.ann("bus_request"); refresh(true);
+  });
+  $("walk-menu").addEventListener("click",()=>{if("speechSynthesis" in window)speechSynthesis.cancel();goMenuPage();});
+  $("walk-audio").addEventListener("click",e=>{
+    spoken=true;W.muted=!W.muted;e.currentTarget.setAttribute("aria-pressed",String(!!W.muted));
+    e.currentTarget.textContent=W.muted?"放送オフ":"放送オン";
+    if(W.muted && "speechSynthesis" in window) speechSynthesis.cancel();
+  });
+  return {start,tick,register,get active(){return W.active;},get position(){return W.ride?W.ride.pose:W;}};
+})();
+
+
 function loop(now){
   const elapsed=Math.max(0,(now-last)/1000); last=now;
   const driving=S.mode==="bus" || (S.mode==="tram" && S.running);
@@ -12518,19 +13087,20 @@ function loop(now){
     Snd.carSound(Car.C); }
   if(S.mode!=="car" && S.mode!=="bus") Snd.carSound(Car.C);   // 他のモードでは車・バスの音を止めておく
   { const carM = S.mode==="car" || S.mode==="bus";   // v41.14: 雨音（走っているときだけ。運転席・運転台の中では小さく）
-    const live = carM ? Car.C.active : S.mode==="heli" ? Heli.H.active : S.running;
+    const live = Walk.active || (carM ? Car.C.active : S.mode==="heli" ? Heli.H.active : S.running);
     const inCab = carM ? Car.C.view==="driver" : (S.mode==="tram" && S.view==="cab");
     Snd.rainSound(dt, !!(Env.st.rain && live), S.mode==="heli" ? "heli" : inCab ? "cab" : "out"); }
   Stamps.tick(dt);   // v41.15: 岡山めぐり
   if(S.mode!=="heli") Snd.heliSound(Heli.H);
   Snd.audioSpace(); Snd.ambience(dt);
-  if(S.mode==="car"||S.mode==="bus"){}
+  if(Walk.active){ S.t+=dt; S.clock+=dt; Walk.tick(dt); }
+  else if(S.mode==="car"||S.mode==="bus"){}
   else if(S.mode==="heli"){ S.t+=dt; S.clock+=dt; Heli.tick(dt); if(S.car) S.car.visible=false; Heli.updateCam(dt); Heli.hud(); Loc.update(dt, Heli.H.x, Heli.H.z, ""); Snd.heliSound(Heli.H); }
   else if(S.running){ advanceDriving(tick,dt); if(S.track){ const p=pointAt(S.pos); Loc.update(dt, p.x, p.z, S.route && S.route.name ? S.route.name.replace(/（.*$/,"") : ""); } } else { S.t+=dt; if(S.track && $("menu").style.display!=="none"){ S.pos=S.cum[0]+40+((S.t*5)%Math.max(1,S.endArc-120)); } }
   Quest.tick(dt); Rules.tick(dt); Taxi.tick(dt); Nav.tick(dt);
   NaviMap.update(dt);
   lampT+=dt; if(lampT>0.25){ lampT=0; updateLamps(S.t); }
-  if(S.mode!=="car" && S.mode!=="bus" && S.mode!=="heli") updateCamera(dt);
+  if(S.mode!=="car" && S.mode!=="bus" && S.mode!=="heli" && !Walk.active) updateCamera(dt);
   { const hk = S.mode==="heli" && Heli.H.active ? Heli.fogK : 1;   // v17: 高い所では霧・描画距離を遠く
     scene.fog.near = FOG_BASE.near*hk; scene.fog.far = FOG_BASE.far*hk; const cf = hk>1 ? 14000 : 3500; if(camera.far!==cf){ camera.far=cf; camera.updateProjectionMatrix(); } }
   if(window.__camfix){ const c=window.__camfix; camera.position.set(c.pos[0],c.pos[1],c.pos[2]); camera.lookAt(c.look[0],c.look[1],c.look[2]); if(c.fov && camera.fov !== c.fov){ camera.fov = c.fov; camera.updateProjectionMatrix(); } }   // 確認用の固定カメラ
