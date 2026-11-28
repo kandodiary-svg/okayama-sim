@@ -421,8 +421,10 @@ const FACADE_UNIFORMS = { uSkyTop:{value:new THREE.Color(0x7fa7cf)}, uSkyHor:{va
    建物の特定は住所 → 国土地理院の住所検索 → PLATEAU の建物の平面形（+1.2m）。小さい建物から順に判定（大きい平面形が隣の建物を含むため）。
    type: 1 色の違うガラス板のカーテンウォール / 2 反射ガラスのカーテンウォール / 3 横ルーバー / 4 壁に四角い窓 / 5 バルコニーの住宅の塔。
    値: [type, 板の幅 m, 階の高さ m, 低層部の高さ m] [壁の色, 建物の高さ m] [差し色, 上の帯の高さ m] [ガラスの色, 窓の幅の割合]
-   店名・看板の文字は入れない（看板は色の帯だけ） */
+   9: シンフォニービル / 10: 天満屋岡山本店。現地の文字は独立した看板メッシュで描く。 */
 const LANDMARKS = [
+  { id:3067, name:"太陽生命岡山ビル（中山下1-2-3）：淡灰のパネルに奥まった窓の縦列", poly:[[706.72,10.97],[725.70,11.06],[725.61,30.20],[706.63,30.11]], v:[[4,2.34,3.42,4.3],[0.84,0.84,0.81,33.0],[0.53,0.55,0.54,0.0],[0.22,0.31,0.39,0.68]] },
+  { id:3069, name:"東山の SaSa Cake の建物：ベージュの壁と細長い青灰の窓", poly:[[2111.46,1038.91],[2117.15,1038.89],[2117.18,1050.50],[2111.50,1050.52]], v:[[4,1.78,3.45,3.3],[0.81,0.78,0.69,11.5],[0.59,0.54,0.46,0.0],[0.23,0.31,0.36,0.65]] },
   { id:1739, name:"ホテルエリアワン岡山（幸町7-1）：ベージュの壁に横長の窓とバルコニーの帯", poly:[[-30.9, 395.9], [-29.6, 437.9], [-11.4, 437.3], [-12.6, 397.5], [-17.8, 397.6], [-17.9, 395.5]], v:[[4,2.00,3.20,4.0],[0.80,0.74,0.62,37.0],[0.55,0.50,0.42,0.0],[0.18,0.20,0.22,0.88]] },
   { id:1033, name:"餃子の店（本町）：低い店", poly:[[244.2, 20.8], [244.4, 29.9], [249.1, 29.7], [248.9, 20.8]], v:[[4,2.00,3.30,3.5],[0.82,0.80,0.76,8.0],[0.60,0.60,0.60,0.0],[0.15,0.17,0.20,0.40]] },
   { id:1496, name:"シティホーム（本町）：黄色い壁", poly:[[248.2, 20.2], [248.3, 31.6], [254.2, 31.6], [254.4, 21.8], [252.6, 20.2]], v:[[4,2.60,3.30,3.5],[0.95,0.80,0.12,11.0],[0.80,0.66,0.08,0.0],[0.14,0.16,0.20,0.38]] },
@@ -452,17 +454,17 @@ const LANDMARKS = [
   { id:67, name:"新光ビル岡山（駅前町1-8-1）：青い反射ガラスのカーテンウォール、屋上に白い塔", poly:[[98.3, -48.8], [98.5, -28.1], [118.9, -28.1], [118.9, -48.8]], v:[[2,1.60,3.80,4.5],[0.90,0.90,0.89,38.0],[0.72,0.75,0.78,7.0],[0.16,0.42,0.78,0.40]] },
   { id:234, name:"朝日生命岡山桃太郎大通ビル（野田屋町1-1-15）：ベージュの壁に小さな窓", poly:[[323.6, -52.7], [323.7, -30.5], [351.0, -31.3], [350.9, -52.8]], v:[[4,3.20,3.40,4.0],[0.70,0.64,0.52,34.0],[0.55,0.50,0.41,0.0],[0.12,0.15,0.18,0.30]] },
   { id:276, name:"明治安田生命岡山ビル（駅前町1-9-15）：白い壁に奥まった四角い窓", poly:[[220.9, -44.9], [220.9, -34.0], [222.1, -33.9], [222.1, -29.2], [250.8, -29.3], [256.4, -33.4], [256.4, -50.2], [222.0, -50.1], [222.1, -45.1]], v:[[4,2.20,3.60,4.5],[0.92,0.91,0.88,44.0],[0.50,0.50,0.48,0.0],[0.08,0.10,0.12,0.58]] },
-  { id:264, name:"リベールタワー（平和町1-1）：白いバルコニーの住宅の塔、低層は青緑のガラス", poly:[[299.0, 30.9], [299.6, 51.8], [301.7, 51.8], [301.8, 54.3], [320.3, 53.8], [320.1, 47.1], [324.1, 47.0], [324.3, 53.5], [339.0, 53.0], [338.8, 46.7], [339.9, 46.4], [339.4, 28.6], [337.6, 28.7], [337.4, 20.5], [334.6, 20.6], [334.5, 19.0], [309.9, 19.7], [307.2, 23.1], [305.1, 23.4], [305.1, 25.4], [302.9, 25.4], [302.9, 28.1], [301.7, 28.1]], v:[[5,3.40,3.00,16.0],[0.93,0.93,0.92,77.0],[0.72,0.77,0.80,0.0],[0.18,0.34,0.40,0.00]] },
+  { id:264, name:"ルミノ平和町（平和町1-1）：白灰のバルコニーの住宅の塔、低層は青緑のガラス", poly:[[299.0, 30.9], [299.6, 51.8], [301.7, 51.8], [301.8, 54.3], [320.3, 53.8], [320.1, 47.1], [324.1, 47.0], [324.3, 53.5], [339.0, 53.0], [338.8, 46.7], [339.9, 46.4], [339.4, 28.6], [337.6, 28.7], [337.4, 20.5], [334.6, 20.6], [334.5, 19.0], [309.9, 19.7], [307.2, 23.1], [305.1, 23.4], [305.1, 25.4], [302.9, 25.4], [302.9, 28.1], [301.7, 28.1]], v:[[5,3.40,3.00,16.0],[0.93,0.93,0.92,77.0],[0.72,0.77,0.80,0.0],[0.18,0.34,0.40,0.00]] },
   { id:114, name:"ワシントンホテルプラザ・桃太郎プラザ（本町3-6）：白いタイルの壁に小さな四角い窓、最上部は横長の窓", poly:[[189.4, 20.3], [189.7, 55.0], [227.8, 55.1], [227.8, 54.2], [241.0, 54.0], [240.9, 49.2], [242.6, 49.1], [242.5, 27.4], [240.7, 27.3], [240.7, 19.8]], v:[[4,2.60,3.00,8.5],[0.90,0.89,0.86,46.0],[0.62,0.62,0.60,5.5],[0.16,0.22,0.30,0.36]] },
-  { id:255, name:"成通岡山ビル（駅前町1-1-1）：青の濃淡のガラス板のカーテンウォール、屋上に白い看板の箱", poly:[[-29.7, -47.9], [-13.5, -27.8], [48.4, -27.8], [48.1, -49.1], [42.2, -48.9], [41.8, -69.5], [-25.5, -68.1]], v:[[1,1.40,1.75,5.0],[0.94,0.94,0.93,51.0],[0.80,0.13,0.13,13.0],[0.20,0.42,0.72,22.00]] },
+  { id:255, name:"成通岡山ビル（駅前町1-1-1）：青の濃淡のガラス板のカーテンウォール、屋上に白い看板の箱", poly:[[-29.7, -47.9], [-13.5, -27.8], [48.4, -27.8], [48.1, -49.1], [42.2, -48.9], [41.8, -69.5], [-25.5, -68.1]], v:[[1,1.40,1.75,5.0],[0.94,0.94,0.93,51.0],[0.80,0.13,0.13,13.0],[0.23,0.38,0.49,22.00]] },
   { id:41, name:"ICOTNICOT（旧ドレミの街、駅前町1-8-18）：明るい灰色の横ルーバー、上に黒い帯、低層は店の入口", poly:[[99.2, -67.0], [99.3, -47.8], [119.2, -47.8], [119.2, -28.1], [212.4, -28.3], [212.4, -64.0], [210.9, -64.0], [210.9, -70.8], [103.5, -70.6]], v:[[3,2.40,0.32,7.0],[0.84,0.85,0.86,43.0],[0.12,0.12,0.13,3.5],[0.10,0.12,0.13,20.00]] },
   { id:2000, name:"グレースタワー（野田屋町1-11-1、32 階）：ベージュの太い格子に奥の深いバルコニー、低層は濃い灰色（v56: Wikimedia Commons の写真を参考）", poly:[[522.5,-56.6],[517.9,-56.5],[517.2,-55.9],[517.9,-39.2],[541.7,-39.9],[541.8,-44.2],[545.7,-44.2],[546.1,-47.3],[548.4,-48.1],[547.2,-80.7],[532.4,-80.5],[531.9,-79.7],[532.1,-72.5],[523.7,-72.1],[523.7,-64.0],[522.4,-63.2]], v:[[5,3.30,3.10,7.5],[0.70,0.66,0.61,109.0],[0.55,0.60,0.62,0.0],[0.26,0.27,0.28,0.45]] },
   { id:2002, name:"グレースタワー II（野田屋町）：同じベージュの格子とバルコニー", poly:[[552.6,-94.5],[553.1,-82.7],[556.7,-82.3],[557.0,-74.2],[553.7,-74.0],[553.1,-73.2],[553.4,-68.2],[555.0,-67.0],[557.3,-67.0],[557.3,-65.4],[555.4,-64.7],[555.8,-61.7],[561.2,-61.8],[561.7,-65.0],[566.9,-65.4],[566.9,-72.9],[581.8,-73.8],[580.7,-96.7],[570.4,-96.3],[570.2,-89.8],[569.4,-89.8],[568.7,-95.7],[553.2,-95.2]], v:[[5,3.20,3.10,7.0],[0.71,0.67,0.62,100.0],[0.55,0.60,0.62,0.0],[0.26,0.27,0.28,0.45]] },
   { id:2001, name:"NTT クレド岡山（中山下1-8-45）：クリーム色のタイルに小さな四角い窓、最上部はガラスの格子（v56: Wikimedia Commons の写真を参考）", poly:[[619.9,229.9],[619.1,230.8],[618.5,277.0],[619.2,277.6],[632.7,277.7],[632.7,284.6],[622.1,284.6],[621.4,285.2],[621.3,294.8],[621.9,295.4],[624.9,295.5],[624.9,301.6],[622.0,302.3],[621.9,311.2],[620.8,312.0],[620.8,318.8],[624.9,323.7],[626.1,326.5],[674.4,328.5],[676.1,325.2],[678.9,322.5],[679.2,316.6],[681.5,316.4],[685.7,312.7],[686.0,317.1],[689.0,317.2],[689.7,316.5],[689.3,298.9],[678.9,298.6],[679.4,287.6],[682.3,287.5],[682.9,286.8],[682.5,276.4],[686.0,276.3],[686.6,275.6],[686.7,268.0],[684.6,267.3],[684.9,240.5],[686.7,239.8],[686.6,233.0],[665.9,232.3],[665.9,229.2],[665.1,228.6],[657.1,228.5],[656.5,230.3]], v:[[4,3.00,3.80,5.0],[0.86,0.81,0.71,100.0],[0.22,0.26,0.30,13.0],[0.20,0.30,0.40,0.42]] },
   { id:2015, name:"住友生命岡山ビル（柳町1-1-1、1977 年）：ブロンズ色の細い格子に青い反射ガラス（v57: Wikimedia Commons の写真を参考）", poly:[[-19.5,630.9],[-18.7,631.7],[7.9,630.3],[6.7,600.4],[-20.5,601.5]], v:[[4,1.60,3.70,5.0],[0.40,0.36,0.31,76.0],[0.30,0.27,0.24,0.0],[0.32,0.46,0.58,0.80]] },
   { id:2127, name:"アークホテル岡山（下石井2-6-1）：白いタイルに小さな窓、最上部は白い金属の目隠し（v57）", poly:[[-144.9,533.7],[-145.6,534.5],[-143.5,586.6],[-109.1,585.5],[-109.3,571.5],[-114.7,569.3],[-116.9,565.6],[-116.6,563.5],[-113.7,559.7],[-112.3,555.5],[-109.6,555.4],[-109.0,554.6],[-111.4,499.5],[-114.4,499.3],[-114.7,496.8],[-119.2,495.2],[-123.5,494.9],[-128.3,495.7],[-132.4,497.4],[-131.2,533.1]], v:[[4,2.80,2.90,4.5],[0.90,0.88,0.83,43.0],[0.90,0.90,0.88,9.0],[0.18,0.20,0.22,0.30]] },
-  { id:2137, name:"天満屋岡山本店（表町2-1-1）：白い壁に横長の窓の帯、上の階は窓の無い白い縦じまの壁（v57）", poly:[[825.0,375.2],[822.5,449.1],[823.1,449.9],[826.4,450.0],[826.0,462.6],[869.0,464.5],[870.5,432.5],[869.8,431.8],[862.9,431.5],[863.2,423.9],[870.6,423.9],[871.1,416.2],[872.8,415.6],[874.7,361.7],[869.2,361.1],[868.5,359.6],[828.3,358.2],[827.6,358.9],[827.3,366.8],[809.0,367.2],[809.4,375.1]], v:[[4,3.00,4.20,5.0],[0.90,0.89,0.85,43.0],[0.88,0.87,0.83,12.0],[0.22,0.26,0.28,0.92]] },
-  { id:2020, name:"岡山シンフォニービル（表町1-5-1）：上は白い帯と青いガラスの帯の円筒、下は紺の窓の無い箱（v57）", poly:[[897.7,10.6],[897.0,11.3],[896.5,32.0],[897.1,32.8],[899.3,32.8],[899.3,46.2],[896.7,46.2],[896.1,46.9],[895.7,68.8],[970.6,72.7],[970.7,68.9],[968.5,68.3],[968.6,66.2],[970.2,66.2],[970.7,65.4],[970.1,24.6],[968.4,23.9],[968.0,21.2],[966.0,21.0],[965.8,19.0],[963.6,18.8],[963.4,16.7],[961.4,16.4],[961.2,14.3],[959.0,14.1],[958.8,12.1],[956.7,11.8],[956.3,9.9]], v:[[4,3.00,4.00,4.0],[0.88,0.90,0.92,62.0],[0.30,0.33,0.48,22.0],[0.30,0.45,0.62,0.0]] },
+  { id:2137, name:"天満屋岡山本店（表町2-1-1）：白い壁に横長の窓の帯、上の階は窓の無い白い縦じまの壁（v57）", poly:[[825.0,375.2],[822.5,449.1],[823.1,449.9],[826.4,450.0],[826.0,462.6],[869.0,464.5],[870.5,432.5],[869.8,431.8],[862.9,431.5],[863.2,423.9],[870.6,423.9],[871.1,416.2],[872.8,415.6],[874.7,361.7],[869.2,361.1],[868.5,359.6],[828.3,358.2],[827.6,358.9],[827.3,366.8],[809.0,367.2],[809.4,375.1]], v:[[10,1.63,4.15,4.7],[0.88,0.87,0.84,43.0],[0.74,0.72,0.69,12.0],[0.18,0.23,0.27,0.64]] },
+  { id:2020, name:"岡山シンフォニービル（表町1-5-1）：青銅色とガラスの円筒頂部、紫の中層、灰色の石の低層（Street View 2025-03）", poly:[[897.7,10.6],[897.0,11.3],[896.5,32.0],[897.1,32.8],[899.3,32.8],[899.3,46.2],[896.7,46.2],[896.1,46.9],[895.7,68.8],[970.6,72.7],[970.7,68.9],[968.5,68.3],[968.6,66.2],[970.2,66.2],[970.7,65.4],[970.1,24.6],[968.4,23.9],[968.0,21.2],[966.0,21.0],[965.8,19.0],[963.6,18.8],[963.4,16.7],[961.4,16.4],[961.2,14.3],[959.0,14.1],[958.8,12.1],[956.7,11.8],[956.3,9.9]], v:[[9,1.75,3.26,10.5],[0.61,0.60,0.56,62.0],[0.33,0.31,0.39,21.0],[0.26,0.40,0.51,0.68]] },
   { id:2012, name:"ライオンズタワー岡山表町（表町1-1-8、2007 年）：白いバルコニーの住宅の塔（v57）", poly:[[834.1,24.3],[834.1,29.9],[833.2,30.8],[833.3,38.5],[834.9,39.8],[835.2,42.4],[838.8,43.6],[839.5,45.1],[855.9,44.9],[857.1,42.9],[857.1,23.2],[858.6,22.5],[858.4,13.0],[856.3,12.2],[837.4,12.1],[836.0,13.2],[833.8,13.5],[833.4,23.5]], v:[[5,3.20,3.00,6.0],[0.90,0.90,0.89,78.0],[0.60,0.66,0.72,0.0],[0.20,0.25,0.30,0.00]] },
   { id:2039, name:"岡山駅前ユニバーサルホテル（幸町9-6）：白いタイルに小さな窓（v57）", poly:[[40.6,502.4],[39.9,503.2],[39.7,525.2],[51.4,525.8],[52.4,519.1],[52.6,502.9]], v:[[4,2.60,2.90,4.0],[0.92,0.91,0.88,51.0],[0.70,0.70,0.68,0.0],[0.16,0.18,0.20,0.30]] },
   { id:2436, name:"アパホテル（下石井1-3-12）：赤茶色のタイルに小さな窓（v57）", poly:[[-473.8,438.0],[-474.5,438.6],[-474.5,441.7],[-490.3,442.4],[-489.9,456.1],[-475.7,456.0],[-475.2,458.9],[-467.5,458.9],[-467.4,460.7],[-466.7,461.2],[-436.5,460.0],[-437.3,437.7],[-443.7,437.7],[-444.1,440.8],[-445.3,440.8],[-445.4,438.3],[-446.2,437.7],[-453.0,438.0],[-453.5,441.1],[-467.4,441.5],[-467.9,437.9]], v:[[4,2.60,3.00,4.5],[0.58,0.27,0.20,30.0],[0.45,0.20,0.15,0.0],[0.16,0.18,0.20,0.36]] },
@@ -512,23 +514,6 @@ const FROOM_GLSL = `
       return ic;
     }
 `;
-// v59: 看板の文字の形（実在しない漢字風の画。店名やロゴは書かない）。u = 1 文字の中の位置 0..1、h = 文字ごとの乱数
-const GLYPH_GLSL = `
-float glyph(vec2 u, float h){
-  if(u.x < 0.1 || u.x > 0.9 || u.y < 0.08 || u.y > 0.92) return 0.0;
-  float w = 0.06, m = 0.0;
-  float b1 = fract(h * 13.1), b2 = fract(h * 71.7), b3 = fract(h * 157.3), b4 = fract(h * 313.9);
-  m = max(m, step(abs(u.y - 0.84), w) * step(0.45, b1) * step(mix(0.1, 0.5, step(0.75, b2)), u.x));
-  m = max(m, step(abs(u.y - 0.5), w) * step(0.2, b2) * step(mix(0.1, 0.5, step(0.65, b3)), u.x));
-  m = max(m, step(abs(u.y - 0.16), w) * step(0.3, b3));
-  m = max(m, step(abs(u.x - 0.5), w) * step(0.3, b4) * step(mix(0.0, 0.5, step(0.8, b1)), u.y));
-  m = max(m, step(abs(u.x - 0.18), w) * step(0.5, fract(b1 + b4)) * step(u.y, mix(0.92, 0.5, step(0.6, b2))));
-  m = max(m, step(abs(u.x - 0.82), w) * step(0.55, b2) * step(mix(0.08, 0.5, step(0.5, b4)), u.y));
-  m = max(m, step(abs((u.x - 0.5) + (u.y - 0.5) * mix(-0.9, 0.9, step(0.5, b3))), w * 1.2) * step(0.78, b1));
-  m = max(m, step(abs(u.y - 0.33), w) * step(abs(u.x - 0.5), 0.2) * step(0.85, b4));
-  return m;
-}
-`;
 function facadeMaterial(kind){
   const t=facadeTex(kind);
   if(kind==="station"){ t.repeat.set(0.01,0.01); return new THREE.MeshLambertMaterial({map:t, vertexColors:true}); }
@@ -537,9 +522,9 @@ function facadeMaterial(kind){
   m.onBeforeCompile=(sh)=>{
     sh.uniforms.uSkyTop=FACADE_UNIFORMS.uSkyTop; sh.uniforms.uSkyHor=FACADE_UNIFORMS.uSkyHor; sh.uniforms.uLM = LANDMARK_U;
     sh.vertexShader = "attribute float aSpec; attribute float aGH; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + sh.vertexShader.replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\n vSpec = aSpec; vGH = aGH; vSW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
-    const SIGN_P = { shop: 0.92, office: 0.80, curtain: 0.62, apt: 0.50, house: 0.14, house_old: 0.18 }[kind] || 0.0;
-    sh.uniforms.uSignP = { value: SIGN_P };   // v59: 一様変数で渡す（後から重ねる夜の窓の処理が customProgramCacheKey を上書きし、種類の違う建物が同じプログラムを共有して #define の値が最初の種類のものになっていた）
-    sh.fragmentShader = "uniform float uSignP;\n#define SIGN_P uSignP\n" + GLYPH_GLSL + "uniform vec3 uSkyTop; uniform vec3 uSkyHor; uniform vec4 uLM[" + (LANDMARKS.length * 4) + "]; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + FROOM_GLSL + sh.fragmentShader
+    const storefront={shop:0.82,office:0.32,curtain:0.27,apt:0.15,house:0.07,house_old:0.13}[kind]||0;
+    sh.uniforms.uStorefront={value:storefront};
+    sh.fragmentShader = "uniform float uStorefront; uniform vec3 uSkyTop; uniform vec3 uSkyHor; uniform vec4 uLM[" + (LANDMARKS.length * 4) + "]; varying float vSpec; varying float vGH; varying vec3 vSW;\n" + FROOM_GLSL + sh.fragmentShader
       .replace("#include <map_fragment>", `
         vec2 fuv = vUv; float flr = floor(fuv.y); vec2 frc = fract(fuv);
         vec2 tuv = vec2(frc.x, flr < 0.5 ? frc.y*0.5 : 0.5 + frc.y*0.5);
@@ -642,40 +627,29 @@ function facadeMaterial(kind){
           vec3 wN3 = normalize(cross(dFdx(vSW), dFdy(vSW))); float alw3 = dot(vSW.xz, normalize(vec2(-wN3.z, wN3.x) + 1e-5));
           vec2 tc = vec2(alw3 / 0.24, vSW.y / 0.07); float tN = fract(sin(dot(floor(tc + vec2(0.5 * mod(floor(tc.y), 2.0), 0.0)), vec2(12.9898, 78.233))) * 43758.5453);
           float near = 1.0 - smoothstep(0.03, 0.09, length(fwidth(tc * 0.07)));
-          fac *= 1.0 + isTile * near * (tN - 0.5) * 0.10;
+          vec2 grout=min(fract(tc),1.0-fract(tc));
+           float seam=1.0-smoothstep(0.024,0.024+max(0.04,length(fwidth(tc))),min(grout.x,grout.y));
+           fac *= 1.0 + isTile * near * ((tN-0.5)*0.10-seam*0.13);
           diffuseColor.rgb *= mix(vec3(1.0), fac, wallF * 0.85); }
-        // v58: 縦長の看板（壁の端の柱間に、2 階から上へ数階分。テナントの名前の帯の代わりに色と白い字の形だけ）
-        if(flr > 0.5 && vSpec < 0.5 && fract(bk * 7.7) < SIGN_P && fract(sin(dot(vec2(mod(cell.x, 97.0), bk * 31.0), vec2(12.9898, 78.233))) * 43758.5453) < 0.3){
-          float nF = 2.0 + floor(fract(bk * 9.1) * 5.0);
-          if(flr <= nF){
-            float vx = step(0.10, frc.x) * step(frc.x, 0.50) * step(0.04, frc.y) * step(frc.y, 0.97);
-            float qv = fract(bk * 31.7 + cell.x * 0.37);
-            vec3 vc = qv < 0.2 ? vec3(0.75, 0.12, 0.10) : qv < 0.38 ? vec3(0.12, 0.30, 0.64) : qv < 0.52 ? vec3(0.94, 0.93, 0.90) : qv < 0.66 ? vec3(0.95, 0.74, 0.10) : qv < 0.8 ? vec3(0.12, 0.46, 0.28) : vec3(0.10, 0.10, 0.11);
-            vec3 vt = (qv > 0.38 && qv < 0.66) ? vec3(0.12, 0.12, 0.14) : vec3(0.98);
-            float cy = frc.y * 3.0; vec2 gu = vec2((frc.x - 0.12) / 0.36, fract(cy));
-            float aaV = 1.0 - smoothstep(0.03, 0.09, max(fwidth(frc.x), fwidth(frc.y)));
-            float ch = mix(0.28 * step(0.0, gu.x) * step(gu.x, 1.0), glyph(gu, fract(sin(flr * 17.0 + floor(cy) * 5.3 + bk * 91.0 + cell.x * 3.1) * 437.5)), aaV);
-            vec3 vs = mix(vc, vt, ch);
-            diffuseColor.rgb = mix(diffuseColor.rgb, vs, vx); glassF *= 1.0 - vx; gEm = mix(gEm, vs * 0.3, vx);
-          }
-        }
-        // v58: 1 階の店の上の看板の帯（店ごとの色・白い文字の帯）と日よけ。実際の通りの写真のように 1 階に色を足す（店名は書かない）
-        if(flr < 0.5 && vSpec < 0.5){
-          float shX = floor(cell.x * 0.5), shF = fract(cell.x * 0.5) * 2.0;   // 2 柱間で 1 軒の店
-          float sP = fract(sin((shX * 3.71 + bk * 41.3) * 12.9898) * 43758.5453), sQ = fract(sP * 7.31 + bk * 3.1);
-          if(sP < SIGN_P){
-            vec3 sc = sQ < 0.16 ? vec3(0.72, 0.10, 0.10) : sQ < 0.30 ? vec3(0.10, 0.28, 0.62) : sQ < 0.42 ? vec3(0.12, 0.48, 0.26) : sQ < 0.52 ? vec3(0.92, 0.70, 0.08) : sQ < 0.62 ? vec3(0.90, 0.42, 0.10) : sQ < 0.74 ? vec3(0.94, 0.93, 0.90) : sQ < 0.84 ? vec3(0.12, 0.12, 0.13) : sQ < 0.92 ? vec3(0.55, 0.12, 0.42) : vec3(0.08, 0.55, 0.62);
-            float band = step(0.72, frc.y) * step(frc.y, 0.99) * (shF < 0.5 ? step(0.02, frc.x) : step(frc.x, 0.98));
-            float sx2 = (shF + frc.x) * 0.5, nC = mix(8.0, 13.0, sQ); float tx = fract(sx2 * nC); float aaT = 1.0 - smoothstep(0.03, 0.09, max(fwidth(frc.x), fwidth(frc.y)) * 1.5);
-            float txt = step(0.78, frc.y) * step(frc.y, 0.95) * step(0.12, sx2) * step(sx2, mix(0.5, 0.86, sP / max(SIGN_P, 0.01))) * mix(0.3, glyph(vec2(tx, (frc.y - 0.78) / 0.17), fract(sin(floor(sx2 * nC) * 7.7 + shX * 3.3 + bk * 51.0) * 437.5)), aaT);
-            vec3 tc = (sQ > 0.42 && sQ < 0.52) || (sQ > 0.62 && sQ < 0.74) ? vec3(0.12, 0.12, 0.14) : vec3(0.97, 0.97, 0.95);
-            float aaS = 1.0 - smoothstep(0.08, 0.25, max(fwidth(frc.x), fwidth(frc.y)) * 6.0);
-            vec3 sg = mix(sc, tc, txt);
-            diffuseColor.rgb = mix(diffuseColor.rgb, sg, band); glassF *= 1.0 - band; gEm = mix(gEm, sg * 0.25, band);
-            // 日よけ（3 軒に 1 軒くらい。看板の下の斜めの布）
-            float aw = step(0.60, frc.y) * step(frc.y, 0.72) * step(0.55, fract(sQ * 13.7));
-            vec3 awc = mix(sc, vec3(0.96), step(0.5, fract(frc.x * 8.0)) * step(0.85, fract(sQ * 5.3)));
-            diffuseColor.rgb = mix(diffuseColor.rgb, awc * mix(0.85, 1.0, (frc.y - 0.60) / 0.12), aw); glassF *= 1.0 - aw;
+        // 店名が確認できない区画は、入口・腰壁・シャッターなどの部材で表現する。
+        if(flr<0.5 && vSpec<0.5){
+          float bay=floor(cell.x*0.5), part=(2.0*fract(cell.x*0.5)+frc.x)*0.5;
+          float rnd=fract(sin((bay*3.71+bk*41.3)*12.9898)*43758.5453);
+          if(rnd<uStorefront){
+            float finish=fract(rnd*11.3+bk*3.16);
+            vec3 metal=finish<0.22 ? vec3(0.28,0.31,0.31) : finish<0.55 ? vec3(0.50,0.46,0.41) : vec3(0.65,0.64,0.60);
+            float inset=smoothstep(0.04,0.075,part)*(1.0-smoothstep(0.92,0.97,part));
+            float fascia=inset*smoothstep(0.76,0.80,frc.y)*(1.0-smoothstep(0.91,0.96,frc.y));
+            float sill=inset*(1.0-smoothstep(0.11,0.17,frc.y));
+            float soffit=inset*smoothstep(0.70,0.73,frc.y)*(1.0-smoothstep(0.75,0.81,frc.y));
+            float door=1.0-smoothstep(0.02,0.06,abs(part-0.51));
+            float shutter=inset*(1.0-smoothstep(0.70,0.77,frc.y))*step(0.74,finish);
+            float rows=frc.y*39.0;
+            float slats=(0.91+0.09*smoothstep(0.17,0.57,fract(rows)))*(1.0-smoothstep(0.21,0.78,fwidth(rows)))+0.94*smoothstep(0.21,0.78,fwidth(rows));
+            diffuseColor.rgb=mix(diffuseColor.rgb,metal*(1.0-0.28*soffit),max(fascia,max(sill,soffit)));
+            diffuseColor.rgb=mix(diffuseColor.rgb,vec3(0.66,0.65,0.62)*slats,shutter);
+            diffuseColor.rgb=mix(diffuseColor.rgb,metal*0.76,door*glassF*(1.0-shutter));
+            glassF*=1.0-max(shutter,max(fascia,max(sill,soffit)));
           }
         }
         // v49: 写真資料（Wikimedia Commons、出典は画面下の注記）に合わせた個別の外壁（駅前〜西川の主な建物）。vSpec = 建物の番号（0 は一般の建物）
@@ -694,13 +668,50 @@ function facadeMaterial(kind){
           #define LINE(c, w, aa) (1.0 - smoothstep(w, w + aa, c))
           vec3 col = Bw.rgb; float gl = 0.0;
           float dxm = min(lf.x, 1.0 - lf.x) * A.y, dym = min(lf.y, 1.0 - lf.y) * A.z;
-          if(ty < 1.5 && Dg.w > 1.5 && wn.z > 0.6){   // 1b: 南面（大通り側）: 上は灰青のガラスの格子、下（Dg.w m まで）は白い菱形の格子の外装（v51: 街の写真を参考）
+          if(ty>9.5){  // 天満屋: 淡い外壁、窓の縦枠、バス通路側に連続する庇の影
+            float above=step(A.w,hg), top=step(H-Cc.w,hg);
+            float west=step(0.68,-wn.x);
+            float win=above*(1.0-top)*step(0.14,lf.x)*step(lf.x,0.78)*step(0.20,lf.y)*step(lf.y,0.85);
+            float dense=mix(1.0,step(fract(al/17.0),0.64),west);
+            win*=dense;
+            float reveals=max(LINE(dxm,0.042,aw),LINE(dym,0.030,ah));
+            float soffit=(1.0-smoothstep(0.10,1.2,abs(hg-A.w)))*west;
+            col=Bw.rgb*(0.94+0.055*r1-0.12*soffit-0.07*reveals);
+            col=mix(col,Cc.rgb*mix(0.88,1.0,smoothstep(0.07,0.34,fract(al/0.5))),top);
+            col=mix(col,Dg.rgb*(0.75+0.32*r1),win); gl=win;
+            if(hg<A.w){
+              float section=fract(al/19.0);
+              float entrance=mix(step(0.12,section)*step(section,0.56),step(0.24,section)*step(section,0.46),west);
+              float jamb=step(0.08,lf.x)*step(lf.x,0.92);
+              float low=entrance*jamb*step(0.48,hg)*step(hg,A.w-0.9);
+              col=mix(col*mix(0.81,1.0,smoothstep(0.26,0.54,hg)),vec3(0.19,0.24,0.25),low);
+              gl=low; gEm=vec3(0.14,0.12,0.09)*low*0.17;
+            }
+          } else if(ty>8.5){  // 城下: 灰色の基壇・紫の円筒と上部の窓の帯
+            float mist=smoothstep(0.18,0.67,max(fwidth(al/0.19),fwidth(hg/0.11)));
+            vec2 tile=fract(vec2(al/0.19,hg/0.11));
+            float joint=(1.0-smoothstep(0.025,0.085,min(min(tile.x,1.0-tile.x),min(tile.y,1.0-tile.y))))*(1.0-mist);
+            if(hg>=H-Cc.w){
+              float ring=smoothstep(0.20,0.26,lf.y)*(1.0-smoothstep(0.70,0.77,lf.y));
+              float frame=LINE(dxm,0.029,aw);
+              col=mix(vec3(0.68,0.65,0.59)*(0.93+0.09*r1),Dg.rgb*(0.80+0.34*r1),ring*(1.0-frame));
+              gl=ring*(1.0-frame);
+            } else if(hg>A.w){ col=Cc.rgb*(0.95+0.06*r1-0.15*joint); }
+            else {
+              float cut=step(0.31,lf.x)*step(lf.x,0.63)*step(0.22,lf.y)*step(lf.y,0.81);
+              float interval=step(fract(al/10.2),0.62);
+              gl=cut*interval*step(2.9,hg);
+              col=mix(Bw.rgb*(0.77+0.15*r1-0.12*joint),Dg.rgb*0.67,gl);
+            }
+          } else if(ty < 1.5 && Dg.w > 1.5 && (wn.z > 0.6 || wn.x > 0.65)){  // 成通岡山ビル: 低層は淡いパネル、上層は銀の細い方立のガラス
             if(hg < Dg.w){
-              vec3 bk2 = vec3(0.60, 0.64, 0.67) * (0.92 + 0.1 * fract(sin(dot(floor(vec2(al / 1.2, hg / 1.2)), vec2(12.9, 78.2))) * 437.5));
+              vec2 panelUV=fract(vec2(al/1.38,hg/1.37));
+              float panelJoint=max(LINE(min(panelUV.x,1.0-panelUV.x)*1.38,0.020,aw),LINE(min(panelUV.y,1.0-panelUV.y)*1.37,0.021,ah));
+              vec3 bk2=vec3(0.69,0.72,0.70)*(0.95+0.09*fract(sin(dot(floor(vec2(al/1.38,hg/1.37)),vec2(12.9,78.2)))*437.5));
               float u1 = fract((al + hg) / 2.4), u2 = fract((al - hg) / 2.4);
               float dl = min(min(u1, 1.0 - u1), min(u2, 1.0 - u2)) * 2.4 * 0.707;
               float lat = 1.0 - smoothstep(0.07, 0.07 + max(aw, ah), dl);
-              col = mix(bk2, vec3(0.82, 0.84, 0.85), lat); gl = 0.35 * (1.0 - lat);
+              col=mix(bk2*(1.0-0.32*panelJoint),vec3(0.84,0.85,0.83),lat*0.60*step(0.6,wn.z)); gl=0.18*(1.0-panelJoint);
             } else {   // 上はガラス板のモザイク（他の面と同じ）
               col = r1 < 0.36 ? Dg.rgb * vec3(0.38, 0.45, 0.55) : r1 < 0.72 ? Dg.rgb : mix(Dg.rgb, vec3(0.62, 0.76, 0.9), 0.55);
               col *= 0.92 + 0.16 * fract(r1 * 7.1); gl = 0.55;
@@ -725,11 +736,12 @@ function facadeMaterial(kind){
             // 上の方の小さな窓の列
             float wr = step(H - 9.5, hg) * step(hg, H - 7.6) * step(abs(fract(al / 4.6) - 0.5), 0.13);
             col = mix(col, vec3(0.05, 0.06, 0.07), wr); gl = wr;
-            if(Dg.w > 0.5 && hg > A.w && hg < Dg.w){   // v52: 中ほどの帯は白と灰色の菱形の板（ICOTNICOT）。板（2.4m 角）ごとに模様を変える
+            if(Dg.w > 0.5 && hg > A.w && hg < min(Dg.w,A.w+8.0)){   // ICOTNICOT: 庇上の幾何学パネル。2025年4月の通り側を参考
               vec2 pq = vec2(al, hg) / 2.4; vec2 pc2 = floor(pq), pf = fract(pq);
               float rp = fract(sin(dot(pc2, vec2(12.99, 78.23))) * 43758.5);
               vec2 dq = abs(fract((pf + vec2(pf.y, -pf.x)) * (rp < 0.5 ? 3.0 : 5.0)) - 0.5);
-              float dm = step(max(dq.x, dq.y), 0.3);
+              float qsize=max(fwidth(al),fwidth(hg));
+              float dm=(1.0-smoothstep(0.25,0.30+qsize,max(dq.x,dq.y)))*(1.0-smoothstep(0.12,0.5,qsize));
               vec3 c1 = rp < 0.33 ? vec3(0.90, 0.90, 0.89) : rp < 0.66 ? vec3(0.66, 0.67, 0.68) : vec3(0.55, 0.53, 0.47);
               col = mix(c1, c1 * 0.78, dm * (1.0 - smoothstep(0.3, 0.7, fwidth(pq.x) * 8.0)));
               col = mix(col, vec3(0.38, 0.39, 0.40), LINE(min(pf.x, 1.0 - pf.x) * 2.4, 0.03, aw)); gl = 0.0;
@@ -844,7 +856,7 @@ function facadeMaterial(kind){
           float fres = 0.28 + 0.55*pow(1.0 - clamp(dot(-vd, normal),0.0,1.0), 3.0);
           outgoingLight = mix(outgoingLight, sky, glassF * (1.0 - frameF) * (flr < 0.5 ? 0.4 * fres : mix(fres * (lmOn > 0.5 ? 0.85 : 0.68), 0.55 + 0.4 * fres, mirF))) + gEm * glassF; }`);
   };
-  m.customProgramCacheKey = () => "fac58_" + kind;   // v58: 種類ごとに 1 階の看板の多さが違う（SIGN_P）
+  m.customProgramCacheKey = () => "fac67_" + kind;
   return m;
 }
 
@@ -1678,38 +1690,73 @@ const ShopSigns = (() => {
     const ppm = 96, W = Math.max(64, Math.min(2048, Math.round(S.w * ppm))), H = Math.max(64, Math.min(2048, Math.round(S.h * ppm)));
     return canvasTex(W, H, (g, w, h) => {
       g.clearRect(0, 0, w, h);
-      if(S.bg){ g.fillStyle = S.bg; g.fillRect(0, 0, w, h); g.strokeStyle = "rgba(0,0,0,0.18)"; g.lineWidth = Math.max(2, h * 0.02); g.strokeRect(1, 1, w - 2, h - 2); }
+      if(S.bg){
+        g.fillStyle=S.bg; g.fillRect(0,0,w,h);
+        if(S.finish==="wood"){
+          for(let i=0;i<22;i++){
+            const y=h*(i+0.5)/22;
+            g.strokeStyle=i%3 ? "rgba(255,211,156,0.055)" : "rgba(16,8,3,0.15)";
+            g.lineWidth=Math.max(1,h/95); g.beginPath(); g.moveTo(0,y); g.lineTo(w,y+Math.sin(i)*h*0.015); g.stroke();
+          }
+        }
+        if(S.accent){ g.fillStyle=S.accent; g.fillRect(0,0,w*(S.vert ? 0.15 : 1),h*(S.vert ? 1 : 0.10)); }
+        g.strokeStyle="rgba(0,0,0,0.20)"; g.lineWidth=Math.max(2,Math.min(w,h)*0.018);
+        g.strokeRect(1,1,w-2,h-2);
+      }
       g.fillStyle = S.fg; g.textAlign = "center"; g.textBaseline = "middle";
-      const latin = /^[\x20-\x7e]+$/.test(S.text), fam = latin ? "'Helvetica Neue',Arial," + FONT_JA : FONT_JA;
+      const latin=/^[\x20-\x7e]+$/.test(S.text);
+      const fam=S.letterStyle==="mincho" ? "'Yu Mincho','Hiragino Mincho ProN','Noto Serif JP',serif" :
+        S.letterStyle==="italic" ? "Georgia,'Times New Roman',serif" : latin ? "'Helvetica Neue',Arial,"+FONT_JA : FONT_JA;
+      if(S.rings){
+        g.lineWidth=h*0.061; g.strokeStyle=S.fg;
+        for(const x of [0.381,0.619]){
+          g.beginPath(); g.ellipse(w*x,h*0.50,w*0.237,h*0.407,0,0,Math.PI*2); g.stroke();
+        }
+      }
       if(S.vert){   // 縦書き（1 字ずつ上から）
-        const n = [...S.text].length, fs = Math.min(w * 0.72, h * 0.86 / n); g.font = "bold " + Math.floor(fs) + "px " + fam;
-        [...S.text].forEach((ch, i) => g.fillText(ch, w / 2, h / 2 + (i - (n - 1) / 2) * fs * 1.08));
+        const n=[...S.text].length, fs=Math.min(w*(S.accent ? 0.65 : 0.78),h*0.86/(n*1.08));
+        g.font="bold "+Math.floor(fs)+"px "+fam;
+        [...S.text].forEach((ch,i)=>g.fillText(ch,w*(S.accent ? 0.565 : 0.5),h/2+(i-(n-1)/2)*fs*1.08));
         return; }
-      const lines = S.sub ? [[S.text, 0.56], [S.sub, 0.26]] : [[S.text, 0.74]];
-      let y = h * (S.sub ? 0.40 : 0.53);
+      const sideways=!!S.sideways, width=sideways ? h : w, height=sideways ? w : h;
+      if(sideways){ g.save(); g.translate(w/2,h/2); g.rotate(Math.PI/2); g.translate(-width/2,-height/2); }
+      const lines=S.sub ? [[S.text,0.56],[S.sub,0.26]] : [[S.text,S.rings ? 0.39 : 0.74]];
+      let y = height * (S.sub ? 0.40 : 0.53);
       for(const [t, k] of lines){
-        let fs = h * k; g.font = "bold " + Math.floor(fs) + "px " + fam;
-        const mw = g.measureText(t).width; if(mw > w * 0.9){ fs *= w * 0.9 / mw; g.font = "bold " + Math.floor(fs) + "px " + fam; }
-        g.fillText(t, w / 2, y); y += h * (S.sub ? 0.38 : 0); }
+        const weight=S.letterStyle==="italic" ? "italic bold " : "bold ";
+        let fs=height*k; g.font=weight+Math.floor(fs)+"px "+fam;
+        const maxWidth=width*(S.rings ? 0.62 : 0.9), mw=g.measureText(t).width;
+        if(mw>maxWidth){ fs*=maxWidth/mw; g.font=weight+Math.floor(fs)+"px "+fam; }
+        g.fillText(t,width/2,y); y+=height*(S.sub ? 0.38 : 0);
+      }
+      if(sideways) g.restore();
     });
   }
   async function build(){
     if(made) return; made = true;
-    let L = null; try { L = await getJSON("data/signs.json"); } catch(e){ return; }
+    let L = null; try { L = await getJSON("data/signs.json"+(PAGE_VERSION ? "?v="+PAGE_VERSION : "")); } catch(e){ return; }
     if(!L) return;
     const grp = new THREE.Group(); grp.name = "shopsigns";
     for(const S of L){
       const t = tex(S);
-      const m = new THREE.MeshLambertMaterial({ map: t, transparent: !S.bg, alphaTest: S.bg ? 0 : 0.4, side: S.blade ? THREE.DoubleSide : THREE.FrontSide,
+      const m = new THREE.MeshLambertMaterial({ map: t, transparent: !S.bg, alphaTest: S.bg ? 0 : 0.36, side:THREE.FrontSide,
         emissive: S.glow ? 0x2a2a2a : 0x000000, emissiveMap: S.glow ? t : null, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
       if(S.glow) Env.patch(m, "signs");
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(S.w, S.h), m);
+      const panel=new THREE.PlaneGeometry(S.w,S.h);
+      const mesh = new THREE.Mesh(panel, m);
       mesh.position.set(S.c[0], S.c[1], S.c[2]); mesh.rotation.y = Math.atan2(S.n[0], S.n[1]);
       mesh.castShadow = !!S.bg; mesh.receiveShadow = true; mesh.userData.sign = S.text;
       grp.add(mesh);
+      if(S.blade){
+        const back=new THREE.Mesh(panel,m);
+        back.position.copy(mesh.position).addScaledVector(new THREE.Vector3(S.n[0],0,S.n[1]),-0.085);
+        back.rotation.y=mesh.rotation.y+Math.PI; back.receiveShadow=true; back.userData.sign=S.text; grp.add(back);
+      }
       if(S.bg && !S.blade){   // 箱の看板は厚みを付ける（横から見て紙にならないよう）
-        const box = new THREE.Mesh(new THREE.BoxGeometry(S.w, S.h, 0.2), new THREE.MeshLambertMaterial({ color: 0x8c8f92 }));
-        box.position.set(S.c[0] - S.n[0] * 0.11, S.c[1], S.c[2] - S.n[1] * 0.11); box.rotation.y = mesh.rotation.y; grp.add(box); }
+        const depth=S.finish==="wood" ? 0.12 : 0.18;
+        const box=new THREE.Mesh(new THREE.BoxGeometry(S.w,S.h,depth),new THREE.MeshLambertMaterial({color:new THREE.Color(S.bg).multiplyScalar(0.72)}));
+        box.position.copy(mesh.position).addScaledVector(new THREE.Vector3(S.n[0],0,S.n[1]),-depth/2-0.007);
+        box.rotation.y=mesh.rotation.y; grp.add(box); }
       if(S.blade){   // 袖看板の腕（壁と看板をつなぐ 2 本）
         for(const dy of [-0.4, 0.4]){ const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.5), new THREE.MeshLambertMaterial({ color: 0x55585b }));
           const nx = S.n[1], nz = -S.n[0];   // 壁の外向き（看板の面と直角）
@@ -1719,6 +1766,42 @@ const ShopSigns = (() => {
   }
   return { build };
 })();
+/* 中納言の正面。撮影資料から確認した瓦庇・木枠・腰板を、実測モデルの壁面に合わせる。 */
+function buildChunagonStorefront(){
+  const front=new THREE.Group();
+  front.name="廣榮堂・中納言の木造店構え";
+  front.position.set(1665.07,4.74,876.91);
+  front.rotation.y=Math.atan2(-0.166,0.986);
+  const materials={
+    frame:new THREE.MeshLambertMaterial({color:0x443126}),
+    wood:new THREE.MeshLambertMaterial({color:0x714a36}),
+    glass:new THREE.MeshPhongMaterial({color:0x37403d,shininess:65,specular:0x7d8784}),
+    tile:new THREE.MeshLambertMaterial({color:0x454440})
+  };
+  function panel(w,h,d,x,y,z,name){
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),materials[name]);
+    mesh.position.set(x,y,z); mesh.castShadow=true; mesh.receiveShadow=true; front.add(mesh);
+    return mesh;
+  }
+  panel(7.5,0.40,0.12,0,0.24,0.08,"wood");
+  panel(7.55,0.16,0.14,0,2.13,0.10,"frame");
+  for(let i=0;i<5;i++){
+    const x=(i-2)*1.46;
+    panel(1.39,1.65,0.065,x,1.25,0.09,"glass");
+    panel(1.40,0.078,0.10,x,1.19,0.14,"wood");
+    panel(0.08,1.69,0.10,x,1.25,0.14,"frame");
+  }
+  for(let i=0;i<=5;i++) panel(0.12,2.34,0.19,(i-2.5)*1.46,1.23,0.12,"wood");
+  const overhang=panel(8.03,0.14,1.0,0,2.93,0.37,"tile");
+  overhang.rotation.x=0.19;
+  const ribs=new THREE.InstancedMesh(new THREE.BoxGeometry(0.087,0.054,1.0),materials.tile,32);
+  const tilePose=new THREE.Object3D(); tilePose.rotation.x=0.19;
+  for(let i=0;i<32;i++){
+    tilePose.position.set((i-15.5)*0.246,3.015,0.37); tilePose.updateMatrix(); ribs.setMatrixAt(i,tilePose.matrix);
+  }
+  ribs.castShadow=true; ribs.receiveShadow=true; front.add(ribs);
+  scene.add(front);
+}
 const OrthoPages = (() => {
   let ovTex = null, OV = null, active = false;
   const tex = [], loading = new Set(), regs = new Map(), pmats = new Map(), omats = new Map();
@@ -2205,6 +2288,7 @@ async function loadAll(){
   await _memlog("signals");
   try { const pj = await JP.peds; if(pj) Peds.init(pj); } catch(e){ console.warn("peds", e); }
   ShopSigns.build().catch(e => console.warn("signs", e));   // v50: 店名・看板
+  buildChunagonStorefront();
   try { StreetProps.build(); } catch(e){ console.warn("props", e); }   // v51: 電停の上屋・花壇・屋上の鉄骨・大型ビジョン
   await _memlog("peds");
   try { const jj = await JP.jr; if(jj){ JR.init(jj); buildJRPicker(); } } catch(e){ console.warn("jr", e); }
@@ -2351,7 +2435,8 @@ const Stream = (() => {
   }
   // x,z の周りを読み込む（wait=true なら全部読み終わるまで待つ）
   async function update(x, z, wait, waitDist){
-    if(!S.scene || !S.scene.tiles) return;
+    // 屋根材と地面高さが揃う前に壁タイルを作ると、個別外壁の属性が付かない。
+    if(!S.scene?.tiles || !S._ortho || (S.scene.drive && !Car.G)) return;
     const want = wanted(x, z, 0), keep = wanted(x, z, HYST);
     for(const fk of [...loaded.keys()]) if(!keep.has(fk)) unload(fk);
     // 近いものから
@@ -3747,7 +3832,6 @@ function mat(c, atlas, ortho){
     case "fence": m = new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide}); break;
     case "leaf": m = leafShader(new THREE.MeshLambertMaterial({vertexColors:true, side:THREE.DoubleSide})); break;
     case "vend": m = new THREE.MeshLambertMaterial({map:vendTex(), side:THREE.DoubleSide, emissive:0x555555, emissiveMap:vendTex()}); break;
-    case "signs": m = new THREE.MeshLambertMaterial({map:signsTex(), side:THREE.DoubleSide, emissive:0x2a2a2a, emissiveMap:signsTex()}); break;
     case "arcroof": m = new THREE.MeshPhongMaterial({vertexColors:true, map:arcRoofTex(), side:THREE.DoubleSide, transparent:true, opacity:0.78, shininess:80, specular:0xb8c4cc, emissive:0x303234, depthWrite:false}); break;
     case "wafu": m = new THREE.MeshLambertMaterial({map:wafuTex(), side:THREE.DoubleSide}); break;
     case "kawara": m = new THREE.MeshLambertMaterial({map:kawaraTex(), vertexColors:true, side:THREE.DoubleSide}); break;
@@ -3922,7 +4006,7 @@ function catPoleColor(c, q, cl){
 function buildChunks(chunks, bufs, atlas, ortho){
   for(const c of chunks){
     if(c.layer==="veg" && Trees.active && (c.nrm!==undefined || c.mat==="color")) continue;   // v48: 木の樹冠・幹は画面側で作る（Trees）。植え込み（cover）だけ使う
-    if(c.layer==="signal") continue;   // v19
+    if(c.layer==="signal" || c.mat==="signs") continue;   // 合成の業種別看板は使用しない。実在の看板は ShopSigns が描画する。
     if(c.layer==="stop" && typeof StreetProps!=="undefined" && bufs[c.file]) StreetProps.hideOldRoof(c, new Int16Array(bufs[c.file], c.pos, c.count*3), bufs[c.file]);   // v51: 信号機は車線の信号データから画面側で作る（buildSignalsFromTraffic）
     if(c.layer==="cat" && bufs[c.file] && c.col!==undefined) catPoleColor(c, new Int16Array(bufs[c.file], c.pos, c.count*3), new Uint8Array(bufs[c.file], c.col, c.count*4));
     const buf=bufs[c.file]; if(!buf) continue; const geo=new THREE.BufferGeometry();
@@ -3968,8 +4052,8 @@ function buildChunks(chunks, bufs, atlas, ortho){
     if(c.layer==="bldg" && c.mat==="ortho" && Car.G){ const rp = RoofProps.build(c, q); if(rp){ rp.userData.file = c.file; world.add(rp); } }   // v55: 屋上の縁・設備
   }
 }
-/* v16: 自動販売機の前面（4 種）と袖看板（4×4 種。店名ではなく業種の一般名だけ） */
-let _vendT=null, _signT=null;
+/* 自動販売機の前面（4 種） */
+let _vendT=null;
 function vendTex(){
   if(_vendT) return _vendT;
   _vendT = canvasTex(512,256,(g,w,h)=>{
@@ -3984,21 +4068,6 @@ function vendTex(){
       g.fillStyle=k===2?"#1f5fae":"#fff"; g.font="bold 15px sans-serif"; g.fillText("つめた〜い", x0+14, 170);
     } });
   _vendT.wrapS=_vendT.wrapT=THREE.ClampToEdgeWrapping; return _vendT;
-}
-function signsTex(){
-  if(_signT) return _signT;
-  const words=["ラーメン","居酒屋","喫茶","薬","歯科","美容室","不動産","焼肉","うどん","書店","眼科","カラオケ","寿司","ホテル","学習塾","整骨院"];
-  const bg=["#b3261e","#1d3f86","#f4efe2","#2d6a3e","#f0c419","#222","#7a3d9a","#e86a1c"];
-  _signT = canvasTex(1024,1024,(g,w,h)=>{
-    for(let k=0;k<16;k++){ const x0=(k%4)*256, y0=(3-Math.floor(k/4))*256, b=bg[k%bg.length];
-      g.fillStyle=b; g.fillRect(x0,y0,256,256); g.strokeStyle="rgba(255,255,255,.85)"; g.lineWidth=8; g.strokeRect(x0+10,y0+10,236,236);
-      const dark = b==="#f4efe2"||b==="#f0c419"; g.fillStyle=dark?"#1b1b1b":"#fff";
-      // 縦書き（上から下）。看板の面は 幅 0.75m × 高さ 約 3m に 1 マス（256×256）を貼るので、縦を 1/4 に縮めて描く（貼ると正方形の字になる）
-      const t=words[k]; const n=t.length, sM=Math.min(0.6, 2.5/n), fs=Math.floor(sM*341);
-      g.font="bold "+fs+"px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.textAlign="center"; g.textBaseline="middle";
-      for(let i=0;i<n;i++){ g.save(); g.translate(x0+128, y0+128+(i-(n-1)/2)*fs*0.27); g.scale(1,0.25); g.fillText(t[i],0,0); g.restore(); } }
-  });
-  _signT.wrapS=_signT.wrapT=THREE.ClampToEdgeWrapping; return _signT;
 }
 /* アーケードの屋根: 半透明のパネル（乳白）と鉄骨の枠 */
 /* v17: 和風の建物（後楽園）・瓦・石垣の手続き的テクスチャ。UV は 100 倍の整数 */

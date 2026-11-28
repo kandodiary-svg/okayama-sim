@@ -1079,7 +1079,8 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
         <li>路面電車・車・バスの加減速: 一般的な性能値による</li>
         <li>中心部の外の建物の外壁（色・窓割り）: PLATEAU の用途・構造・建築年・階数から推定（写真ではありません）</li>
         <li>中心部の外の道路の車道と歩道の分け方: PLATEAU の道路の範囲を、OSM の道路の種類・車線数で分けて推定。PLATEAU に道路面の無い道路（中心部の外の車道の約1.1%）は、OSM の中心線から幅を推定して作成</li>
-        <li>夜の窓明かり: 乱数で点灯（実際の窓の位置とは一致しません）。袖看板は業種の一般名だけ（実在の店名ではありません）</li>
+        <li>看板と主な建物: Google ストリートビュー（岡山駅前・桃太郎大通り・城下・天満屋・中納言・東山など）、店舗公式資料、PLATEAU の形状を参照して再現。看板の表記と外観は資料の撮影時点に基づきます。</li>
+        <li>夜の窓明かり: 点灯する窓は推定です。</li>
         <li>後楽園の建物の屋根材・岡山城の石垣の質感: 推定。岡山城天守のライトアップは、毎日 日没〜24時の白色の照明を再現（期間限定の色は再現していません）</li>
       </ul>
     </div>
@@ -1120,4 +1121,4 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
 <script>window.THREE||document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')</script>
 <script>window.THREE||window.OkadenBoot.fail("3D の部品（three.js）を読み込めませんでした。インターネットの接続を確認してください。",null,true)</script>
 <script>window.OKA_PAGE="menu";</script>
-<script src="okaden.js?v=9473e4f052"></script>
+<script src="okaden.js?v=e2d5a0bc0a"></script>

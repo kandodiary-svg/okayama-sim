@@ -81,3 +81,11 @@ build_v5.py の大きな格子の計算は行の帯ごとに行います（結�
 - v65: 車内放送と走行音を更新。始発・発車・接近・降車の放送を順に再生し、メニューへの移動や消音で予約も停止。車内外の帯域と音量、走行音の自動調整、車種別のベル・駆動音・ドア・ワイパー、バスの排気音、周囲の交通音を調整。
 - v64a: バスモードが停車中のバスに重なって始まっていた（v62 で 13 番のりばなどに置いたバス）。data/bus.json の経路から 2.8〜3.2m 以内には停車中の車を置かない
 - v66: 運転台の視点を先頭車の前後の台車に合わせ、勾配・曲線・制動で見え方が変わるようにした。路面電車のミラーを窓枠側に取り付け、鉄道の運転席では Q/E で左右を確認できる。バスは扉の閉鎖と発進操作の後に停留ブレーキを解除し、R または画面のギア操作で後退を選ぶ。鉄道・バスの運転席で「運転席に集中」（F2）を押すと、地図・スコア・経路の目印などを隠せる。揺れの量は車種を参考に調整した近似。
+- v67: 外壁の架空文字と自動配置の業種看板を削除。店名が確認できない場所は、窓枠・腰壁・シャッターなどの部材で表現した。駅前のガラスと金属パネル、イコットニコットの低層パネル、太陽生命岡山ビル、城下のシンフォニービル、天満屋、中納言の廣榮堂、東山の店先は、下記の外観資料とPLATEAUの壁面を参照。袖看板は夜間も両側から正方向に読める。看板の個別出典は `data/signs.json` の `src` に記録。
+
+### v67 の外観資料
+
+- [岡山駅前](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66558%2C133.92034&heading=279) · [イコットニコット前（2025年4月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66557%2C133.92150&heading=6)
+- [西川緑道公園付近（2025年2月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66555%2C133.92365&heading=100) · [太陽生命岡山ビル前（2025年2月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66548%2C133.92730&heading=132)
+- [城下・シンフォニービル前（2025年3月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66567%2C133.92990&heading=169) · [天満屋西面（2025年4月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66171%2C133.92847&heading=90)
+- [中納言（2025年2月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.657548%2C133.937717&heading=54) · [東山（2025年4月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.656248%2C133.942669&heading=96)
