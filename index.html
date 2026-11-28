@@ -1135,7 +1135,8 @@ body.nav-on .stpop{ top:calc(210px + env(safe-area-inset-top,0px)); }   /* v42: 
 #walk-panel{position:absolute;bottom:18px;left:16px;display:grid;gap:5px;max-width:min(450px,calc(100% - 32px))}
 #walk-status{font-weight:650}
 #walk-nearby,#walk-panel small{color:#dae8dc}
-#walk-action,#walk-bell,#walk-gate{justify-self:start}
+#walk-action,#walk-bell,#walk-gate,#walk-view{justify-self:start}
+#walk-ui button[hidden]{display:none}
 #walk-choices{pointer-events:auto;font:inherit;max-width:100%;padding:5px}
 #walk-ui header strong{max-width:55vw}
 body.walk-active #world{touch-action:none}
@@ -1150,11 +1151,12 @@ body.walk-active #world{touch-action:none}
 <label id="walk-choices-label" hidden>乗る便 <select id="walk-choices"></select></label>
 <button type="button" id="walk-gate" hidden>岡山駅のホームへ</button>
 <button type="button" id="walk-bell" hidden>降車ボタン</button>
-<button type="button" id="walk-action" disabled>乗る [F]</button>
-<small>WASD 移動（車内も可） · Shift 早足 · ドラッグ／Q・E 見回す</small>
+<button type="button" id="walk-action" disabled hidden>座る [C]</button>
+<button type="button" id="walk-view">視点: 一人称 [V]</button>
+<small>W/S 前後 · A/D 左右 · Shift 早足 · クリックしてマウスで見回す（Esc で解除）／Q・E · V 視点切替 · ホイールで距離 · C 座る/立つ</small>
 </section>
 <div id="walk-touch" aria-label="徒歩操作"><button type="button" data-walk="q" aria-label="左を見る">↶</button><button type="button" data-walk="w" aria-label="前に進む">↑</button><button type="button" data-walk="e" aria-label="右を見る">↷</button><button type="button" data-walk="a" aria-label="左に移動">←</button><button type="button" data-walk="s" aria-label="後ろに移動">↓</button><button type="button" data-walk="d" aria-label="右に移動">→</button></div>
 </div>
 
 <script>window.OKA_PAGE="menu";</script>
-<script src="okaden.js?v=beaad57eaf"></script>
+<script src="okaden.js?v=baf622dc53"></script>

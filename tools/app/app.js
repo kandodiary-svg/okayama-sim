@@ -5447,7 +5447,7 @@ function makeRyobiBus(dest){
     const opening = new THREE.Group(); g.add(opening); outer.push(opening);
     const height=top-0.33, cy=(top+0.33)/2;
     const recess=new THREE.Mesh(new THREE.BoxGeometry(0.04,height,width),dark);
-    recess.position.set(W/2-0.42,cy,z); opening.add(recess);
+    recess.position.set(W/2-0.42,cy,z); recess.name="busRecess"; opening.add(recess);
     const tread=new THREE.Mesh(new THREE.BoxGeometry(0.44,0.039,width),trim);
     tread.position.set(W/2-0.22,0.35,z); opening.add(tread);
     const leaf=exteriorFinish(canvasTex(128,512,(c,w,h)=>{
@@ -9109,7 +9109,8 @@ const Peds = (() => {
           "}"
         ].join("\n") :
         [
-          "float amp=iAnim.y;",
+          "bool sit=iAnim.y<-0.5;",
+          "float amp=max(iAnim.y,0.0);",
           "float phase=iAnim.x;",
           "float bob=(0.009-0.017*cos(phase*2.0))*amp;",
           "if((aLimb>0.5 && aLimb<2.5) || aLimb>4.5){",
@@ -9119,6 +9120,7 @@ const Peds = (() => {
           "  float stride=t<0.62 ? 0.5-t/0.62 : -0.5+swing*swing*(3.0-2.0*swing);",
           "  vec2 hip=vec2(0.87+bob,0.0);",
           "  vec2 foot=vec2(0.052+amp*0.105*sin(swing*3.14159265),amp*0.78*stride);",
+          "  if(sit) foot=vec2(0.41,0.52);",
           "  vec2 limb=foot-hip; float len=length(limb);",
           "  vec2 knee=(foot+hip)*0.5+vec2(limb.y,-limb.x)/max(len,0.01)*sqrt(max(0.0,0.428*0.428-len*len*0.25));",
           "  if(aLimb>=6.5){ transformed.yz+=foot-vec2(0.052,0.0); }",
@@ -9137,7 +9139,7 @@ const Peds = (() => {
           "    transformed.y=1.43+y*c-z*s; transformed.z=y*s+z*c;",
           "  }",
           "}",
-          "if(aPart>4.5 && aPart<7.5) transformed=mix(vec3(0.0,1.0,0.0),transformed,uRain);"
+          "if(aPart>4.5 && aPart<7.5) transformed=mix(vec3(0.0,1.0,0.0),transformed,sit?0.0:uRain);"
         ].join("\n")));
       if(color) sh.vertexShader=sh.vertexShader.replace("#include <color_vertex>",[
         "vColor=vec3(1.0);",
@@ -9469,7 +9471,21 @@ const Peds = (() => {
       if(o.stand>0) o.stand=0; n++; }
     return n;
   }
-  return { init, update, register, honk, pedState, get peds(){ return peds; }, get bikes(){ return bikes; }, get ready(){ return ready; }, get E(){ return E; } };
+  /* v70: 徒歩モードの自分・車内の乗客・運転士（同じ人の形。iAnim.y<0 で座った姿勢） */
+  function crowd(n){
+    const g=geo("ped");
+    g.setAttribute("iAnim", new THREE.InstancedBufferAttribute(new Float32Array(n * 2), 2).setUsage(THREE.DynamicDrawUsage));
+    for(const a of ["iTop", "iBot", "iHair", "iExtra"]) g.setAttribute(a, new THREE.InstancedBufferAttribute(new Float32Array(n * 3), 3));
+    const m=new THREE.InstancedMesh(g,animateMaterial(new THREE.MeshLambertMaterial({vertexColors:true}),false,true),n);
+    m.customDepthMaterial=animateMaterial(new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking}),false,false);
+    m.count=0; m.frustumCulled=false; m.castShadow=true; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m);
+    const an=g.attributes.iAnim;
+    return { mesh:m,
+      set(i,mat,ph,walk){ m.setMatrixAt(i,mat); an.setXY(i,ph,walk); },
+      look(i,o){ setCols(m,i,o||{top:pick(TOPS),bot:pick(BOTS),hair:pick(HAIR),ext:pick(UMB)}); },
+      commit(k){ m.count=k; m.instanceMatrix.needsUpdate=true; an.needsUpdate=true; } };
+  }
+  return { init, update, register, honk, pedState, crowd, get peds(){ return peds; }, get bikes(){ return bikes; }, get ready(){ return ready; }, get E(){ return E; } };
 })();
 /* ---------------- JR の列車・線路・高架橋（v23） ----------------
    線形: data/jr.json（pipeline/jr.py。OSM の山陽新幹線・山陽本線・宇野線・津山線・吉備線の本線）。
@@ -12520,14 +12536,27 @@ const TT = (() => {
 })();
 
 
+/* v70: 岡山駅の構内（第4段階で作る。今は何もしない） */
+const Station=(()=>({ build(){}, floor(){return null;}, walk(){return null;}, ceil(){return null;}, platformFor(){return null;}, eastEntrance(){return null;} }))();
+/* ================= v70: 徒歩モード（自分の足で歩いて、開いた扉から乗り、座り、降りる） =================
+   ・移動: 速度をなめらかに上げ下げ（加速・減速）。視点の高さもなめらかに追う（段差でカクッとしない）。歩調に合わせた小さな揺れ。
+   ・操作: W/S 前後・A/D 左右（画面の左右どおり）・Q/E や ←/→ で向き・マウス（クリックで視点固定／ドラッグ）・Shift 早足。
+           V で「一人称」と「歩く自分を上から見る視点」を切り替え（ホイールで距離）。C（または F）で座る・立つ。
+   ・乗り物: 車内の床・座席・手すり・扉は外の車体の子（車体と一緒に動く）。外の車体は窓・扉の所を抜いてあり、外から車内が見える。
+           扉が開いている間だけ、その扉を通って乗り降りできる（両備バスは中扉から乗って前扉から降りる）。乗り物の中では車体に対する位置で歩く。
+   ・内装は写真で確認した実車の特徴に合わせた: 9200形 MOMO（木の床・木の背の座席と丸いクッション・テーブル・橙の運賃箱）、
+           両備バス エアロスター（青いモケット・灰色の背・橙の握り棒・後ろは段上がり）、227系 Urara（えんじ色の転換クロスシート・白い枕カバー・黄色のつり革・ドア前の黄色い床）。 */
 const Walk=(()=>{
-  const W={active:false,x:0,y:0,z:0,yaw:0,pitch:0,ride:null,feet:0,speed:0};
-  const services=[], keys=new Set(), own={ped:true}, focus=new THREE.Vector3();
+  const W={active:false,x:0,y:0,z:0,yaw:0,pitch:0,vx:0,vz:0,ride:null,car:null,lx:0,lz:0,seat:null,feet:0,speed:0,view:"fp",dist:7,camY:NaN,turnV:0,muted:false};
+  const services=[], keys=new Set(), own={ped:true};
   const ui=$("walk-ui"), status=$("walk-status"), action=$("walk-action"), nearby=$("walk-nearby"), gate=$("walk-gate");
-  let shown=null, drag=null, press=new Map(), cabin=null, lastText="", boardKey="";
+  let drag=null, press=new Map(), lastText="", toastT=0, toastMsg="";
   const bound=(v,a,b)=>Math.max(a,Math.min(b,v));
   const near=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
-  const interiors=new Map(), stationExits=new Map(), stationDecks=[], seatDir=new THREE.Vector3();
+  const stationExits=new Map(), stationDecks=[];
+  const _q2=new THREE.Quaternion(), _v=new THREE.Vector3(), _w=new THREE.Vector3(), _m=new THREE.Matrix4(), _q=new THREE.Quaternion(), _s=new THREE.Vector3(1,1,1), _up=new THREE.Vector3(0,1,0);
+  const R_BODY=0.23, R_IN=0.18;
+  function toast(t){ toastMsg=t; toastT=3.2; }
   function platformAt(x,z,name){
     const provided=JR.platformAt(x,z,name);
     if(provided) return provided;
@@ -12539,8 +12568,8 @@ const Walk=(()=>{
     return null;
   }
   function stationDeck(p,t,name){
-    const group=new THREE.Group(), offset=3.02, halfW=1.46, halfL=18;
-    const x=p.x+t.z*offset,z=p.z-t.x*offset,y=p.y+0.95;
+    const group=new THREE.Group(), offset=3.02, halfW=1.46, halfL=60;
+    const x=p.x+t.z*offset,z=p.z-t.x*offset,y=p.y+0.92;
     group.position.set(x,y,z);group.rotation.y=Math.atan2(t.x,t.z);
     const add=(w,h,l,x,y,z,color)=>{
       const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,l),new THREE.MeshLambertMaterial({color}));
@@ -12549,12 +12578,13 @@ const Walk=(()=>{
     add(halfW*2,0.96,halfL*2,0,-0.48,0,0x8b8c86);
     add(0.11,0.018,halfL*2,-halfW+0.08,0.008,0,0xefede3);
     for(let z=-halfL+0.22;z<halfL;z+=0.32) add(0.31,0.025,0.299,-halfW+0.63,0.011,z,0xd5a82c);
-    for(let z=-halfL+1;z<halfL;z+=2) add(0.026,0.023,1.94,halfW-0.14,0.012,z,0xc2c6c1);
     scene.add(group);
     stationDecks.push({x,z,y,tx:t.x,tz:t.z,halfL,halfW,st:name});
     return {x:x-t.z*0.42,z:z+t.x*0.42,y,station:true};
   }
   function deck(x,z,y){
+    const st=Station.floor(x,z,y);
+    if(st!==null) return st;
     const pl=platformAt(x,z);
     if(pl && (y===undefined || Math.abs(pl.y-y)<0.72)) return pl.y;
     if((x>=-6 && x<=27 && z>=-4.45 && z<=-1.75 || x>=57.4 && x<=84.1 && z>=-5 && z<=-2.75) &&
@@ -12562,15 +12592,17 @@ const Walk=(()=>{
     return Car.hAt(x,z,y);
   }
   function usable(x,z,y){
+    const st=Station.walk(x,z,y);
+    if(st!==null) return st;
     const pl=platformAt(x,z);
     if(pl && Math.abs(pl.y-y)<0.72) return true;
     return Car.inG(x,z) && Car.pedestrianSurface(x,z)!==9 && !Car.blocked(x,z,y);
   }
   function landing(x,z){
     for(let d=0;d<=10;d+=0.75) for(let i=0;i<(d?12:1);i++){
-      const px=x+d*Math.cos(i*Math.PI/6), pz=z+d*Math.sin(i*Math.PI/6);
-      if(!usable(px,pz) || Car.pedestrianSurface(px,pz)===1) continue;
-      return {x:px,z:pz,y:deck(px,pz,Car.hAt(px,pz))};
+      const px=x+d*Math.cos(i*Math.PI/6), pz=z+d*Math.sin(i*Math.PI/6), h=Car.hAt(px,pz);
+      if(!usable(px,pz,h) || Car.pedestrianSurface(px,pz)===1) continue;
+      return {x:px,z:pz,y:deck(px,pz,h)};
     }
     return null;
   }
@@ -12578,6 +12610,7 @@ const Walk=(()=>{
     if(stop.pole) return landing(...stop.pole);
     const s=stop.cen??(stop.arc-3.8), p=pathPt(line.path,s), t=pathTan(line.path,s);
     if(line.kind==="jr"){
+      if(stop.name==="岡山"){ const st=Station.platformFor(line, p, t); if(st) return st; }
       for(const side of [1,-1]) for(let d=1.95;d<=8;d+=0.35) for(const u of [0,1,-1,2,-2,4,-4,7,-7]){
         const x=p.x+t.z*side*d+t.x*u,z=p.z-t.x*side*d+t.z*u, f=platformAt(x,z,stop.name);
         if(f && Math.abs(f.y-p.y)<2.2 && platformAt(x+t.z*side*0.40,z-t.x*side*0.40,stop.name)) return {x,z,y:f.y,station:true};
@@ -12595,9 +12628,358 @@ const Walk=(()=>{
     }
     return null;
   }
+
+  /* ================= 内装を作る道具 ================= */
+  // 同じ材質の部品を 1 つの形にまとめる（描画の負担を小さく）
+  function IB(){
+    const parts=new Map();
+    const put=(g,mat,x,y,z,ry,rx,rz)=>{
+      g=g.index?g.toNonIndexed():g;
+      if(rx) g.rotateX(rx); if(rz) g.rotateZ(rz); if(ry) g.rotateY(ry);
+      g.translate(x,y,z);
+      if(!parts.has(mat)) parts.set(mat,[]); parts.get(mat).push(g);
+    };
+    return {
+      box(mat,w,h,d,x,y,z,ry,rx,rz){ if(w<=0.001||h<=0.001||d<=0.001) return; put(new THREE.BoxGeometry(w,h,d),mat,x,y,z,ry,rx,rz); },
+      cyl(mat,r,h,x,y,z,rx,rz,seg){ put(new THREE.CylinderGeometry(r,r,h,seg||8),mat,x,y,z,0,rx,rz); },
+      geo(mat,g,x,y,z,ry,rx,rz){ put(g,mat,x,y,z,ry,rx,rz); },
+      build(parent){
+        for(const [mat,list] of parts){
+          let n=0; for(const g of list) n+=g.attributes.position.count;
+          const P=new Float32Array(n*3),N=new Float32Array(n*3),U=new Float32Array(n*2); let o=0;
+          for(const g of list){ const c=g.attributes.position.count; P.set(g.attributes.position.array,o*3); N.set(g.attributes.normal.array,o*3); if(g.attributes.uv) U.set(g.attributes.uv.array,o*2); o+=c; g.dispose(); }
+          const geo=new THREE.BufferGeometry(); geo.setAttribute("position",new THREE.BufferAttribute(P,3)); geo.setAttribute("normal",new THREE.BufferAttribute(N,3)); geo.setAttribute("uv",new THREE.BufferAttribute(U,2));
+          const m=new THREE.Mesh(geo,mat); m.name="interior"; m.receiveShadow=false; m.castShadow=false; parent.add(m);
+        }
+      }
+    };
+  }
+  // 材質（車種ごと）。影は受けない（屋根の影で車内が真っ暗にならないように）。明るさは車内灯の分だけ少し自発光
+  const MT={};
+  function mat(key,make){ return MT[key]||(MT[key]=make()); }
+  const lam=(color,em=0.18,map)=>{ const m=new THREE.MeshLambertMaterial({color,map:map||null}); m.emissive=new THREE.Color(color).multiplyScalar(em); if(map) m.emissiveMap=map; return m; };
+  const phong=(color,sh=60,em=0.12)=>{ const m=new THREE.MeshPhongMaterial({color,shininess:sh,specular:0x888888}); m.emissive=new THREE.Color(color).multiplyScalar(em); return m; };
+  const basic=(color)=>new THREE.MeshBasicMaterial({color});
+  const glassMat=()=>mat("glass",()=>new THREE.MeshPhongMaterial({color:0x9db4bc,transparent:true,opacity:0.16,shininess:100,specular:0xbbbbbb,depthWrite:false,side:THREE.DoubleSide}));
+  function tex(key,w,h,draw,rep){ return mat("tex:"+key,()=>{ const t=canvasTex(w,h,draw); t.encoding=THREE.sRGBEncoding; if(rep){ t.wrapS=t.wrapT=THREE.RepeatWrapping; } return t; }); }
+  function moquette(key,base,dots,dot2){
+    return tex(key,128,128,(c,w,h)=>{ noise(c,w,h,base,0.22,2200);
+      for(let i=0;i<w;i+=8) for(let j=(i/8%2)*4;j<h;j+=8){ c.fillStyle=(i+j)%24?dots:dot2; c.fillRect(i,j,3,3); } },true);
+  }
+  // 壁: 開口（窓・扉）を避けて、床から天井までを板でふさぐ（z の区切りごとに、y の空いている所を埋める）
+  function wall(ib,m,x,thick,zA,zB,yA,yB,open){
+    const cuts=new Set([zA,zB]); for(const o of open){ if(o.z1>zA && o.z0<zB){ cuts.add(Math.max(zA,o.z0)); cuts.add(Math.min(zB,o.z1)); } }
+    const zs=[...cuts].sort((a,b)=>a-b);
+    for(let i=0;i<zs.length-1;i++){
+      const z0=zs[i], z1=zs[i+1], zm=(z0+z1)/2; if(z1-z0<0.004) continue;
+      const hit=open.filter(o=>o.z0<=zm && o.z1>=zm).map(o=>[Math.max(yA,o.y0),Math.min(yB,o.y1)]).filter(a=>a[1]>a[0]).sort((a,b)=>a[0]-b[0]);
+      let y=yA; for(const [a,b] of hit){ if(a>y) ib.box(m,thick,a-y,z1-z0,x,(y+a)/2,zm); y=Math.max(y,b); }
+      if(yB>y) ib.box(m,thick,yB-y,z1-z0,x,(y+yB)/2,zm);
+    }
+  }
+  // 外の車体の側面の絵から、窓・扉の所を抜く（車内が見え、外からも乗客が見える）
+  function cutSide(mesh,idx,rects){
+    const mats=mesh.material, src=mats[idx]; if(!src || !src.map || !src.map.image) return;
+    const img=src.map.image, c=document.createElement("canvas"); c.width=img.width; c.height=img.height;
+    const g=c.getContext("2d"); g.drawImage(img,0,0); for(const [x,y,w,h] of rects) g.clearRect(x,y,w,h);
+    const t=new THREE.CanvasTexture(c); t.encoding=src.map.encoding; t.anisotropy=src.map.anisotropy; t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;
+    const m=src.clone(); m.map=t; m.alphaTest=0.5; m.transparent=false; m.needsUpdate=true;
+    const list=mats.slice(); list[idx]=m; mesh.material=list;
+  }
+  // 側面の座標（z, y）→ 絵の画素。face 0 = +x 側（u = 0.5 − z/L）、face 1 = −x 側（u = 0.5 + z/L）
+  function sideRects(side,L,bottom,height,cw,ch,list,inset=2){
+    return list.map(o=>{
+      const u0=side>0?0.5-o.z1/L:0.5+o.z0/L, u1=side>0?0.5-o.z0/L:0.5+o.z1/L;
+      const r0=(1-(o.y1-bottom)/height)*ch, r1=(1-(o.y0-bottom)/height)*ch;
+      return [u0*cw+inset,r0+inset,(u1-u0)*cw-inset*2,r1-r0-inset*2];
+    });
+  }
+  function leafTex(key,draw){ return tex("leaf:"+key,128,512,draw); }
+  // 扉: 左右 2 枚。外側は車体の色の絵、内側はステンレス。open(t) で開ける
+  function doorLeaves(obj,d,o){
+    const leaves=[], half=d.w/2, h=d.y1-d.y0, outer=o.outer, inner=o.inner;
+    for(const s of [-1,1]){
+      const mats=[0,1,2,3,4,5].map(i=>i===(d.side>0?0:1)?outer:i===(d.side>0?1:0)?inner:o.edge);
+      const m=new THREE.Mesh(new THREE.BoxGeometry(0.035,h,half-0.01),mats); m.name="interior";
+      obj.add(m); leaves.push({m,s});
+    }
+    const place=(t)=>{ for(const l of leaves){
+      const plug=o.plug? Math.min(1,t*3)*0.07 : 0;
+      const x=d.side*(o.x + (o.plug?plug:0)) ;
+      l.m.position.set(x,(d.y0+d.y1)/2,d.z+l.s*(half/2+t*half*0.98)); } };
+    place(0); return place;
+  }
+  const seatList=(car)=>car.seats;
+
+  /* ---------- 9200形 MOMO（車体 1 つ分。+z 側に運転台、−z 側は連接部） ---------- */
+  function furnishMomo(body, active, line){
+    const L=8.54, hz=L/2, hw=1.2, F=0.36, C=2.86, wx=hw-0.07, ib=IB();
+    const shell=body.children[0];
+    const winPx={1:[[49,111],[177,145],[338,148],[658,141],[816,154]], [-1]:[[864,111],[702,145],[538,148],[225,141],[54,154]]};
+    const doorPx={1:487,[-1]:377};
+    const zr=(side,x,ww)=>side>0?[(0.5-(x+ww)/1024)*L,(0.5-x/1024)*L]:[(x/1024-0.5)*L,((x+ww)/1024-0.5)*L];
+    const doors=[], open={1:[],[-1]:[]};
+    for(const side of [1,-1]){
+      for(const [x,ww] of winPx[side]){ const [z0,z1]=zr(side,x,ww); open[side].push({z0,z1,y0:1.62,y1:2.75,win:true}); }
+      const [z0,z1]=zr(side,doorPx[side]+4,138); open[side].push({z0,z1,y0:F,y1:2.80});
+      doors.push({z:(z0+z1)/2,w:z1-z0,side,y0:F,y1:2.80});
+      cutSide(shell,side>0?0:1,sideRects(side,L,0.24,3.10,1024,384,open[side]));
+    }
+    const wood=mat("momoWood",()=>lam(0xffffff,0.16,tex("oak",256,64,(c,w,h)=>{ c.fillStyle="#b39878"; c.fillRect(0,0,w,h); for(let i=0;i<60;i++){ c.strokeStyle=`rgba(${120+Math.random()*40|0},${80+Math.random()*25|0},45,.28)`; c.beginPath(); const y=Math.random()*h; c.moveTo(0,y); c.bezierCurveTo(w*.3,y+Math.random()*6-3,w*.6,y+Math.random()*6-3,w,y+Math.random()*4-2); c.stroke(); } },true)));
+    const floor=mat("momoFloor",()=>lam(0xffffff,0.12,tex("momoPlank",256,256,(c,w,h)=>{ noise(c,w,h,"#5d564d",0.2,3000); for(let x=0;x<w;x+=21){ c.fillStyle="#3b3631"; c.fillRect(x,0,2,h); for(let y=(x*7)%90;y<h;y+=90+(x%40)){ c.fillRect(x,y,21,2); } for(let k=0;k<6;k++){ c.fillStyle="rgba(140,130,115,.18)"; c.fillRect(x+3+Math.random()*14,0,1,h); } } },true)));
+    floor.map.repeat.set(1.2,3.2);
+    const white=mat("momoWall",()=>lam(0xeeece5,0.22)), trim=mat("momoTrim",()=>phong(0x4d5358,40)), steel=mat("steel",()=>phong(0xc9ced2,90,0.15));
+    const ceil=mat("momoCeil",()=>lam(0xffffff,0.25,tex("slat",64,64,(c,w,h)=>{ c.fillStyle="#f3f3ef"; c.fillRect(0,0,w,h); c.fillStyle="#d8d8d2"; for(let x=0;x<w;x+=8) c.fillRect(x,0,2,h); },true)));
+    const cushion=mat("momoCush",()=>lam(0xe6e2d8,0.2)), orange=mat("fareOrange",()=>phong(0xd9531e,50,0.2)), dark=mat("cabDark",()=>phong(0x2c3135,30,0.08)), lampM=mat("lamp",()=>basic(0xfff6e2));
+    const blocks=[], seats=[];
+    // 床・天井・壁
+    ib.box(floor,wx*2,0.04,hz*2-0.3,0,F-0.02,-0.15);
+    ib.box(ceil,wx*2,0.03,hz*2-0.3,0,C,-0.15);
+    for(const side of [1,-1]){
+      wall(ib,white,side*wx,0.05,-hz+0.04,hz-0.36,F,C,open[side]);
+      for(const o of open[side]) if(o.win){
+        ib.box(glassMat(),0.01,o.y1-o.y0,o.z1-o.z0,side*(hw-0.02),(o.y0+o.y1)/2,(o.z0+o.z1)/2);
+        ib.box(trim,0.08,0.035,o.z1-o.z0,side*(wx-0.02),o.y0-0.012,(o.z0+o.z1)/2);   // 窓の下の枠
+      }
+      ib.box(trim,0.06,0.02,hz*2-0.4,side*(wx-0.01),F+0.04,-0.15);                  // 幅木
+      ib.box(lampM,0.10,0.012,hz*2-1.0,side*0.46,C-0.02,-0.2);                       // 天井の照明
+      for(const o of open[side]) if(o.win){ ib.box(mat("lampWarm",()=>basic(0xffe2b0)),0.04,0.09,0.12,side*(wx-0.04),2.84-0.05,o.z1+0.03); }
+    }
+    // 連接部側の妻（通路の口）と運転台
+    for(const x of [-1,1]) ib.box(white,wx-0.52,C-F,0.06,x*(wx+0.52)/2,(F+C)/2,-hz+0.03);
+    ib.box(white,1.04,C-F-2.05,0.06,0,F+2.05+(C-F-2.05)/2,-hz+0.03);
+    ib.box(trim,0.06,2.05,0.08,-0.53,F+1.02,-hz+0.03); ib.box(trim,0.06,2.05,0.08,0.53,F+1.02,-hz+0.03);
+    const cabZ=3.0, fz=hz-0.36;
+    ib.box(white,wx*2,C-2.70,0.05,0,(2.70+C)/2,fz);                                   // 前面の上
+    ib.box(white,wx*2,1.05-F,0.05,0,(F+1.05)/2,fz);                                   // 前面の下
+    ib.box(glassMat(),wx*2,1.65,0.01,0,1.88,fz+0.02);
+    ib.box(dark,wx*2-0.1,0.85,0.55,0,F+0.42,fz-0.32);                                 // 運転台の机
+    ib.box(dark,wx*2-0.1,0.06,0.62,0,F+0.88,fz-0.36,0,-0.25);
+    ib.box(mat("lcdBlue",()=>basic(0x2a50a0)),0.22,0.13,0.01,-0.25,F+0.97,fz-0.55,0,-0.6);
+    ib.box(dark,0.5,0.1,0.48,0,F+0.47,cabZ+0.55); ib.box(dark,0.5,0.62,0.09,0,F+0.8,cabZ+0.3);   // 運転士の椅子
+    ib.box(white,wx*2,0.98,0.05,0.0,F+0.49,cabZ);                                     // 仕切り（腰の高さ）
+    ib.box(steel,wx*2,0.035,0.035,0,F+1.0,cabZ);
+    ib.box(orange,0.42,1.05,0.42,0.62,F+0.53,cabZ-0.25); ib.box(dark,0.40,0.04,0.40,0.62,F+1.07,cabZ-0.25);   // 運賃箱
+    ib.box(mat("lcdBlack",()=>basic(0x111417)),0.9,0.24,0.06,0,2.6,cabZ+0.05);
+    blocks.push({x0:-hw,x1:hw,z0:cabZ-0.08,z1:hz},{x0:0.38,x1:hw,z0:cabZ-0.5,z1:cabZ});
+    // 座席: 運転台側はテーブルをはさむ向かい合わせ、連接部側は壁沿いの長い腰掛（丸いクッション）
+    const sh=F+0.43;
+    for(const side of [1,-1]){
+      const xc=side*(wx-0.36);
+      for(const [zc,face] of [[2.32,-1],[0.98,1]]){
+        ib.box(wood,0.62,0.06,0.46,xc,sh-0.04,zc); ib.box(wood,0.6,0.38,0.42,xc,F+0.19,zc-face*0.02);
+        ib.box(wood,0.62,0.98,0.07,xc,sh+0.47,zc-face*0.27);
+        ib.geo(cushion,new THREE.CylinderGeometry(0.2,0.2,0.05,20),xc,sh+0.015,zc+face*0.02);
+        seats.push({x:xc,z:zc+face*0.02,yaw:face>0?0:Math.PI,h:sh,sx:side*0.2,sz:zc+face*0.1});
+        blocks.push({x0:Math.min(xc-0.31*side,xc+0.31*side),x1:Math.max(xc-0.31*side,xc+0.31*side),z0:zc-0.3,z1:zc+0.3});
+      }
+      ib.box(wood,0.36,0.04,0.5,side*(wx-0.19),F+0.72,1.65); ib.cyl(steel,0.02,0.72,side*(wx-0.2),F+0.36,1.65);   // テーブル
+      blocks.push({x0:side>0?wx-0.38:-wx,x1:side>0?wx:-wx+0.38,z0:1.38,z1:1.92});
+      const z0=-3.92, z1=-1.32, xb=side*(wx-0.25);
+      ib.box(wood,0.5,0.06,z1-z0,xb,sh-0.04,(z0+z1)/2); ib.box(wood,0.46,0.4,z1-z0,xb,F+0.2,(z0+z1)/2);
+      ib.box(wood,0.07,0.62,z1-z0,side*(wx-0.04),sh+0.32,(z0+z1)/2);
+      for(const zc of [-3.48,-2.62,-1.76]){ ib.geo(cushion,new THREE.CylinderGeometry(0.19,0.19,0.05,20),xb,sh+0.015,zc); seats.push({x:xb+side*0.03,z:zc,yaw:Math.atan2(-side,0),h:sh,sx:side*0.35,sz:zc}); }
+      blocks.push({x0:side>0?wx-0.52:-wx,x1:side>0?wx:-wx+0.52,z0,z1});
+      // 握り棒・カード読み取り機
+      const d=doors.find(q=>q.side===side);
+      for(const e of [-1,1]){ const zz=d.z+e*(d.w/2+0.1); ib.cyl(steel,0.018,C-F,side*(wx-0.12),(F+C)/2,zz); }
+      ib.box(orange,0.12,0.2,0.1,side*(wx-0.12),F+1.15,d.z+d.w/2+0.18);
+      ib.box(mat("readerBlack",()=>basic(0x16191b)),0.1,0.06,0.02,side*(wx-0.12),F+1.2,d.z+d.w/2+0.23);
+      ib.cyl(steel,0.016,C-F,side*0.38,(F+C)/2,-1.25); ib.cyl(steel,0.016,C-F,side*0.38,(F+C)/2,0.55);
+    }
+    ib.cyl(steel,0.015,hz*2-1.4,0.5,F+1.92,-0.4,Math.PI/2); ib.cyl(steel,0.015,hz*2-1.4,-0.5,F+1.92,-0.4,Math.PI/2);
+    for(let z=-3.6;z<2.6;z+=0.62) for(const x of [-0.5,0.5]){ ib.geo(mat("strapW",()=>lam(0xf2f0e8,0.2)),new THREE.TorusGeometry(0.06,0.011,5,12),x,F+1.68,z,Math.PI/2); ib.box(mat("strapW",()=>lam(0xf2f0e8,0.2)),0.025,0.18,0.012,x,F+1.82,z); }
+    ib.build(body);
+    const leafOut=mat("momoLeafOut",()=>exteriorFinish(leafTex("momo",(c,w,h)=>{ exteriorPanel(c,0,0,w,h,"#4f5961"); exteriorPanel(c,4,4,w-8,h-8,"#bcc4cb"); exteriorWindow(c,12,34,w-24,280); exteriorPanel(c,4,400,w-8,104,"#244d86"); })));
+    const leafIn=mat("momoLeafIn",()=>exteriorFinish(leafTex("momoIn",(c,w,h)=>{ exteriorPanel(c,0,0,w,h,"#9aa0a4"); exteriorPanel(c,4,4,w-8,h-8,"#d9dcd8"); exteriorWindow(c,12,34,w-24,280); })));
+    const places=doors.map(d=>doorLeaves(body,d,{outer:leafOut,inner:leafIn,edge:trim,x:hw+0.004,plug:true}));
+    return { obj:body, kind:"tram", hw, wx, len:L, zMin:-hz, zMax:hz-0.4, gangMin:true, gangMax:false, gangExt:1.08, floor:()=>F, ceil:C, doors, seats, blocks, places, eye:1.6 };
+  }
+  /* ---------- 両備バス エアロスター（+x = 左＝扉側、+z = 前） ---------- */
+  function furnishBus(g){
+    const L=10.5, hz=L/2, hw=1.245, wx=hw-0.08, C=2.86, ib=IB();
+    const shell=g.children[0];
+    const floorAt=(x,z)=>z>-0.95?0.36:z>-1.32?0.54:0.72;
+    const winL=[[-4.88,-3.47],[-3.41,-2.06],[-2.00,-0.75],[0.49,1.58],[1.64,2.98],[3.04,4.04]];
+    const winR=[[-4.88,-3.47],[-3.41,-2.06],[-2.00,-0.64],[-0.58,0.78],[0.84,2.18],[2.24,3.48],[3.54,4.96]];
+    const open={1:[],[-1]:[]}, doors=[];
+    for(const side of [1,-1]) for(const [a,b] of side>0?winL:winR){ const top=a<-2.1?2.61:2.68, bot=a<-2.1?1.52:1.36; open[side].push({z0:a,z1:b,y0:bot,y1:top,win:true}); }
+    for(const side of [1,-1]) cutSide(shell,side>0?0:1,sideRects(side,L,0.30,2.80,1536,448,open[side].filter(o=>o.win),3));
+    AEROSTAR_DOORS.forEach(({z,width,top},i)=>{ open[1].push({z0:z-width/2,z1:z+width/2,y0:0.3,y1:top}); doors.push({z,w:width,side:1,y0:0.33,y1:top,bus:i===0?"out":"in"}); });
+    const floor=mat("busFloor",()=>lam(0xffffff,0.12,tex("busFloor",128,128,(c,w,h)=>{ noise(c,w,h,"#55595c",0.25,2600); c.fillStyle="rgba(30,32,34,.35)"; for(let i=0;i<w;i+=16) for(let j=0;j<h;j+=16){ c.fillRect(i+4,j+4,6,2); } },true)));
+    floor.map.repeat.set(2,8);
+    const white=mat("busWall",()=>lam(0xe9ebe9,0.2)), ceilM=mat("busCeil",()=>lam(0xf4f5f3,0.25)), grey=mat("busShell",()=>phong(0x8d9296,30,0.1)), trim=mat("busTrim",()=>phong(0x3f4549,30,0.08));
+    const blue=mat("busMoq",()=>lam(0xffffff,0.16,moquette("ryobi","#1c4fa8","#5f8fd6","#13306b")));
+    const pole=mat("busPole",()=>phong(0xe0731f,50,0.2)), yellow=mat("yellowEdge",()=>lam(0xe8c21b,0.25)), steel=mat("steel",()=>phong(0xc9ced2,90,0.15));
+    const purple=mat("bellPurple",()=>phong(0x7a3fa0,40,0.35)), lampM=mat("lamp",()=>basic(0xfff6e2)), dark=mat("cabDark",()=>phong(0x2c3135,30,0.08));
+    const blocks=[], seats=[];
+    // 床（前の低い所・2 段・後ろの高い所）
+    ib.box(floor,wx*2,0.04,6.05,0,0.34,2.08); ib.box(floor,wx*2,0.04,0.37,0,0.52,-1.135); ib.box(floor,wx*2,0.04,3.88,0,0.70,-3.26);
+    ib.box(trim,wx*2,0.18,0.03,0,0.45,-0.95); ib.box(trim,wx*2,0.18,0.03,0,0.63,-1.32);
+    ib.box(yellow,wx*2,0.012,0.05,0,0.546,-0.975); ib.box(yellow,wx*2,0.012,0.05,0,0.726,-1.345);
+    ib.box(ceilM,wx*2,0.03,hz*2-0.2,0,C,0);
+    for(const side of [1,-1]){
+      wall(ib,white,side*wx,0.05,-hz+0.12,hz-0.2,0.34,C,open[side]);
+      for(const o of open[side]) if(o.win) ib.box(glassMat(),0.01,o.y1-o.y0,o.z1-o.z0,side*(hw-0.025),(o.y0+o.y1)/2,(o.z0+o.z1)/2);
+      ib.box(lampM,0.1,0.012,hz*2-1.4,side*0.55,C-0.02,-0.3);
+      ib.box(mat("adFrame",()=>lam(0xdcdedc,0.2)),0.03,0.32,hz*2-2.4,side*(wx-0.17),C-0.22,-0.6,0,0,-side*0.5);   // 広告枠
+    }
+    // 前（運転席の後ろの仕切り・前面の上下）と後ろ
+    const fz=hz-0.18;
+    ib.box(white,wx*2,1.27-0.34,0.05,0,(0.34+1.27)/2,fz); ib.box(white,wx*2,C-2.48,0.05,0,(2.48+C)/2,fz);
+    ib.box(mat("led",()=>basic(0x141414)),1.3,0.18,0.05,0.2,2.62,fz-0.08);
+    ib.box(white,wx*2,C-0.72,0.05,0,(0.72+C)/2,-hz+0.12); ib.box(glassMat(),1.9,0.84,0.01,0,2.06,-hz+0.1);
+    // 運転席の囲い・運賃箱
+    ib.box(trim,0.04,0.95,0.9,-0.18,0.34+0.48,4.45); ib.box(steel,0.03,1.6,0.03,-0.18,1.14,4.0);
+    ib.box(mat("fareGrey",()=>phong(0x5d6366,40,0.1)),0.36,1.0,0.4,-0.02,0.84,4.18); ib.box(dark,0.34,0.04,0.38,-0.02,1.36,4.18);
+    blocks.push({x0:-hw,x1:-0.15,z0:3.95,z1:hz},{x0:-0.22,x1:0.2,z0:3.95,z1:4.4});
+    // タイヤの出っ張り（前）
+    for(const side of [1,-1]){ ib.box(grey,0.62,0.55,1.3,side*(wx-0.31),0.34+0.27,2.55); blocks.push({x0:side>0?wx-0.62:-wx,x1:side>0?wx:-wx+0.62,z0:1.9,z1:3.2}); }
+    const seat=(x,z,top,face,wide=0.44)=>{    // 前向き（face=1）の 1 人掛け。灰色の背と青いモケット
+      ib.box(blue,wide,0.1,0.44,x,top-0.05,z); ib.box(grey,wide,0.03,0.42,x,top-0.11,z);
+      ib.box(blue,wide-0.04,0.56,0.08,x,top+0.3,z-face*0.22); ib.box(grey,wide,0.62,0.05,x,top+0.3,z-face*0.27,0,face*0.08);
+      ib.cyl(steel,0.02,top-floorAt(x,z)-0.1,x,(top+floorAt(x,z))/2-0.05,z);
+      seats.push({x,z:z+face*0.02,yaw:face>0?0:Math.PI,h:top,sx:x>0?Math.min(x,0.25)-0.05:Math.max(x,-0.25)+0.05,sz:z+face*0.5});
+    };
+    seat(wx-0.31,2.55,0.34+0.55+0.42,1,0.5); seat(-(wx-0.31),2.55,0.34+0.55+0.42,1,0.5);
+    seat(-(wx-0.26),1.45,0.78,1); seat(-(wx-0.26),0.75,0.78,1);
+    blocks.push({x0:-wx,x1:-wx+0.5,z0:0.45,z1:1.75});
+    // 中扉の向かい: 跳ね上げ式（車いす用）
+    ib.box(blue,0.4,0.5,1.2,-(wx-0.04),1.02,-0.15); ib.box(grey,0.06,0.62,1.24,-(wx-0.02),1.02,-0.15);
+    for(const side of [1,-1]){
+      for(const [z,i] of [[-1.72,0],[-2.52,1],[-3.32,2],[-4.12,3]]){
+        for(const k of [0,1]){ const x=side*(wx-0.22-k*0.42); seat(x,z,0.72+0.42+(i===1?0.12:0),1,0.41); }
+        blocks.push({x0:side>0?wx-0.86:-wx,x1:side>0?wx:-wx+0.86,z0:z-0.3,z1:z+0.26});
+      }
+      if(side>0){ seat(wx-0.24,1.2,0.78,1); seat(wx-0.24,0.62+0.0,0.78,1); blocks.push({x0:wx-0.48,x1:wx,z0:0.38,z1:1.45}); }
+    }
+    for(let k=0;k<5;k++) seat(-0.92+k*0.46,-4.88,1.14,1);
+    blocks.push({x0:-wx,x1:wx,z0:-hz,z1:-4.6});
+    // 握り棒（橙）・降車ボタン
+    for(const [x,z] of [[0.55,3.9],[0.62,1.85],[-0.62,1.85],[0.62,0.45],[-0.6,-0.85],[0.62,-0.75],[0.5,-2.1],[-0.5,-2.1],[0.5,-3.7],[-0.5,-3.7]]){
+      const f=floorAt(x,z); ib.cyl(pole,0.018,C-f,x,(C+f)/2,z); ib.box(purple,0.06,0.07,0.05,x,f+1.25,z+0.03);
+    }
+    for(const x of [-0.55,0.55]){ ib.cyl(pole,0.017,hz*2-2.2,x,C-0.12,-0.7,Math.PI/2); for(let z=-3.8;z<3.6;z+=0.55){ ib.geo(mat("strapW",()=>lam(0xf2f0e8,0.2)),new THREE.TorusGeometry(0.06,0.011,5,12),x,C-0.42,z,Math.PI/2); ib.box(pole,0.025,0.22,0.012,x,C-0.25,z); } }
+    ib.build(g);
+    const places=[()=>{}];
+    return { obj:g, kind:"bus", hw, wx, len:L, zMin:-hz+0.15, zMax:hz-0.2, floor:floorAt, ceil:C, doors, seats, blocks, places, eye:1.6, bus:true };
+  }
+  /* ---------- 227系 Urara（車 1 両。lead = 運転台つき（+z 側）） ---------- */
+  function furnish227(m, lead){
+    const L=lead?19.57:19.5, e=L/2, hw=1.475, wx=hw-0.09, F=1.15, C=3.37, ib=IB();
+    const shell=m.children[0];
+    const doorsZ=[-5.95,0,5.95], dw=1.31;
+    const limits=[-e+0.64,...doorsZ.flatMap(z=>[z-dw/2-0.18,z+dw/2+0.18]),lead?e-2.36:e-0.64];
+    const wins=[];
+    for(let i=0;i<limits.length-1;i+=2){ const a=limits[i], b=limits[i+1], n=Math.max(1,Math.round((b-a)/1.63));
+      for(let k=0;k<n;k++){ const aa=a+(b-a)*k/n+0.055, bb=a+(b-a)*(k+1)/n-0.055; if(bb-aa>0.25) wins.push([aa,bb]); } }
+    const open={1:[],[-1]:[]}, doors=[];
+    for(const side of [1,-1]){
+      for(const [a,b] of wins) open[side].push({z0:a,z1:b,y0:2.20,y1:3.09,win:true});
+      if(lead){ open[side].push({z0:e-1.18,z1:e-0.38,y0:2.2,y1:3.09,win:true,cab:true}); }
+      for(const z of doorsZ){ open[side].push({z0:z-dw/2+0.02,z1:z+dw/2-0.02,y0:1.12,y1:3.32}); doors.push({z,w:dw-0.04,side,y0:F,y1:3.32}); }
+      cutSide(shell,side>0?0:1,sideRects(side,L,0.99,2.76,2048,448,open[side]));
+    }
+    const floor=mat("u227Floor",()=>lam(0xffffff,0.12,tex("u227Floor",128,128,(c,w,h)=>{ noise(c,w,h,"#9a9c9b",0.12,1500); },true)));
+    floor.map.repeat.set(2,10);
+    const white=mat("u227Wall",()=>lam(0xe9ebea,0.22)), ceilM=mat("u227Ceil",()=>lam(0xf6f6f4,0.25)), trim=mat("u227Trim",()=>phong(0x9aa1a4,50,0.12));
+    const moq=mat("uraraMoq",()=>lam(0xffffff,0.16,moquette("urara","#5a2430","#7b3a46","#3e1820")));
+    const cover=mat("headCover",()=>lam(0xf2f1ec,0.22)), shellG=mat("u227SeatShell",()=>phong(0x8a8f92,40,0.1));
+    const ochre=mat("u227Ochre",()=>phong(0xe0a62a,50,0.22)), yellow=mat("yellowEdge",()=>lam(0xe8c21b,0.25)), steel=mat("steel",()=>phong(0xc9ced2,90,0.15));
+    const lampM=mat("lamp",()=>basic(0xfff6e2)), dark=mat("cabDark",()=>phong(0x2c3135,30,0.08));
+    const blocks=[], seats=[];
+    const zA=-e+0.12, zB=lead?e-2.36:e-0.12;
+    ib.box(floor,wx*2,0.04,zB-zA,0,F-0.02,(zA+zB)/2);
+    ib.box(ceilM,wx*2,0.03,zB-zA,0,C,(zA+zB)/2);
+    ib.box(mat("u227Duct",()=>lam(0xdfe1e0,0.22)),0.8,0.05,zB-zA-0.4,0,C-0.03,(zA+zB)/2);
+    for(const side of [1,-1]){
+      wall(ib,white,side*wx,0.05,zA,lead?e-0.3:zB,F,C,open[side]);
+      for(const o of open[side]) if(o.win) ib.box(glassMat(),0.01,o.y1-o.y0,o.z1-o.z0,side*(hw-0.03),(o.y0+o.y1)/2,(o.z0+o.z1)/2);
+      ib.box(lampM,0.12,0.012,zB-zA-0.6,side*0.6,C-0.035,(zA+zB)/2);
+      for(const z of doorsZ){
+        ib.box(yellow,0.55,0.006,dw,side*(wx-0.3),F+0.004,z);                                   // 扉の前の黄色い床
+        ib.box(mat("lcd",()=>basic(0x0d1013)),0.06,0.2,0.62,side*(wx-0.03),3.42-0.05,z);         // 扉の上の案内画面
+        ib.box(mat("lcdScreen",()=>basic(0x2f6fc9)),0.065,0.14,0.5,side*(wx-0.035),3.42-0.05,z);
+        for(const k of [-1,1]) ib.cyl(ochre,0.018,1.2,side*(wx-0.1),F+1.2,z+k*(dw/2+0.08));      // 扉の横の握り棒
+      }
+    }
+    // 妻（貫通路）・運転台の仕切り
+    const endWall=(z)=>{ for(const x of [-1,1]) ib.box(white,wx-0.46,C-F,0.06,x*(wx+0.46)/2,(F+C)/2,z);
+      ib.box(white,0.92,C-F-2.0,0.06,0,F+2.0+(C-F-2.0)/2,z); ib.box(trim,0.05,2.0,0.08,-0.47,F+1.0,z); ib.box(trim,0.05,2.0,0.08,0.47,F+1.0,z);
+      const s=Math.sign(z); ib.box(mat("bellows",()=>new THREE.MeshLambertMaterial({color:0x2c2f31,side:THREE.BackSide})),1.04,2.08,0.42,0,F+1.02,z+s*0.22);
+      ib.box(floor,0.98,0.04,0.42,0,F-0.02,z+s*0.21); };
+    endWall(-e+0.1); if(!lead) endWall(e-0.1);
+    if(lead){
+      const pz=e-2.36;
+      for(const x of [-1,1]) ib.box(white,wx-0.75,C-F,0.06,x*(wx+0.75)/2,(F+C)/2,pz);
+      ib.box(white,1.5,C-F-2.05,0.06,0,F+2.05+(C-F-2.05)/2,pz); ib.box(white,1.5,1.0,0.06,0,F+0.5,pz);
+      ib.box(glassMat(),1.5,1.05,0.01,0,F+1.53,pz);
+      ib.box(dark,wx*2-0.1,0.95,0.6,0,F+0.48,e-0.75); ib.box(dark,0.55,0.12,0.5,0.45,F+0.5,e-1.45); ib.box(dark,0.55,0.7,0.1,0.45,F+0.85,e-1.72);
+      ib.box(mat("u227CabWall",()=>lam(0xc9cdce,0.18)),wx*2,0.03,2.1,0,C,e-1.3);
+      blocks.push({x0:-hw,x1:hw,z0:pz-0.05,z1:e});
+    }
+    // 座席の並び
+    const sh=F+0.43;
+    const cross=(z,face)=>{ for(const side of [1,-1]){ const xc=side*0.88;
+      ib.box(moq,0.9,0.12,0.46,xc,sh-0.06,z); ib.box(shellG,0.9,0.32,0.4,xc,F+0.18,z);
+      ib.box(moq,0.88,0.7,0.09,xc,sh+0.38,z-face*0.24); ib.box(shellG,0.9,0.74,0.04,xc,sh+0.38,z-face*0.30);
+      for(const k of [-1,1]){ ib.box(cover,0.36,0.2,0.1,xc+k*0.21,sh+0.64,z-face*0.235); seats.push({x:xc+k*0.21,z,yaw:face>0?0:Math.PI,h:sh,sx:side*0.18,sz:z}); }
+      ib.box(ochre,0.03,0.03,0.2,side*0.43,sh+0.78,z-face*0.24);
+      blocks.push({x0:side>0?0.42:-wx,x1:side>0?wx:-0.42,z0:z-0.32,z1:z+0.26}); } };
+    const bench=(z0,z1)=>{ for(const side of [1,-1]){ const xb=side*(wx-0.26);
+      ib.box(moq,0.52,0.12,z1-z0,xb,sh-0.06,(z0+z1)/2); ib.box(shellG,0.46,0.32,z1-z0,xb,F+0.18,(z0+z1)/2);
+      ib.box(moq,0.09,0.55,z1-z0,side*(wx-0.05),sh+0.32,(z0+z1)/2);
+      const n=Math.max(1,Math.floor((z1-z0)/0.46)); for(let k=0;k<n;k++){ const zc=z0+(z1-z0)*(k+0.5)/n; seats.push({x:xb+side*0.04,z:zc,yaw:Math.atan2(-side,0),h:sh,sx:side*0.4,sz:zc}); }
+      ib.box(ochre,0.03,0.9,0.03,side*(wx-0.5),F+0.9,z0-0.02); ib.box(ochre,0.03,0.9,0.03,side*(wx-0.5),F+0.9,z1+0.02);
+      blocks.push({x0:side>0?wx-0.54:-wx,x1:side>0?wx:-wx+0.54,z0:z0-0.04,z1:z1+0.04}); } };
+    for(let i=0;i<doorsZ.length-1;i++){
+      const a=doorsZ[i]+dw/2+0.22, b=doorsZ[i+1]-dw/2-0.22;
+      bench(a,a+0.88); bench(b-0.88,b);
+      const n=Math.floor((b-a-1.9)/0.9), s0=(a+b)/2-(n-1)*0.45;
+      for(let k=0;k<n;k++) cross(s0+k*0.9,1);
+    }
+    bench(-e+0.35,doorsZ[0]-dw/2-0.22);
+    if(!lead) bench(doorsZ[2]+dw/2+0.22,e-0.35);
+    // つり革・手すり
+    for(const x of [-0.62,0.62]){ ib.cyl(ochre,0.016,zB-zA-0.4,x,C-0.14,(zA+zB)/2,Math.PI/2);
+      for(let z=zA+0.4;z<zB-0.3;z+=0.38){ ib.geo(ochre,new THREE.TorusGeometry(0.056,0.01,5,12),x,C-0.5,z,Math.PI/2); ib.box(ochre,0.026,0.26,0.01,x,C-0.3,z); } }
+    ib.build(m);
+    const leafOut=mat("u227LeafOut",()=>exteriorFinish(leafTex("u227",(c,w,h)=>{ exteriorPanel(c,0,0,w,h,"#c4c7cb"); exteriorWindow(c,20,70,w-40,170); exteriorPanel(c,0,355,w,34,"#d46a90"); exteriorPanel(c,0,390,w,5,"#e6a13f"); })));
+    const leafIn=mat("u227LeafIn",()=>exteriorFinish(leafTex("u227in",(c,w,h)=>{ exteriorPanel(c,0,0,w,h,"#b9bec1"); exteriorWindow(c,20,70,w-40,170); exteriorPanel(c,0,0,10,h,"#e0a62a"); })));
+    const places=doors.map(d=>doorLeaves(m,d,{outer:leafOut,inner:leafIn,edge:trim,x:hw-0.06,plug:false}));
+    return { obj:m, kind:"jr", hw, wx, len:L, zMin:-e+0.05, zMax:lead?e-2.4:e-0.05, gangMin:true, gangMax:!lead, gangExt:0.35, floor:()=>F, ceil:C, doors, seats, blocks, places, eye:1.6 };
+  }
+
+  /* ---------- 乗客・運転士（座った人）と自分の姿 ---------- */
+  let crowd=null, avatar=null; const riders=[];
+  function seatPeople(line){
+    if(!crowd) return;
+    for(const car of line.cars){
+      for(const s of car.seats){ if(Math.random()<(line.kind==="jr"?0.3:0.24)){ s.npc=true; riders.push({car,s,look:null}); } }
+    }
+    if(line.kind!=="bus"){ const c=line.cars[0]; riders.push({car:c,s:{x:0,z:line.kind==="jr"?c.len/2-1.5:3.55,yaw:0,h:c.floor(0,0)+0.5,driver:true},look:{top:"#2b3a55",bot:"#23293a",hair:"#15110e",ext:"#222"}}); }
+    else { const c=line.cars[0]; riders.push({car:c,s:{x:-0.62,z:4.62,yaw:0,h:0.85,driver:true},look:{top:"#d9dde2",bot:"#2a3346",hair:"#15110e",ext:"#222"}}); }
+  }
+  function drawPeople(){
+    if(!crowd) return;
+    let n=0;
+    for(const r of riders){
+      const c=r.car; if(!c.obj.visible || !c.line.model.visible) continue;
+      if(n>=150) break;
+      _v.set(r.s.x,r.s.h-0.79,r.s.z); c.obj.localToWorld(_v);
+      if(_v.distanceToSquared(camera.position)>140*140) continue;
+      _q.setFromAxisAngle(_up,r.s.yaw); c.obj.getWorldQuaternion(_q2); _q.premultiply(_q2);
+      _m.compose(_v,_q,_s); crowd.set(n,_m,0,-1);
+      if(r.slot!==n){ crowd.look(n,r.look); r.slot=n; }
+      n++;
+    }
+    crowd.commit(n);
+  }
+
+  /* ================= 乗り物（運行） ================= */
   function add(kind,data,model,offset=0){
     const path=mkPath(data.track), line={kind,path,model,stops:[],signals:data.signals||[],speed:data.speed,
-      label:data.label,dest:data.dest,travel:0,v:0,index:0,dwell:17,wait:0,done:false,pose:new THREE.Vector3(),dir:new THREE.Vector3()};
+      label:data.label,dest:data.dest,travel:0,v:0,index:0,dwell:17,wait:0,done:false,pose:new THREE.Vector3(),dir:new THREE.Vector3(),cars:[],openSide:0};
     line.stops=data.stops.map(s=>({...s,entry:stopPoint(line,s)}));
     if(kind==="jr") line.stops=line.stops.filter(s=>s.entry);
     while(line.stops.length && !line.stops.at(-1).entry) line.stops.pop();
@@ -12606,9 +12988,8 @@ const Walk=(()=>{
     line.intervals=kind==="tram"?Trams.intervals(path):[];
     line.held=0; line.first=true;
     line.dest=line.stops.at(-1).name;
-    line.dwell=kind==="bus"||kind==="jr"?50:17;
+    line.dwell=kind==="bus"||kind==="jr"?50:24;
     line.dwellLength=line.dwell;
-    model.userData.walkKey=data.vkey;
     line.doors=0; line.travel=line.stops[0].arc;
     if(offset){
       line.travel=Math.min(line.stops.at(-2).arc,line.travel+offset);
@@ -12617,7 +12998,19 @@ const Walk=(()=>{
     }
     model.visible=true;
     scene.add(model);
-    services.push(line); place(line);
+    // 内装（外の車体の子）
+    if(kind==="tram"){ const u=model.userData; line.cars=[furnishMomo(u.a,true,line),furnishMomo(u.b.children[0],false,line)];
+      // 連接部: 中を通れるよう、ほろを枠だけにし、床を張る
+      const j=u.j; while(j.children.length) j.remove(j.children[0]);
+      const bel=new THREE.MeshLambertMaterial({color:0x34383b}), ib=IB();
+      for(let i=0;i<10;i++){ const z=(i-4.5)*0.211, w=2.12+(i%2)*0.09, h=2.72+(i%2)*0.10;
+        ib.box(bel,0.38,h,0.105,-(w/2-0.19),0,z); ib.box(bel,0.38,h,0.105,w/2-0.19,0,z); ib.box(bel,w,0.3,0.105,0,h/2-0.15,z); ib.box(bel,w,0.2,0.105,0,-h/2+0.1,z); }
+      ib.box(mat("bellowsIn",()=>new THREE.MeshLambertMaterial({color:0x26292b,side:THREE.BackSide})),1.06,2.1,2.15,0,0.05,0);
+      ib.box(mat("momoFloor"),1.0,0.04,2.1,0,0.36-1.75-0.02,0); ib.build(j); }
+    else if(kind==="bus"){ line.cars=[furnishBus(model)]; if(model.userData.cab) model.userData.cab.visible=true; model.traverse(o=>{ if(o.name==="busRecess") o.visible=false; }); }
+    else line.cars=model.userData.cars.map((c,i,a)=>furnish227(c.m,i===0||i===a.length-1));
+    for(const c of line.cars){ c.line=line; c.inv=new THREE.Matrix4(); }
+    services.push(line); place(line); seatPeople(line);
   }
   function place(line){
     const s=line.travel, path=line.path, g=line.model;
@@ -12632,6 +13025,12 @@ const Walk=(()=>{
       placeOn(g,path,s);
       const joint=g.userData.j;
       if(joint) joint.visible=true;
+    }
+    g.updateMatrixWorld(true);
+    for(const c of line.cars){
+      c.inv.copy(c.obj.matrixWorld).invert();
+      const open=line.kind==="bus" ? line.doors : line.doors;
+      for(let i=0;i<c.doors.length;i++){ const d=c.doors[i]; c.places[i]?.(d.side===line.openSide ? open : 0); }
     }
   }
   function buildServices(){
@@ -12654,230 +13053,209 @@ const Walk=(()=>{
       }
     }
   }
+  // 停車中、ホーム（停留所）のある側の扉を開ける
+  function sideToward(line,p){
+    if(line.kind==="bus") return 1;
+    const c=line.cars[0]; _v.set(p.x,p.y,p.z).applyMatrix4(c.inv); return _v.x>=0?1:-1;
+  }
 
-  function panel(kind){
-    const group=new THREE.Group(), tram=kind==="tram", bus=kind==="bus";
-    const width=tram?2.12:bus?2.32:2.70, length=tram?7.4:bus?8.6:16.8, hw=width/2;
-    const doorZ=tram?0:bus?0.55:0, opening=tram?1.12:bus?1.14:1.30;
-    const mat=(color)=>new THREE.MeshLambertMaterial({color});
-    const wood=mat(tram?0x704229:0xc4c2b8), wall=mat(tram?0xbd9d72:0xd9d9cf);
-    const rubber=mat(0x2c3233), metal=mat(0xbbc0bf), yellow=mat(bus?0xe9a52f:0xe2bd48);
-    const carpetTexture=canvasTex(128,128,(c,w,h)=>{
-      noise(c,w,h,tram?"#9b6537":bus?"#444446":"#787671",0.25,1800);
-      if(tram) for(let i=8;i<w;i+=15){c.fillStyle="#634126";c.fillRect(i,0,1,h);}
-    });
-    const fabricTexture=canvasTex(128,128,(c,w,h)=>{
-      noise(c,w,h,bus?"#294a74":tram?"#713e27":"#a44d69",0.34,2900);
-      if(!tram) for(let i=-12;i<128;i+=15) for(let j=4;j<128;j+=12){
-        c.fillStyle=bus?(i%3?"#517695":"#6e8a9a"):"#c48092";c.fillRect(i+j%6,j,4,2);
-      }
-    });
-    const fabric=new THREE.MeshLambertMaterial({map:fabricTexture}), floor=new THREE.MeshLambertMaterial({map:carpetTexture});
-    const lamp=new THREE.MeshBasicMaterial({color:0xf9f0d9});
-    const doors=[], seats=[];
-    function box(w,h,l,x,y,z,m,parent=group){
-      const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,l),m);
-      b.position.set(x,y,z);parent.add(b);return b;
+  /* ================= 自分の位置（車内では車体に対する位置） ================= */
+  function carYaw(c){ c.obj.getWorldDirection(_w); return Math.atan2(_w.x,_w.z); }
+  function toLocal(c,x,y,z){ return _v.set(x,y,z).applyMatrix4(c.inv); }
+  function toWorld(c,lx,ly,lz){ return _w.set(lx,ly,lz).applyMatrix4(c.obj.matrixWorld); }
+  function doorOpen(c,d){ return c.line.openSide===d.side ? c.line.doors : 0; }
+  function inDoor(c,lx,lz,margin){ for(const d of c.doors){ if(Math.sign(lx)!==d.side) continue; if(Math.abs(lz-d.z)<d.w/2-margin) return d; } return null; }
+  function blockedIn(c,lx,lz){
+    const r=R_IN;
+    for(const b of c.blocks) if(lx>b.x0-r && lx<b.x1+r && lz>b.z0-r && lz<b.z1+r) return true;
+    return false;
+  }
+  // 車内での 1 歩: 戻り値 "ok" | "exit"（扉から外へ） | "gang"（隣の車へ） | false
+  function stepInside(c,lx,lz){
+    const r=R_IN, d=inDoor(c,lx,lz,0.12), lim=c.wx-r;
+    if(Math.abs(lx)>lim){
+      if(!d || doorOpen(c,d)<0.7) return false;
+      if(Math.abs(lz-d.z)>d.w/2-r) return false;
+      if(Math.abs(lx)>c.hw+0.12) return "exit";
     }
-    function bar(radius,h,x,y,z,m,parent=group){
-      const b=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,h,10),m);
-      b.position.set(x,y,z);parent.add(b);return b;
+    const gangOk=Math.abs(lx)<0.42;
+    if(lz<c.zMin+r){ if(!(c.gangMin && gangOk)) return false; if(lz<c.zMin-c.gangExt) return "gang"; }
+    if(lz>c.zMax-r){ if(!(c.gangMax && gangOk)) return false; if(lz>c.zMax+c.gangExt) return "gang"; }
+    if(blockedIn(c,lx,lz)) return false;
+    return "ok";
+  }
+  function enterCar(c,lx,lz){
+    W.car=c; W.ride=c.line; W.lx=lx; W.lz=lz;
+    const cy=carYaw(c); W.yaw-=cy; const s=Math.sin(-cy), co=Math.cos(-cy), vx=W.vx, vz=W.vz; W.vx=vx*co+vz*s; W.vz=-vx*s+vz*co;
+    c.line.initialOffer=false;
+    if(!c.line.greeted){ c.line.greeted=true; const nx=c.line.stops[c.line.index+1]; announce(c.line.dest+"行きです。"+(nx?"次は、"+nx.name+"です。":"")); }
+    refresh(true);
+  }
+  function leaveCar(x,y,z){
+    const c=W.car, cy=carYaw(c); W.yaw+=cy; const s=Math.sin(cy), co=Math.cos(cy), vx=W.vx, vz=W.vz; W.vx=vx*co+vz*s; W.vz=-vx*s+vz*co;
+    W.car=null; W.ride=null; W.seat=null; W.x=x; W.y=y; W.z=z; c.line.greeted=false;
+    if("speechSynthesis" in window) speechSynthesis.cancel();
+    refresh(true);
+  }
+  // 外を歩いているとき、乗り物の車体にぶつかるか・扉から入るか
+  function vehicleAt(x,z,y){
+    for(const line of services){
+      if(line.done || !line.model.visible) continue;
+      if(Math.abs(line.pose.x-x)>60 || Math.abs(line.pose.z-z)>60) continue;
+      for(const c of line.cars){
+        const p=toLocal(c,x,y,z);
+        if(Math.abs(p.y-c.floor(p.x,p.z))>2.4) continue;
+        if(Math.abs(p.x)>c.hw+0.18 || Math.abs(p.z)>c.len/2+0.05) continue;
+        const d=inDoor(c,p.x,p.z,R_BODY+0.02);
+        if(!d) return {block:true};
+        if(doorOpen(c,d)<0.7) return {block:true,closed:true};
+        if(c.bus && d.bus==="out"){ return {block:true,msg:"両備バスは中扉（入口）から乗ります"}; }
+        const step=c.floor(p.x,p.z)-p.y;
+        if(step>0.5 || step<-0.5) return {block:true};
+        if(Math.abs(p.x)<c.wx-0.02) return {enter:c,lx:p.x,lz:p.z};
+        const fy=c.floor(p.x,p.z); return {door:true,y:toWorld(c,p.x,fy,p.z).y};
+      }
     }
-    const sign=(text,w,h,x,y,z,rot)=>{
-      const map=canvasTex(256,64,(c,a,b)=>{c.fillStyle="#243134";c.fillRect(0,0,a,b);exteriorLettering(c,text,a/2,b/2,26,"#fff6ca",a-12);});
-      const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),new THREE.MeshBasicMaterial({map}));
-      m.position.set(x,y,z);m.rotation.y=rot;group.add(m);
-    };
-    box(width,0.08,length,0,-0.04,0,floor);
-    box(width,0.10,length,0,2.16,0,wall);
-    box(width*0.78,0.06,length,0,2.10,0,wall);
-    for(const side of [-1,1]){
-      const x=side*hw, leaf=side===-1?-1:1;
-      const segments=[[-length/2,doorZ-opening/2],[doorZ+opening/2,length/2]];
-      for(const [start,end] of segments){
-        const d=end-start, mid=(start+end)/2;
-        box(0.06,0.83,d,x,0.415,mid,wall);
-        box(0.08,0.21,d,x,1.99,mid,wood);
-        box(0.06,0.045,d,x,0.865,mid,metal);
-        for(let z=start+0.11;z<end;z+=tram?1.25:bus?1.14:1.48) box(0.075,1.16,0.10,x,1.41,z,wood);
-      }
-      box(0.10,0.22,opening+0.13,x,2.04,doorZ,wall);
-      for(const edge of [-1,1]) box(0.09,2.0,0.08,x,1,doorZ+edge*(opening/2+0.022),rubber);
-      for(const end of [-1,1]){
-        const p=new THREE.Group(); p.position.set(x,0,doorZ+end*opening*0.25); group.add(p);
-        box(0.055,0.83,opening*0.48,0,0.415,0,wall,p);
-        box(0.055,0.21,opening*0.48,0,1.94,0,wall,p);
-        for(const edge of [-1,1]) box(0.052,1.25,0.036,0,1.36,edge*opening*.22,rubber,p);
-        doors.push({p,base:p.position.z,dir:end,side});
-      }
-      box(0.043,0.015,opening,x-leaf*0.055,0.008,doorZ,yellow);
-      for(const z of [-1.0,1.42])bar(0.023,2.03,side*(hw-0.24),1.02,z,bus||!tram?yellow:metal);
-      box(0.052,0.05,length-0.7,side*(hw-0.35),1.97,0,bus?yellow:metal);
-      box(0.047,0.023,length-0.55,side*0.39,2.063,0,lamp);
-      const row=tram?[-2.35,2.30]:bus?[-3.45,-2.45,2.92,3.81]:[-6.4,-5.54,-4.68,-3.82,-2.96,-2.10,2.1,2.96,3.82,4.68,5.54,6.4];
-      for(const z of row){
-        const x0=side*(hw-0.29), depth=tram?1.62:0.43;
-        box(tram?0.43:0.48,0.105,depth,x0,0.47,z,tram?wood:fabric);
-        if(tram) box(0.085,0.49,depth,side*(hw-0.10),0.74,z,wood);
-        else {
-          const back=z+(!bus && Math.floor(Math.abs(z)*1.16)%2?0.18:-0.18);
-          box(0.49,0.57,0.09,x0,0.735,back,fabric);
-          if(!bus){
-            const inner=side*0.59;
-            box(0.41,0.105,depth,inner,0.47,z,fabric);
-            box(0.41,0.57,0.09,inner,0.735,back,fabric);
-            box(0.026,0.10,depth,side*0.81,0.70,z,metal);
-            seats.push({x:inner,z,w:0.42,d:depth+0.12});
-          }
+    return null;
+  }
+
+  /* ================= 操作 ================= */
+  function has(k){ return keys.has(k)||[...press.values()].includes(k); }
+  function movement(dt){
+    const f=Number(has("w")||has("arrowup"))-Number(has("s")||has("arrowdown"));
+    const st=Number(has("d"))-Number(has("a"));        // + = 右へ
+    const turnIn=Number(has("arrowright")||has("e"))-Number(has("arrowleft")||has("q"));   // + = 右を向く
+    W.turnV+=(turnIn*1.9-W.turnV)*Math.min(1,dt*9);
+    W.yaw-=W.turnV*dt;                                   // yaw が増えると左を向く（前 = (sin, cos)、右 = (−cos, sin)）
+    if(W.seat){
+      if(f>0 || st || has("c_up")){ standUp(); }
+      W.vx=W.vz=0; W.speed=0; return;
+    }
+    const run=has("shift"), vmax=run?3.1:1.45, len=Math.hypot(f,st);
+    const fx=Math.sin(W.yaw), fz=Math.cos(W.yaw), rx=-Math.cos(W.yaw), rz=Math.sin(W.yaw);
+    let tvx=0,tvz=0; if(len){ tvx=(fx*f+rx*st)/len*vmax; tvz=(fz*f+rz*st)/len*vmax; }
+    const acc=len?7.5:9.5, k=Math.min(1,dt*acc);
+    W.vx+=(tvx-W.vx)*k; W.vz+=(tvz-W.vz)*k;
+    if(Math.hypot(W.vx,W.vz)<0.02 && !len){ W.vx=W.vz=0; }
+    const dx=W.vx*dt, dz=W.vz*dt;
+    let moved=0;
+    if(W.car){
+      const c=W.car;
+      const tryIn=(nx,nz)=>{
+        const r=stepInside(c,nx,nz);
+        if(r==="ok"){ moved+=Math.hypot(nx-W.lx,nz-W.lz); W.lx=nx; W.lz=nz; return true; }
+        if(r==="exit"){
+          const q=toWorld(c,nx,c.floor(W.lx,W.lz),nz), gy=deck(q.x,q.z,q.y);
+          if(c.bus && inDoor(c,W.lx,W.lz,0)?.bus==="in"){ toast("両備バスは前の扉（出口）から降ります。運賃は運賃箱へ"); return false; }
+          if(Number.isFinite(gy) && Math.abs(gy-q.y)<0.55 && usable(q.x,q.z,gy)){ leaveCar(q.x,gy,q.z); return true; }
+          return false;
         }
-        box(0.06,0.43,depth*0.55,x0,0.22,z,metal);
-        seats.push({x:x0,z,w:0.52,d:depth+0.12});
+        if(r==="gang"){
+          const q=toWorld(c,nx,c.floor(W.lx,W.lz),nz);
+          for(const o of c.line.cars){ if(o===c) continue; const p=toLocal(o,q.x,q.y,q.z);
+            if(Math.abs(p.z)<o.len/2+0.9 && Math.abs(p.x)<0.6){ const pz=bound(p.z,o.zMin-o.gangExt+0.03,o.zMax+o.gangExt-0.03), px=p.x; const cy0=carYaw(c), cy1=carYaw(o); W.car=o; W.lx=px; W.lz=pz; W.yaw+=cy0-cy1;
+              const s=Math.sin(cy0-cy1), co=Math.cos(cy0-cy1), vx=W.vx, vz=W.vz; W.vx=vx*co+vz*s; W.vz=-vx*s+vz*co; return true; } }
+          return false;
+        }
+        return false;
+      };
+      if(dx||dz){ if(!tryIn(W.lx+dx,W.lz+dz)){ if(!(dx && tryIn(W.lx+dx,W.lz))) W.vx*=0.3; if(W.car===c && !(dz && tryIn(W.lx,W.lz+dz))) W.vz*=0.3; } }
+    }else{
+      const advance=(x,z)=>{
+        const v=vehicleAt(x,z,W.y);
+        if(v){ if(v.msg) toast(v.msg); if(v.enter){ enterCar(v.enter,v.lx,v.lz); return true; } if(v.block) return false;
+          if(v.door){ moved+=Math.hypot(x-W.x,z-W.z); W.x=x; W.z=z; W.y=v.y; W.onStep=true; return true; } }
+        W.onStep=false;
+        if(!usable(x,z,W.y)) return false;
+        for(const [a,b] of [[R_BODY,0],[-R_BODY,0],[0,R_BODY],[0,-R_BODY]]) if(!usable(x+a,z+b,W.y)){ const q=vehicleAt(x+a,z+b,W.y); if(!q || !(q.door||q.enter)) return false; }
+        const y=deck(x,z,W.y);
+        if(!Number.isFinite(y)||Math.abs(y-W.y)>0.6 || Obs.hit(x,z,0.18,own,o=>o.ped||o.walkService,y)) return false;
+        moved+=Math.hypot(x-W.x,z-W.z); W.x=x; W.z=z; W.y=y; return true;
+      };
+      if(dx||dz){
+        if(!advance(W.x+dx,W.z+dz)){
+          let ok=false;
+          if(dx && !W.car) ok=advance(W.x+dx,W.z); if(!ok) W.vx*=0.4;
+          if(dz && !W.car) { if(!advance(W.x,W.z+dz)) W.vz*=0.4; }
+        }
       }
-      for(let z=-length/2+0.88;z<length/2-0.6;z+=1.05){
-        if(bus && z<-2.5) continue;
-        bar(0.012,0.11,side*0.44,1.87,z,metal);
-        const loop=new THREE.Mesh(new THREE.TorusGeometry(0.065,0.010,7,16),tram?wood:wall);
-        loop.position.set(side*0.44,1.78,z);loop.rotation.y=Math.PI/2;group.add(loop);
-      }
+      if(!W.car && !W.onStep) W.y=deck(W.x,W.z,W.y);
     }
-    for(const side of [-1,1]){
-      const z=side*length/2;
-      box(width,0.82,0.08,0,0.41,z,wood);
-      box(width,0.28,0.08,0,2.00,z,wall);
-      const windshield=bus && side>0;
-      const doorWidth=windshield?width-0.38:0.61;
-      const half=(width-doorWidth)/2;
-      for(const direction of [-1,1]) box(half,1.07,0.075,direction*(doorWidth+half)/2,1.35,z,wall);
-      const glass=new THREE.MeshLambertMaterial({color:0x84a8b3,transparent:true,opacity:0.18,side:THREE.DoubleSide,depthWrite:false});
-      box(doorWidth,0.88,0.02,0,1.37,z,glass);
-      box(doorWidth,0.13,0.08,0,0.88,z,wood);
-      box(doorWidth,0.13,0.08,0,1.87,z,wood);
-      sign(bus?"西大寺線":tram?"岡山電気軌道  MOMO":"普通  Urara",0.98,0.22,0,1.99,z-side*0.06,side>0?Math.PI:0);
-    }
-    if(tram || bus){
-      const z=length/2-0.71;
-      box(0.31,1.02,0.36,-0.62,0.51,z,bus?mat(0x626566):mat(0xc77928));
-      sign("運賃箱",0.29,0.09,-0.62,0.94,z-0.19,Math.PI);
-      if(bus){
-        box(0.43,0.75,1.25,0.74,0.38,3.42,wall);
-        box(0.77,0.24,0.23,-0.62,0.12,-3.69,yellow);
-      }
-    }
-    group.visible=false; group.userData={hw,length,doorZ,opening,doors,seats}; scene.add(group);return group;
+    W.speed+=(moved/Math.max(dt,0.001)-W.speed)*Math.min(1,dt*8);
+    W.feet=(W.feet+moved*4.2)%(Math.PI*2);
+  }
+  function nearestSeat(){
+    if(!W.car) return null; let best=null, bd=0.95;
+    for(const s of W.car.seats){ if(s.npc) continue; const d=Math.hypot(s.x-W.lx,s.z-W.lz); if(d<bd){ bd=d; best=s; } }
+    return best;
+  }
+  function sitDown(){ const s=nearestSeat(); if(!s) return false; W.seat=s; W.sitFrom={x:W.lx,z:W.lz}; W.lx=s.x; W.lz=s.z; W.yaw=s.yaw; W.pitch=-0.05; W.vx=W.vz=0; refresh(true); return true; }
+  function standUp(){ const s=W.seat; if(!s) return; W.seat=null; W.lx=s.sx; W.lz=s.sz; if(blockedIn(W.car,W.lx,W.lz) && W.sitFrom){ W.lx=W.sitFrom.x; W.lz=W.sitFrom.z; } refresh(true); }
+  function interact(){
+    if(!W.active) return; spoken=true; Snd.init();
+    if(W.seat){ standUp(); return; }
+    if(sitDown()) return;
+    const a=stationAccess(); if(a){ Object.assign(W,a.spot,{vx:0,vz:0}); W.camY=NaN; refresh(true); }
   }
 
-
-  function start(){
-    leaveJR(); Car.stop(); Clock.reset(); Snd.init(); Snd.hush();
-    S.mode="walk"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on");
-    if(S.car) S.car.visible=false;
-    Trams.clearAll(); Traffic.reset();
-    buildServices();
-    const startKind=new URLSearchParams(location.search).get("start");
-    const departing=services.find(l=>l.kind===startKind && l.stops[0].entry)||
-      services.find(l=>l.kind==="tram" && l.dest.startsWith("東山"));
-    if(departing) departing.initialOffer=true;
-    const first=departing?.stops[0].entry;
-    const start=first||landing(-74,-17)||landing(-31.2,-59.6);
-    if(!start){ Boot.fail("徒歩の開始地点を読み込めませんでした。",null,true); return; }
-    Object.assign(W,start,{active:true,yaw:0,pitch:0,ride:null});
-    document.body.classList.add("walk-active"); ui.hidden=false; orient();
-  }
-  function orient(){
-    const ride=W.ride, p=W.pitch;
-    let turn=0;
-    if(ride){
-      const s=ride.kind==="bus"?ride.travel-5.5:ride.kind==="jr"?ride.travel-VEHICLES[ride.model.userData.walkKey].len/2:ride.travel-3.65;
-      pathPt(ride.path,s,focus); pathTan(ride.path,s,seatDir);
-      turn=Math.atan2(seatDir.x,seatDir.z);
-      const floor=ride.kind==="bus"?0.36:ride.kind==="jr"?1.04:0.32;
-      cabin.position.set(focus.x,focus.y+floor,focus.z);
-      cabin.rotation.y=turn;
-      const cx=focus.x+seatDir.z*W.ix+seatDir.x*W.iz, cz=focus.z-seatDir.x*W.ix+seatDir.z*W.iz;
-      camera.position.set(cx,focus.y+floor+1.62,cz);
-      const entry=ride.stops[ride.index]?.entry;
-      const doorSide=ride.kind==="bus"?1:entry?Math.sign((entry.x-focus.x)*seatDir.z-(entry.z-focus.z)*seatDir.x):0;
-      for(const d of cabin.userData.doors){
-        const open=d.side===doorSide ? ride.doors : 0;
-        d.p.position.z=d.base+d.dir*cabin.userData.opening*0.49*open;
+  /* ================= 視点 ================= */
+  function updateCam(dt){
+    let ex,ey,ez,yaw=W.yaw;
+    const sitting=!!W.seat;
+    const c=W.car;
+    let fx,fy,fz;
+    if(c){ const fl=c.floor(W.lx,W.lz); const q=toWorld(c,W.lx,fl,W.lz); fx=q.x; fy=q.y; fz=q.z; yaw+=carYaw(c); }
+    else { fx=W.x; fy=W.y; fz=W.z; }
+    const eye=sitting?(W.seat.h-(c?c.floor(W.lx,W.lz):0)+0.74):1.62;
+    const target=fy+eye;
+    if(!Number.isFinite(W.camY) || Math.abs(W.camY-target)>3) W.camY=target;
+    W.camY+=(target-W.camY)*Math.min(1,dt*(c?20:9));
+    const amp=Math.min(1,W.speed/1.4)*(sitting?0:1);
+    const bob=(Math.cos(W.feet*2)*-0.024)*amp, sway=Math.sin(W.feet)*0.012*amp;
+    const p=W.pitch;
+    const dirX=Math.sin(yaw)*Math.cos(p), dirY=Math.sin(p), dirZ=Math.cos(yaw)*Math.cos(p);
+    if(W.view==="fp"){
+      ex=fx-Math.cos(yaw)*sway; ey=W.camY+bob; ez=fz+Math.sin(yaw)*sway;
+      camera.position.set(ex,ey,ez);
+      camera.lookAt(ex+dirX,ey+dirY,ez+dirZ);
+    }else{
+      const tp=Math.max(0.15,Math.min(1.35,0.55-p)), dist=W.dist;
+      let px=fx-Math.sin(yaw)*Math.cos(tp)*dist, py=fy+1.5+Math.sin(tp)*dist, pz=fz-Math.cos(yaw)*Math.cos(tp)*dist;
+      if(c){   // 車内では天井と壁の内側に
+        const q=toLocal(c,px,py,pz), fl=c.floor(W.lx,W.lz);
+        const k=Math.min(1, Math.max(0.05,(c.ceil-0.12-fl-1.5)/Math.max(0.01,q.y-fl-1.5)));
+        let lx=W.lx+(q.x-W.lx)*k, ly=fl+1.5+(q.y-fl-1.5)*k, lz=W.lz+(q.z-W.lz)*k;
+        lx=bound(lx,-c.wx+0.12,c.wx-0.12); lz=bound(lz,c.zMin+0.1,c.zMax-0.1);
+        const w=toWorld(c,lx,ly,lz); px=w.x; py=w.y; pz=w.z;
+      }else{
+        const roof=Station.ceil(fx,fz,fy);
+        if(roof!==null && py>roof-0.25) py=roof-0.25;
+        const g=Car.hAt(px,pz,py); if(Number.isFinite(g) && py<g+0.4) py=g+0.4;
       }
-    }else camera.position.set(W.x,W.y+1.66+Math.sin(W.feet*2)*0.025*Math.min(W.speed,1),W.z);
-    const q=camera.position, yaw=W.yaw+turn;
-    camera.lookAt(q.x+Math.sin(yaw)*Math.cos(p),q.y+Math.sin(p),q.z+Math.cos(yaw)*Math.cos(p));
-    if(camera.fov!==67){camera.fov=67;camera.updateProjectionMatrix();}
+      camera.position.set(px,py,pz);
+      camera.lookAt(fx,fy+1.25,fz);
+    }
+    if(camera.fov!==68){camera.fov=68;camera.updateProjectionMatrix();}
+    // 自分の姿（上から見る視点のとき）
+    if(avatar){
+      if(W.view==="tp"){
+        let ay=W.avYaw??yaw; const sp=Math.hypot(W.vx,W.vz);
+        if(sitting) ay=yaw; else if(sp>0.15){ let tgt=Math.atan2(W.vx,W.vz)+(c?carYaw(c):0); let d=tgt-ay; d=Math.atan2(Math.sin(d),Math.cos(d)); ay+=d*Math.min(1,dt*10); }
+        W.avYaw=ay;
+        const h=sitting?W.seat.h-0.79-(c?c.floor(W.lx,W.lz):0)+fy:fy;
+        _q.setFromAxisAngle(_up,ay); _v.set(fx,h,fz); _m.compose(_v,_q,_s);
+        avatar.set(0,_m,W.feet,sitting?-1:Math.min(1,W.speed/1.2)); avatar.commit(1);
+      }else avatar.commit(0);
+    }
   }
+  let spoken=false;
   function announce(s){
     if(!("speechSynthesis" in window) || !spoken || W.muted) return;
     speechSynthesis.cancel();
     const u=new SpeechSynthesisUtterance(s); u.lang="ja-JP"; u.rate=0.94; u.volume=0.65; speechSynthesis.speak(u);
   }
-  let spoken=false;
-  function boardOrExit(){
-    if(!W.active) return;
-    spoken=true; Snd.init();
-    if(W.ride){
-      const r=W.ride, stop=r.stops[r.index];
-      if(r.dwell<=1.7 || r.doors<0.8 || !stop?.entry || !atDoor()) return;
-      r.model.visible=true; cabin.visible=false;
-      Object.assign(W,stop.entry,{ride:null,yaw:Math.atan2(r.dir.x,r.dir.z),pitch:0,speed:0});
-      if("speechSynthesis" in window)speechSynthesis.cancel(); orient(); refresh(true); return;
-    }
-    const options=boarding(), option=options.find(r=>r.key===$("walk-choices").value)||options[0];
-    if(!option) return;
-    W.ride=option; option.initialOffer=false; option.model.visible=false;
-    if(!interiors.has(option.kind)) interiors.set(option.kind,panel(option.kind));
-    cabin=interiors.get(option.kind); cabin.visible=true;
-    W.ix=0;W.iz=cabin.userData.doorZ; W.yaw=0.35; W.pitch=0; W.speed=0;
-    announce(option.dest+"行きです。次は、"+option.stops[option.index+1].name+"です。");
-    orient(); refresh(true);
-  }
-  function boarding(){
-    const list=[];
-    for(const r of services){
-      const stop=r.stops[r.index];
-      if(r.done || r.index>=r.stops.length-1 || r.dwell<=1.7 || r.doors<0.8 || !stop?.entry) continue;
-      const close=near(W,stop.entry);
-      if(close<(r.kind==="jr"?9:5.0) && Math.abs(W.y-stop.entry.y)<1.7) list.push({r,close});
-    }
-    return list.sort((a,b)=>a.close-b.close).map(x=>x.r);
-  }
-  function atDoor(){ return cabin && Math.abs(W.iz-cabin.userData.doorZ)<1.10; }
-  function movement(dt){
-    const has=k=>keys.has(k)||[...press.values()].includes(k);
-    const f=Number(has("w")||has("arrowup"))-Number(has("s")||has("arrowdown"));
-    const s=Number(has("d"))-Number(has("a"));
-    W.yaw+=dt*1.7*(Number(has("arrowright")||has("e"))-Number(has("arrowleft")||has("q")));
-    if(W.ride){
-      const g=cabin.userData, d=Math.hypot(f,s) || 1;
-      const dx=(Math.sin(W.yaw)*f+Math.cos(W.yaw)*s)*dt*1.25/d;
-      const dz=(Math.cos(W.yaw)*f-Math.sin(W.yaw)*s)*dt*1.25/d;
-      const inside=(x,z)=>Math.abs(x)<g.hw-0.21 && Math.abs(z)<g.length/2-0.29 &&
-        !g.seats.some(q=>Math.abs(q.x-x)<q.w/2+0.13 && Math.abs(q.z-z)<q.d/2+0.14);
-      if(inside(W.ix+dx,W.iz)) W.ix+=dx;
-      if(inside(W.ix,W.iz+dz)) W.iz+=dz;
-      return;
-    }
-    const length=Math.hypot(f,s), speed=(has("shift")?3.25:1.56);
-    const step=length?speed*dt/length:0;
-    const dx=(Math.sin(W.yaw)*f+Math.cos(W.yaw)*s)*step;
-    const dz=(Math.cos(W.yaw)*f-Math.sin(W.yaw)*s)*step;
-    const oldX=W.x,oldZ=W.z;
-    function advance(x,z){
-      if(!usable(x,z,W.y)) return false;
-      for(const [a,b] of [[0.24,0],[-0.24,0],[0,0.24],[0,-0.24]]) if(!usable(x+a,z+b,W.y)) return false;
-      const y=deck(x,z,W.y);
-      if(!Number.isFinite(y)||Math.abs(y-W.y)>0.68 || Obs.hit(x,z,0.2,own,o=>o.ped,y)) return false;
-      W.x=x; W.z=z; return true;
-    }
-    if(step && !advance(W.x+dx,W.z+dz)){
-      if(dx) advance(W.x+dx,W.z);
-      if(dz) advance(W.x,W.z+dz);
-    }
-    W.y=deck(W.x,W.z,W.y);
-    const distance=Math.hypot(W.x-oldX,W.z-oldZ);
-    W.speed+=(distance/Math.max(dt,0.001)-W.speed)*Math.min(1,dt*10);
-    W.feet=(W.feet+distance*4.4)%(Math.PI*2);
-  }
+
+  /* ================= 運行（停留所で停まり、扉を開け閉め） ================= */
   function tramClearance(line){
     let gap=Infinity;
     for(const q of line.intervals){
@@ -12889,26 +13267,35 @@ const Walk=(()=>{
     }
     return gap;
   }
+  // 扉の近く（内外 1.2m）に自分がいるか: いれば扉を閉めない（実車のセンサーと同じ）
+  function playerAtDoor(line){
+    if(W.car && W.car.line===line){ const d=inDoor(W.car,W.lx,W.lz,-0.3); return !!(d && Math.abs(W.lx)>W.car.wx-1.0); }
+    for(const c of line.cars){ const p=toLocal(c,W.x,W.y,W.z); if(Math.abs(p.x)<c.hw+1.3 && Math.abs(p.z)<c.len/2 && inDoor(c,p.x,p.z,-0.4)) return true; }
+    return false;
+  }
   const probe=new THREE.Vector3();
   function service(line,dt){
     const stop=line.stops[line.index], last=line.index===line.stops.length-1;
+    const aboard=W.car && W.car.line===line;
     if(line.done){
       line.wait-=dt;
-      if(line.wait>0 || W.ride===line) return;
-      line.index=0; line.travel=line.stops[0].arc; line.done=false; line.dwell=line.dwellLength=17;
+      if(line.wait>0 || aboard) return;
+      line.index=0; line.travel=line.stops[0].arc; line.done=false; line.dwell=line.dwellLength=24;
       line.model.visible=true; place(line);return;
     }
     if(line.dwell>0){
       line.held+=dt;
+      if(line.held<0.05 || !line.openSide) line.openSide=stop.entry?sideToward(line,stop.entry):1;
       const waitForPlayer=line.first && line.index===0 && line.kind!=="tram" &&
-        stop.entry && near(W,stop.entry)>10 && line.held<160 && W.ride!==line;
-      const offer=line.initialOffer && line.first && !W.ride && stop.entry && near(W,stop.entry)<6;
+        stop.entry && near(W,stop.entry)>10 && line.held<160 && !aboard;
+      const offer=line.initialOffer && line.first && !aboard && stop.entry && near(W,stop.entry)<10 && line.held<240;
       if((!waitForPlayer && !offer) || line.dwell>8) line.dwell=Math.max(0,line.dwell-dt);
-      line.doors=bound(Math.min((line.dwellLength-line.dwell)/1.3,line.dwell/1.3),0,1);
-      if(last && W.ride===line && line.dwell<3) line.dwell=3;
+      if(line.dwell<2.2 && playerAtDoor(line) && line.held<line.dwellLength+60) line.dwell=2.2;
+      line.doors=bound(Math.min((line.dwellLength-line.dwell)/1.6,line.dwell/1.6),0,1);
+      if(last && aboard && line.dwell<3) line.dwell=3;
       if(line.dwell<=0){
         if(last){line.done=true;line.wait=56;line.model.visible=false;for(const b of Trams.blocks)if(b.owner===line)b.owner=null;}
-        else {line.index++;line.first=false;line.requested=false;if(W.ride===line) announce("次は、"+line.stops[line.index].name+"です。");}
+        else {line.index++;line.first=false;line.requested=false;line.held=0;if(aboard) announce("次は、"+line.stops[line.index].name+"です。");}
       }
     }else{
       let gap=Math.min(stop.arc-line.travel,tramClearance(line));
@@ -12924,72 +13311,70 @@ const Walk=(()=>{
           if(hit){gap=Math.min(gap,d-clearance);break;}
         }
       }
+      // バスは降車ボタンが押されていない・待つ人がいない停留所は通過しない（実際は通過することもあるが、ここでは毎回停まる）
       const max=line.kind==="bus"?9.2:line.kind==="jr"?19:10.5;
       let limit=max;
       if(line.speed) for(const d of [0,6,14,28]){
         const k=pathIdx(line.path,Math.min(line.path.len,line.travel+d));
         const v=(line.speed[k]||max*3.6)/3.6;
-        limit=Math.min(limit,Math.sqrt(v*v+2*1.15*d));
+        limit=Math.min(limit,Math.sqrt(v*v+2*1.0*d));
       }
-      const target=Math.min(limit,Math.sqrt(2*1.15*Math.max(0,gap)));
-      line.v+=bound(target-line.v,-1.85*dt,1.03*dt);
+      const target=Math.min(limit,Math.sqrt(2*1.0*Math.max(0,gap)));
+      // 立っている人がよろけないよう、加速・減速はなめらかに（加加速度を制限）
+      const want=bound(target-line.v,-1.6,0.95);
+      line.acc=(line.acc||0)+bound(want-(line.acc||0),-2.2*dt,2.2*dt);
+      line.v=Math.max(0,line.v+line.acc*dt); if(line.v>target+0.3) line.v=Math.max(target,line.v-1.8*dt);
       line.travel+=Math.min(Math.max(0,gap),line.v*dt);
       if(stop.arc-line.travel<0.21 && line.v<1){
-        line.travel=stop.arc;line.v=0;line.dwell=line.dwellLength=17;
-        if(W.ride===line) announce(stop.name+"に到着しました。");
+        line.travel=stop.arc;line.v=0;line.acc=0;line.dwell=line.dwellLength=line.kind==="tram"?24:line.kind==="bus"?30:45;line.held=0;line.openSide=0;
+        if(aboard) announce(stop.name+"です。");
       }
       line.doors=0;
     }
     place(line);
   }
+
+  /* ================= 案内表示 ================= */
   let hudT=0;
   function refresh(force){
     if(!force && hudT>0) return;
-    hudT=0.24;
-    const r=W.ride, list=r?[]:boarding(), b=list[0];
-    const choice=$("walk-choices"), key=list.map(l=>l.key).join(",");
-    if(key!==boardKey){
-      const previous=choice.value;
-      choice.replaceChildren(...list.map(l=>new Option(l.label+" "+l.dest+"行き",l.key)));
-      if(list.some(l=>l.key===previous)) choice.value=previous;
-      boardKey=key;
-    }
-    $("walk-choices-label").hidden=list.length<2;
-    if(!r){
-      shown=null; let best=Infinity;
-      for(const l of services) for(const s of l.stops){
-        if(!s.entry) continue;
-        const d=near(W,s.entry);
-        if(d<best){best=d;shown={l,s,d};}
-      }
-    }
+    hudT=0.25;
+    const r=W.car?W.car.line:null;
+    let shown=null;
+    if(!r){ let best=Infinity;
+      for(const l of services) for(const s of l.stops){ if(!s.entry) continue; const d=near(W,s.entry); if(d<best){best=d;shown={l,s,d};} } }
+    let boardable=null;
+    if(!r) for(const l of services){ if(l.done || l.dwell<=1.5 || l.doors<0.6) continue; const c=l.cars[0]; if(near(W,l.pose)<l.cars.length*21+6) { boardable=l; break; } }
     const s=r?.stops[r.index];
     const access=stationAccess(); gate.hidden=!access; if(access) gate.textContent=access.name;
-    const allow=!!(r && r.dwell>1.7 && r.doors>=0.8 && s?.entry && atDoor());
     $("walk-bell").hidden=r?.kind!=="bus";
     $("walk-bell").disabled=!r || r.dwell>0 || !!r.requested;
-    const title=r?r.label+" · "+r.dest+"行き":"徒歩";
-    $("walk-title").textContent=title;
-    const text=r?(r.dwell>0?s.name+" 停車中":"次は "+s.name+(r.requested?" · 降車リクエスト済み":"")):
-      b?b.label+" "+b.dest+"行きが停車中":
-      shown?shown.s.name+"まで "+Math.round(shown.d)+" m":"近くの停留場を探してください";
+    $("walk-title").textContent=r?r.label+" · "+r.dest+"行き":"徒歩";
+    let text;
+    if(toastT>0) text=toastMsg;
+    else if(r) text=r.dwell>0?s.name+" に停車中 · 扉が開いています":"次は "+s.name+(r.requested?" · 次、停まります":"");
+    else if(boardable) text=boardable.label+" "+boardable.dest+"行き 停車中 · 開いている扉から乗れます";
+    else text=shown?shown.s.name+"（"+shown.l.label+"）まで "+Math.round(shown.d)+" m":"近くの停留場・駅を探してください";
     if(text!==lastText){status.textContent=text;lastText=text;}
-    action.disabled=!(allow||b);
-    action.textContent=r?"降りる [F]":"乗る [F]";
-    nearby.textContent=r?(allow?"扉が開いています":r.dwell>0&&s?.entry?"車内を歩いて扉の近くへ":"停車して扉が開くと降りられます"):
+    const seat=W.seat?null:nearestSeat();
+    action.disabled=!(W.seat||seat);
+    action.textContent=W.seat?"立つ [C]":"座る [C]";
+    action.hidden=!W.car;
+    nearby.textContent=W.car?(W.seat?"座っています · W か C で立ちます":r.dwell>0?"扉から外へ歩くと降ります"+(r.kind==="bus"?"（前の扉）":""):seat?"近くの席に座れます":"走行中 · 空いている席に近づくと座れます"):
       shown?shown.l.label+" · "+shown.l.dest+"行き":"";
+    $("walk-view").textContent=W.view==="fp"?"視点: 一人称 [V]":"視点: 見下ろし [V]";
   }
   function tick(dt){
     if(!W.active) return;
-    hudT-=dt;
+    hudT-=dt; toastT-=dt;
     for(const l of services) service(l,dt);
-    movement(dt);orient();refresh(false);
-    const p=W.ride?W.ride.pose:W;
-    Loc.update(dt,p.x,p.z,W.ride?"乗車中":"徒歩");
+    movement(dt); updateCam(dt); drawPeople(); refresh(false);
+    const p=W.car?toWorld(W.car,W.lx,0,W.lz):W;
+    Loc.update(dt,p.x,p.z,W.car?"乗車中":"徒歩");
   }
   function register(){
     if(!W.active) return;
-    if(!W.ride) Obs.add(W.x,W.z,0.33,own,W.y);
+    if(!W.car) Obs.add(W.x,W.z,0.33,own,W.y);
     for(const l of services){
       if(l.done || l.kind==="jr") continue;
       l.walkService=true;
@@ -12999,29 +13384,61 @@ const Walk=(()=>{
       Obs.addBody(front.x,front.z,t.x,t.z,l.kind==="bus"?10.5:18,l.kind==="bus"?1.24:1.15,l,front.y);
     }
   }
+
+  function start(){
+    leaveJR(); Car.stop(); Clock.reset(); Snd.init(); Snd.hush();
+    S.mode="walk"; S.running=false; $("menu").style.display="none"; $("ui").classList.remove("on");
+    if(S.car) S.car.visible=false;
+    Trams.clearAll(); Traffic.reset();
+    Station.build();
+    crowd=Peds.crowd(160); avatar=Peds.crowd(1); avatar.look(0,{top:"#2f4c6e",bot:"#2a2d33",hair:"#1a1512",ext:"#333"});
+    buildServices();
+    const startKind=new URLSearchParams(location.search).get("start");
+    const departing=services.find(l=>l.kind===startKind && l.stops[0].entry)||
+      services.find(l=>l.kind==="tram" && l.dest.startsWith("東山"));
+    if(departing) departing.initialOffer=true;
+    let first=departing?.stops[0].entry;
+    if(startKind==="jr"){ const e=Station.eastEntrance(); if(e) first=e; }
+    const start=first||landing(-74,-17)||landing(-31.2,-59.6);
+    if(!start){ Boot.fail("徒歩の開始地点を読み込めませんでした。",null,true); return; }
+    // 乗り場の少し手前に立ち、乗り物の方を向く
+    let yaw=0;
+    if(departing && first===departing.stops[0].entry){ const p=departing.pose; yaw=Math.atan2(p.x-start.x,p.z-start.z); const back=1.6; const bx=start.x-Math.sin(yaw)*back, bz=start.z-Math.cos(yaw)*back; if(usable(bx,bz,start.y)){ start.x=bx; start.z=bz; } }
+    else if(start.yaw!=null) yaw=start.yaw;
+    Object.assign(W,{x:start.x,y:start.y,z:start.z},{active:true,yaw,pitch:-0.04,car:null,ride:null,seat:null,vx:0,vz:0,camY:NaN});
+    document.body.classList.add("walk-active"); ui.hidden=false; updateCam(0.016); refresh(true);
+  }
+
+  /* ================= 入力 ================= */
   const clear=()=>{keys.clear();press.clear();drag=null;};
   addEventListener("blur",clear);
   document.addEventListener("visibilitychange",()=>{if(document.hidden)clear();});
   addEventListener("keydown",e=>{
     if(!W.active || typing() || ["SELECT","INPUT","TEXTAREA"].includes(e.target?.tagName) || e.altKey || e.metaKey || e.ctrlKey) return;
     const k=e.key.toLowerCase();
-    if(k==="f"){if(!e.repeat)boardOrExit(); e.preventDefault();return;}
+    if(k==="f"||k==="c"){if(!e.repeat)interact(); e.preventDefault();return;}
+    if(k==="v"){if(!e.repeat){W.view=W.view==="fp"?"tp":"fp"; refresh(true);} e.preventDefault();return;}
+    if(k==="b"){ $("walk-bell").click(); e.preventDefault(); return; }
     if(["w","a","s","d","arrowup","arrowdown","arrowleft","arrowright","q","e","shift"].includes(k)){
       keys.add(k);e.preventDefault();
     }
   });
   addEventListener("keyup",e=>keys.delete(e.key.toLowerCase()));
+  const look=(dx,dy)=>{ W.yaw-=dx*0.0042; W.pitch=bound(W.pitch-dy*0.0038,-1.2,1.15); };
   canvas.addEventListener("pointerdown",e=>{
     if(!W.active || e.button!==0)return;
+    if(e.pointerType==="mouse" && canvas.requestPointerLock && document.pointerLockElement!==canvas){ try{ canvas.requestPointerLock(); }catch(_){} }
     drag={id:e.pointerId,x:e.clientX,y:e.clientY};
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener("pointermove",e=>{
+    if(!W.active) return;
+    if(document.pointerLockElement===canvas){ look(e.movementX,e.movementY); return; }
     if(!drag||drag.id!==e.pointerId) return;
-    W.yaw-=(e.clientX-drag.x)*0.0048;
-    W.pitch=bound(W.pitch+(drag.y-e.clientY)*0.0044,-1.05,1.05);
+    look(e.clientX-drag.x,e.clientY-drag.y);
     drag.x=e.clientX;drag.y=e.clientY;
   });
+  canvas.addEventListener("wheel",e=>{ if(!W.active) return; W.dist=bound(W.dist*(e.deltaY>0?1.12:0.89),2.2,40); if(W.view==="fp" && e.deltaY>0){ W.view="tp"; refresh(true); } else if(W.view==="tp" && W.dist<=2.25 && e.deltaY<0){ W.view="fp"; refresh(true); } e.preventDefault(); },{passive:false});
   for(const id of ["pointerup","pointercancel","lostpointercapture"]) canvas.addEventListener(id,()=>{drag=null;});
   for(const b of ui.querySelectorAll("[data-walk]")){
     b.addEventListener("pointerdown",e=>{press.set(e.pointerId,b.dataset.walk);b.setPointerCapture(e.pointerId);e.preventDefault();});
@@ -13035,40 +13452,39 @@ const Walk=(()=>{
     }
     stationExits.set(platform.st,null); return null;
   }
+  // 岡山以外の駅: ホームと駅前を行き来する（駅舎の中は作っていない）
   function stationAccess(){
-    if(W.ride) return null;
-    const station=services.find(l=>l.kind==="jr" && l.stops[0].entry?.station);
-    if(!station) return null;
+    if(W.car) return null;
     const platform=platformAt(W.x,W.z);
     if(platform && Math.abs(platform.y-W.y)<0.48 && platform.st!=="岡山"){
       const dep=services.flatMap(l=>l.kind==="jr"?l.stops:[]).find(s=>s.name===platform.st && s.entry?.station);
       const spot=dep?stationExit(dep,platform):null;
       if(spot) return {spot,name:platform.st+"駅の駅前へ"};
     }
-    const entry=station.stops[0].entry;
-    if(!stationExits.has("岡山")) stationExits.set("岡山",landing(-31.2,-59.6));
-    const east=stationExits.get("岡山");
-    if(east && near(W,east)<9 && Math.abs(W.y-east.y)<1.1 && near(W,entry)>4) return {spot:entry,name:"岡山駅のホームへ"};
-    if(east && (platform?.st==="岡山" && Math.abs(W.y-platform.y)<0.72 || near(W,entry)<9 && Math.abs(W.y-entry.y)<1.1)) return {spot:east,name:"岡山駅東口へ"};
     return null;
   }
   gate.addEventListener("click",()=>{
     const access=stationAccess();
-    if(access){Object.assign(W,access.spot,{speed:0});orient();refresh(true);}
+    if(access){Object.assign(W,access.spot,{vx:0,vz:0}); W.camY=NaN; refresh(true);}
   });
-  action.addEventListener("click",boardOrExit);
+  action.addEventListener("click",()=>interact());
+  $("walk-view").addEventListener("click",()=>{ W.view=W.view==="fp"?"tp":"fp"; refresh(true); });
   $("walk-bell").addEventListener("click",()=>{
-    const l=W.ride;
+    const l=W.car?.line;
     if(l?.kind!=="bus"||l.dwell>0||l.requested) return;
     l.requested=true; Snd.init(); Snd.ann("bus_request"); refresh(true);
   });
-  $("walk-menu").addEventListener("click",()=>{if("speechSynthesis" in window)speechSynthesis.cancel();goMenuPage();});
+  $("walk-menu").addEventListener("click",()=>{if("speechSynthesis" in window)speechSynthesis.cancel();if(document.pointerLockElement)document.exitPointerLock();goMenuPage();});
   $("walk-audio").addEventListener("click",e=>{
     spoken=true;W.muted=!W.muted;e.currentTarget.setAttribute("aria-pressed",String(!!W.muted));
     e.currentTarget.textContent=W.muted?"放送オフ":"放送オン";
     if(W.muted && "speechSynthesis" in window) speechSynthesis.cancel();
   });
-  return {start,tick,register,get active(){return W.active;},get position(){return W.ride?W.ride.pose:W;}};
+  window.__Walk=W; window.__walkServices=services;
+  // 試験用: キーを押したまま sec 秒ぶん進める（描画なし）
+  window.__walkSim=(ks,sec,noService)=>{ for(const k of ks) keys.add(k); for(let t=0;t<sec;t+=0.05){ if(!noService) for(const l of services) service(l,0.05); movement(0.05); } for(const k of ks) keys.delete(k); updateCam(0.05); drawPeople(); refresh(true); return [W.car?W.car.line.label:null,W.lx,W.lz,W.x,W.z,W.y,status.textContent]; };
+  window.__walkDo=(f)=>{ if(f==="sit") return sitDown(); if(f==="stand") return standUp(); if(f==="view") W.view=W.view==="fp"?"tp":"fp"; };
+  return {start,tick,register,get active(){return W.active;},get position(){return W.car?toWorld(W.car,W.lx,0,W.lz):W;}, _sit:sitDown};
 })();
 
 
