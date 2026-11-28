@@ -5513,44 +5513,153 @@ function updateLamps(t){
 /* ---------------- 車両: 9200形（公表諸元に基づく簡略モデル）
    2車体連接・編成全長18.0m・各車体8.54m・全幅2.4m・全高3.745m（集電装置折畳み）
    塗装: メタリックのライトシルバー基調、車体裾にコバルトブルーの帯。100%低床 */
-function makeCarBody(withPanto){
-  const g = new THREE.Group();
-  const L = 8.54, W = 2.4, R = W/2, straight = L - R;
-  const silver = new THREE.MeshPhongMaterial({color:0xc8ccd1, specular:0x9aa0a8, shininess:70});
-  const blue = new THREE.MeshPhongMaterial({color:0x1d4f9e, specular:0x335577, shininess:60});
-  const glass = new THREE.MeshPhongMaterial({color:0x1c2830, specular:0x88a0b0, shininess:90});
-  const grey = new THREE.MeshLambertMaterial({color:0x8e9296});
-  const dark = new THREE.MeshLambertMaterial({color:0x2a2d30});
-  const zc = -R/2;                               // 直線部の中心（+z 側が丸い先頭）
-  function slab(y0, y1, mat, grow){
-    const w = W + (grow||0)*2, r = R + (grow||0);
-    const box = new THREE.Mesh(new THREE.BoxGeometry(w, y1-y0, straight), mat);
-    box.position.set(0, (y0+y1)/2, zc); g.add(box);
-    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(r, r, y1-y0, 24, 1, false, -Math.PI/2, Math.PI), mat);
-    cyl.position.set(0, (y0+y1)/2, zc + straight/2); g.add(cyl);
+// 横断面を高さごとに変え、窓の傾斜、車体の肩と裾、妻面の丸みを形状で作る。
+function railShell(sections, width, length, materials){
+  const rings = sections.map(([y, half, front, rear, corner]) => [
+    [-half+corner,y,front], [half-corner,y,front], [half,y,front-corner],
+    [half,y,rear+corner], [half-corner,y,rear], [-half+corner,y,rear],
+    [-half,y,rear+corner], [-half,y,front-corner]
+  ]);
+  const bottom = sections[0][0], height = sections.at(-1)[0]-bottom;
+  const geo = new THREE.BufferGeometry(), pos = [], uv = [];
+  const faces = [[],[],[],[],[],[]];
+  for(let i=1;i<rings.length;i++) for(let j=0;j<8;j++){
+    const k=(j+1)%8, face=[4,4,0,5,5,5,1,4][j];
+    const a=rings[i-1][j], b=rings[i-1][k], c=rings[i][k], d=rings[i][j];
+    faces[face].push(a,b,c,a,c,d);
   }
-  slab(0.22, 0.62, blue);
-  slab(0.62, 1.00, silver);
-  slab(1.00, 2.55, glass, -0.01);
-  slab(2.55, 3.20, silver);
-  for(let k=-1;k<=1;k++){ const post=new THREE.Mesh(new THREE.BoxGeometry(W+0.02,1.55,0.2), silver); post.position.set(0,1.775,zc+k*2.2); g.add(post); }
-  const roofBox = new THREE.Mesh(new THREE.BoxGeometry(1.7,0.42,3.4), grey); roofBox.position.set(0,3.41,zc-0.6); g.add(roofBox);
-  for(const x of [-0.75,0.75]){ const l=new THREE.Mesh(new THREE.CircleGeometry(0.11,12), new THREE.MeshBasicMaterial({color:0xf5f2e0}));
-    l.position.set(x,0.82,zc+straight/2+Math.sqrt(R*R-x*x)+0.012); g.add(l); }
+  for(let j=1;j<7;j++){
+    const roof=rings.at(-1), floor=rings[0];
+    faces[2].push(roof[0],roof[j],roof[j+1]);
+    faces[3].push(floor[0],floor[j+1],floor[j]);
+  }
+  for(let f=0;f<faces.length;f++){
+    const offset=pos.length/3;
+    for(const [x,y,z] of faces[f]){
+      pos.push(x,y,z);
+      const u=f===0 ? 0.5-z/length : f===1 ? 0.5+z/length : 0.5+(f===5?-x:x)/width;
+      uv.push(u,(y-bottom)/height);
+    }
+    geo.addGroup(offset,faces[f].length,f);
+  }
+  geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo,materials);
+}
+function rollingGear(root, centers, gauge, radius, frameWidth, wheelbase){
+  const dark=new THREE.MeshLambertMaterial({color:0x282a2c});
+  const steel=new THREE.MeshPhongMaterial({color:0x4a4e51,shininess:38});
+  const box=(w,h,d,x,y,z)=>{
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),dark);
+    mesh.position.set(x,y,z); root.add(mesh);
+  };
+  const treads=new THREE.InstancedMesh(new THREE.CylinderGeometry(radius,radius,0.12,16),steel,centers.length*4);
+  const hubs=new THREE.InstancedMesh(new THREE.CylinderGeometry(radius*0.48,radius*0.48,0.15,12),dark,centers.length*4);
+  const wheel=new THREE.Object3D(); wheel.rotation.z=Math.PI/2;
+  let i=0;
+  for(const center of centers){
+    box(frameWidth*0.66,radius*0.75,wheelbase+0.32,0,radius,center);
+    for(const dz of [-wheelbase/2,wheelbase/2]) for(const s of [-1,1]){
+      wheel.position.set(s*gauge/2,radius,center+dz); wheel.updateMatrix();
+      treads.setMatrixAt(i,wheel.matrix); hubs.setMatrixAt(i++,wheel.matrix);
+    }
+  }
+  root.add(treads,hubs);
+}
+function exteriorFinish(map, color=0xffffff){
+  if(map){
+    map.wrapS=map.wrapT=THREE.ClampToEdgeWrapping;
+    map.encoding=THREE.sRGBEncoding;
+  }
+  return new THREE.MeshPhongMaterial({map,color,shininess:35,specular:0x424950});
+}
+function exteriorPanel(c,x,y,w,h,color){
+  c.fillStyle=color;
+  c.fillRect(x,y,w,h);
+}
+function exteriorWindow(c,x,y,w,h,split=false){
+  exteriorPanel(c,x,y,w,h,"#171d22");
+  const glass=c.createLinearGradient(0,y,0,y+h);
+  glass.addColorStop(0,"#27373f"); glass.addColorStop(0.46,"#60717a"); glass.addColorStop(1,"#29363c");
+  exteriorPanel(c,x+3,y+3,w-6,h-6,glass);
+  exteriorPanel(c,x+4,y+5,w-8,2,"#a3b5bb");
+  if(split) exteriorPanel(c,x+2,y+h*0.3,w-4,3,"#242b31");
+}
+function exteriorLettering(c,label,x,y,size,color,max){
+  c.font="bold "+size+"px 'Noto Sans JP','Meiryo',Arial,sans-serif";
+  c.fillStyle=color; c.textAlign="center"; c.textBaseline="middle";
+  if(max) c.fillText(label,x,y,max); else c.fillText(label,x,y);
+}
+function makeCarBody(withPanto,dest){
+  const g=new THREE.Group(), width=2.4, length=8.54, half=length/2;
+  const roof=exteriorFinish(null,0xc3c9cc), dark=new THREE.MeshLambertMaterial({color:0x31363c});
+  const side=(left)=>exteriorFinish(canvasTex(1024,384,(c,w,h)=>{
+    exteriorPanel(c,0,0,w,h,"#c7cdd1");
+    exteriorPanel(c,0,294,w,90,"#244d86");
+    exteriorPanel(c,0,287,w,7,"#536f92");
+    for(const [x,ww] of [[49,111],[177,145],[338,148],[497,145],[658,141],[816,154]]){
+      exteriorWindow(c,left?x:w-x-ww,71,ww,144);
+    }
+    const x=left?487:377;
+    exteriorPanel(c,x,64,146,305,"#4f5961");
+    exteriorPanel(c,x+4,67,138,298,"#bcc4cb");
+    exteriorWindow(c,x+10,77,59,172); exteriorWindow(c,x+77,77,59,172);
+    exteriorPanel(c,x+70,67,4,298,"#303b42");
+    exteriorPanel(c,x+4,294,138,69,"#244d86");
+    exteriorLettering(c,"MOMO",left?759:265,266,32,"#244d86");
+    exteriorLettering(c,withPanto?"9201A":"9201B",left?100:924,324,23,"#edf0ec");
+  }));
+  const nose=exteriorFinish(canvasTex(384,448,(c,w,h)=>{
+    exteriorPanel(c,0,0,w,h,"#c5cacf");
+    exteriorPanel(c,0,334,w,114,"#254f90");
+    c.fillStyle="#283236"; c.beginPath(); c.moveTo(44,46); c.quadraticCurveTo(192,20,340,46);
+    c.lineTo(328,235); c.quadraticCurveTo(192,255,56,235); c.closePath(); c.fill();
+    exteriorWindow(c,49,50,286,183);
+    exteriorPanel(c,86,55,212,42,"#111619");
+    exteriorLettering(c,dest||"東山",192,76,27,"#ffc766",194);
+    c.strokeStyle="#181d21"; c.lineWidth=4; c.beginPath(); c.moveTo(183,226); c.lineTo(260,162); c.stroke();
+    exteriorLettering(c,"MOMO",192,281,29,"#264e82");
+    exteriorLettering(c,withPanto?"9201A":"9201B",192,367,18,"#f4f4eb");
+    for(const x of [42,274]){
+      exteriorPanel(c,x,294,68,36,"#334650");
+      exteriorPanel(c,x+5,298,58,27,withPanto?"#f1e3bd":"#9b3038");
+    }
+  }));
+  g.add(railShell([
+    [0.24,1.09,half-0.15,-half,0.23], [0.55,1.20,half-0.04,-half,0.27],
+    [0.91,1.20,half,-half,0.30], [1.73,1.20,half-0.05,-half,0.28],
+    [2.54,1.19,half-0.28,-half,0.24], [2.94,1.17,half-0.42,-half,0.22],
+    [3.24,1.08,half-0.52,-half,0.18], [3.34,0.96,half-0.60,-half,0.16]
+  ],width,length,[side(true),side(false),roof,dark,nose,dark]));
+  const box=(w,h,d,x,y,z,material=dark)=>{
+    const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
+    mesh.position.set(x,y,z); g.add(mesh); return mesh;
+  };
+  rollingGear(g,[1.62],1.067,0.31,1.44,1.72);
+  box(1.66,0.31,2.86,0,3.48,-1.50,roof);
+  for(const x of [-0.40,0.40]) box(0.56,0.02,1.52,x,3.645,-1.35,dark);
   if(withPanto){
-    const base=new THREE.Mesh(new THREE.BoxGeometry(1.0,0.12,1.0), dark); base.position.set(0,3.68,zc+1.2); g.add(base);
-    const a1=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.07,1.9), dark); a1.position.set(0,4.25,zc+0.7); a1.rotation.x=-0.62; g.add(a1);
-    const a2=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,1.8), dark); a2.position.set(0,4.95,zc+0.8); a2.rotation.x=0.72; g.add(a2);
-    const shoe=new THREE.Mesh(new THREE.BoxGeometry(1.5,0.06,0.28), dark); shoe.position.set(0,5.43,zc+1.35); g.add(shoe);
+    box(0.94,0.12,0.94,0,3.56,0.66);
+    const arm=(z1,y1,z2,y2)=>{
+      const mesh=box(0.065,Math.hypot(z2-z1,y2-y1),0.065,0,(y1+y2)/2,(z1+z2)/2);
+      mesh.rotation.x=Math.atan2(z2-z1,y2-y1);
+    };
+    arm(0.33,3.62,1.32,4.50); arm(1.32,4.50,0.75,5.39);
+    box(1.48,0.06,0.23,0,5.43,0.75);
   }
   return g;
 }
-function makeTram(){
+function makeTram(dest){
   const g = new THREE.Group();
-  const a = makeCarBody(true);                        // A車（前・集電装置）
-  const bInner = makeCarBody(false); bInner.rotation.y = Math.PI;
+  const a = makeCarBody(true,dest);                        // A車（前・集電装置）
+  const bInner = makeCarBody(false,"岡山駅前"); bInner.rotation.y = Math.PI;
   const b = new THREE.Group(); b.add(bInner);          // B車（後ろ向き）
-  const j = new THREE.Mesh(new THREE.BoxGeometry(2.2,2.8,1.0), new THREE.MeshLambertMaterial({color:0x3b3f44}));
+  const j = new THREE.Group(), bellows = new THREE.MeshLambertMaterial({color:0x34383b});
+  for(let i=0;i<10;i++){
+    const rib=new THREE.Mesh(new THREE.BoxGeometry(2.12+(i%2)*0.09,2.72+(i%2)*0.10,0.105),bellows);
+    rib.position.z=(i-4.5)*0.211; j.add(rib);
+  }
   g.userData = {a, b, j}; g.add(a, b, j);
   return g;
 }
@@ -5615,12 +5724,13 @@ function makeTram3000(kind, dest){
   const frontM = new THREE.MeshLambertMaterial({map:T.front});
   const roofM = new THREE.MeshLambertMaterial({color:new THREE.Color(L.roof)});
   const darkM = new THREE.MeshLambertMaterial({color:0x222426});
-  const body = new THREE.Mesh(new THREE.BoxGeometry(W, y1-y0, len-0.6), [sideM, sideM, roofM, darkM, frontM, frontM]);
-  body.position.set(0,(y0+y1)/2,0); g.add(body);
-  // 前後の妻面（わずかに丸い前面）
+
+  g.add(railShell([
+    [y0,1.09,5.99,-5.99,0.19],[y0+0.37,W/2,6,-6,0.20],
+    [2.87,W/2,5.93,-5.93,0.20],[3.15,1.07,5.86,-5.86,0.19],
+    [y1,0.89,5.80,-5.80,0.18]
+  ],W,len,[sideM,sideM,roofM,darkM,frontM,frontM]));
   for(const s of [1,-1]){
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(W/2, W/2, y1-y0, 24, 1, false, s>0?-Math.PI/2:Math.PI/2, Math.PI), new THREE.MeshPhongMaterial({map:T.front, shininess:40, specular:0x333333}));
-    cap.scale.set(1,1,0.26); cap.position.set(0,(y0+y1)/2, s*(len/2-0.3)); g.add(cap);
     const hl = new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.15,0.18,16), new THREE.MeshPhongMaterial({color:0x111111, shininess:60}));
     hl.rotation.x=Math.PI/2; hl.position.set(0, y0+0.55, s*(len/2-0.3+0.3)); g.add(hl);
     const lens = new THREE.Mesh(new THREE.CircleGeometry(0.1,16), new THREE.MeshBasicMaterial({color:s>0?0xfff2cc:0x551111}));
@@ -5630,12 +5740,7 @@ function makeTram3000(kind, dest){
     for(const x of [-0.45,-0.15,0.15,0.45]){ const b=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,0.5), netM); b.position.set(x,0.35,s*(len/2+0.15)); g.add(b); }
     const bar=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.06,0.06), netM); bar.position.set(0,0.35,s*(len/2+0.38)); g.add(bar);
   }
-  // 屋根（丸屋根）と台車
-  const roof = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, len-0.7, 24, 1, false, -Math.PI/2*0.62, Math.PI*0.62), roofM);
-  roof.scale.set(1,1,0.28); roof.rotation.set(-Math.PI/2, 0, 0); roof.position.set(0, y1-0.12, 0); g.add(roof);
-  const cap2 = new THREE.Mesh(new THREE.BoxGeometry(W-0.3, 0.08, len-0.8), roofM); cap2.position.set(0,y1+0.03,0); g.add(cap2);
-  for(const s of [1,-1]){ const bg = new THREE.Mesh(new THREE.BoxGeometry(1.9,0.45,2.2), darkM); bg.position.set(0,0.42,s*3.4); g.add(bg);
-    for(const z of [-0.7,0.7]) for(const x of [-0.72,0.72]){ const wh=new THREE.Mesh(new THREE.CylinderGeometry(0.33,0.33,0.1,16), darkM); wh.rotation.z=Math.PI/2; wh.position.set(x,0.33,s*3.4+z); g.add(wh); } }
+  rollingGear(g,[-3.4,3.4],1.067,0.33,1.48,1.4);
   // 石津式パンタグラフ（菱形を上下に重ねた独特の枠）
   const pM = new THREE.MeshLambertMaterial({color: kind==="t3007"?0xd8321f:0x2b2b2b});
   const pan = new THREE.Group(); pan.position.set(0, y1+0.22, 1.2); g.add(pan);
@@ -5649,7 +5754,7 @@ function makeTram3000(kind, dest){
 function makeVehicle(kind, dest){
   if(VEHICLES[kind] && VEHICLES[kind].jr) return JR.makePlayer(kind);
   if(kind==="t3005" || kind==="t3007"){ const outer=new THREE.Group(); const inner=makeTram3000(kind, dest); outer.add(inner); outer.userData={single:true, a:inner, len:12.0, kind}; return outer; }
-  const g = makeTram(); g.userData.kind="momo"; g.userData.len=18.0; return g;
+  const g = makeTram(dest); g.userData.kind="momo"; g.userData.len=18.0; return g;
 }
 
 window.__setVehicle=(k)=>setVehicle(k);
@@ -5664,7 +5769,7 @@ function VEH(){ return VEHICLES[S.vehicle||"momo"]; }
 
 /* ---------- 一般車（7000形・8000形相当の 12.5m 級単車。塗装は広告ラッピング風の単色＝架空） ---------- */
 const LIVERIES_7000 = [
-  { body:"#e8c02a", band:"#ffffff", num:"7101" }, { body:"#c8372d", band:"#f2ede0", num:"7301" },
+  { body:"#eeede8", band:"#e5a766", num:"7001", tama:true }, { body:"#c8372d", band:"#f2ede0", num:"7301" },
   { body:"#4d8fd1", band:"#ffffff", num:"7701" }, { body:"#3f9a5c", band:"#f4f1e6", num:"8101" },
   { body:"#f0efe8", band:"#d85a2a", num:"7401" }, { body:"#8a4fb0", band:"#ffffff", num:"8501" },
 ];
@@ -5677,18 +5782,30 @@ function tram7000Textures(lv, dest){
     door(40); door(w*0.55);
     for(let i=0;i<9;i++){ const x=150+i*86; if(x>w*0.55-80 && x<w*0.55+90) continue; g.fillStyle="#1b2229"; g.fillRect(x,h*0.16,74,h*0.44); g.fillStyle="rgba(255,255,255,.14)"; g.fillRect(x,h*0.16,74,4); }
     g.fillStyle="#1b2229"; g.fillRect(w-120,h*0.16,90,h*0.44);
-    g.fillStyle=lv.band; g.font="bold 24px Arial,sans-serif"; g.textAlign="center"; g.fillText(lv.num, w*0.82, h*0.9);
+    g.fillStyle=lv.tama?"#563e32":lv.band;
+    g.font="bold 24px Arial,sans-serif"; g.textAlign="center"; g.fillText(lv.num, w*0.82, h*0.9);
+    if(lv.tama){
+      exteriorLettering(g,"TAMA",w*0.35,h*0.83,30,"#654635");
+      for(const [x,y,m,color] of [[154,179,0.6,"#a76845"],[539,208,1,"#4c3e37"],[750,182,0.6,"#b9784d"]]){
+        g.fillStyle=color; g.beginPath(); g.ellipse(x,y,10*m,7*m,0,0,Math.PI*2); g.fill();
+        for(const [dx,dy] of [[-9,-9],[-3,-13],[4,-13],[10,-8]]){
+          g.beginPath(); g.ellipse(x+dx*m,y+dy*m,3.2*m,4*m,0,0,Math.PI*2); g.fill();
+        }
+      }
+    }
   });
   const front = canvasTex(256, 300, (g,w,h)=>{
     g.fillStyle=lv.body; g.fillRect(0,0,w,h);
     g.fillStyle=lv.band; g.fillRect(0,h*0.66,w,h*0.06);
-    g.fillStyle="#141a20"; g.beginPath(); g.moveTo(12,h*0.14); g.lineTo(w-12,h*0.14); g.lineTo(w-18,h*0.58); g.lineTo(18,h*0.58); g.closePath(); g.fill();
+    exteriorWindow(g,19,h*0.14,106,h*0.44);
+    exteriorWindow(g,131,h*0.14,106,h*0.44);
     g.fillStyle="#0b0b0b"; g.fillRect(56,h*0.02,144,h*0.1);
     g.fillStyle="#ffb13a"; g.textAlign="center"; g.textBaseline="middle";
     const dt=(dest||"東山").replace(/・.*$/,"")+" 行"; let fs=22; do { g.font="bold "+fs+"px 'Hiragino Sans','Noto Sans JP',sans-serif"; fs--; } while(g.measureText(dt).width>136 && fs>12);
     g.fillText(dt, w/2, h*0.07);
     g.fillStyle="#fff7da"; g.beginPath(); g.arc(46,h*0.8,11,0,7); g.arc(w-46,h*0.8,11,0,7); g.fill();
-    g.fillStyle=lv.band; g.font="bold 18px Arial,sans-serif"; g.fillText(lv.num, w/2, h*0.85);
+    g.fillStyle=lv.tama?"#563e32":lv.band; g.font="bold 18px Arial,sans-serif"; g.fillText(lv.num, w/2, h*0.85);
+    if(lv.tama) exteriorLettering(g,"TAMA",w/2,h*0.63,21,"#654635");
   });
   return {side, front};
 }
@@ -5698,21 +5815,35 @@ function makeTram7000(lv, dest){
   const len = 12.5, W = 2.35, y0 = 0.72, y1 = 3.45;
   const sideM = new THREE.MeshLambertMaterial({map:T.side}), frontM = new THREE.MeshPhongMaterial({map:T.front, shininess:30, specular:0x333333});
   const roofM = new THREE.MeshLambertMaterial({color:0xb9bcbf}), darkM = new THREE.MeshLambertMaterial({color:0x222426});
-  const body = new THREE.Mesh(new THREE.BoxGeometry(W, y1-y0, len-0.3), [sideM, sideM, roofM, darkM, frontM, frontM]);
-  body.position.set(0,(y0+y1)/2,0); g.add(body);
+
+  g.add(railShell([
+    [y0,1.12,6.20,-6.20,0.16],[1.05,W/2,6.25,-6.25,0.13],
+    [2.76,W/2,6.23,-6.23,0.12],[3.19,1.12,6.18,-6.18,0.12],
+    [y1,0.94,6.10,-6.10,0.12]
+  ],W,len,[sideM,sideM,roofM,darkM,frontM,frontM]));
   for(const s of [1,-1]){
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(W/2, W/2, y1-y0, 20, 1, false, s>0?-Math.PI/2:Math.PI/2, Math.PI), frontM);
-    cap.scale.set(1,1,0.1); cap.position.set(0,(y0+y1)/2, s*(len/2-0.15)); g.add(cap);
-    const sk = new THREE.Mesh(new THREE.BoxGeometry(W-0.1, 0.35, 0.3), darkM); sk.position.set(0, y0-0.1, s*(len/2-0.2)); g.add(sk);
+    const sk=new THREE.Mesh(new THREE.BoxGeometry(W-0.24,0.23,0.23),darkM);
+    sk.position.set(0,y0-0.07,s*(len/2-0.21)); g.add(sk);
   }
-  const eq = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.35, 3.2), roofM); eq.position.set(0, y1+0.17, -1.8); g.add(eq);
-  for(const s of [1,-1]){ const bg = new THREE.Mesh(new THREE.BoxGeometry(1.9,0.5,2.2), darkM); bg.position.set(0,0.45,s*3.3); g.add(bg); }
+  const eq=new THREE.Mesh(new THREE.BoxGeometry(1.52,0.26,3.05),roofM);
+  eq.position.set(0,y1+0.10,-1.8); g.add(eq);
+  rollingGear(g,[-3.3,3.3],1.067,0.33,1.48,1.56);
+  if(lv.tama){
+    const ears=new THREE.MeshLambertMaterial({color:0xa66d4b});
+    for(const z of [-5.81,5.81]) for(const x of [-0.79,0.79]){
+      const ear=new THREE.Mesh(new THREE.ConeGeometry(0.19,0.31,3),ears);
+      ear.scale.z=0.61; ear.rotation.y=Math.PI/3; ear.position.set(x,3.52,z); g.add(ear);
+    }
+  }
   // シングルアーム・パンタグラフ
   const pM = new THREE.MeshLambertMaterial({color:0x2b2b2b});
   const base=new THREE.Mesh(new THREE.BoxGeometry(0.9,0.1,0.9), pM); base.position.set(0,y1+0.08,1.4); g.add(base);
-  const a1=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.06,1.6), pM); a1.position.set(0,y1+0.55,1.0); a1.rotation.x=-0.62; g.add(a1);
-  const a2=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,1.5), pM); a2.position.set(0,y1+1.15,1.05); a2.rotation.x=0.72; g.add(a2);
-  const shoe=new THREE.Mesh(new THREE.BoxGeometry(1.3,0.05,0.25), pM); shoe.position.set(0,y1+1.62,1.5); g.add(shoe);
+  const arm=(z1,yA,z2,yB,width)=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(width,Math.hypot(z2-z1,yB-yA),width),pM);
+    m.position.set(0,y1+(yA+yB)/2,(z1+z2)/2); m.rotation.x=Math.atan2(z2-z1,yB-yA); g.add(m);
+  };
+  arm(1.46,0.13,0.52,0.88,0.065); arm(0.52,0.88,1.23,1.60,0.054);
+  const shoe=new THREE.Mesh(new THREE.BoxGeometry(1.32,0.05,0.25),pM); shoe.position.set(0,y1+1.62,1.23); g.add(shoe);
   g.userData = { single:true, body:g, len };
   return g;
 }
@@ -6216,49 +6347,65 @@ const Traffic = (()=>{
    車両: 三菱ふそう エアロスター（ノンステップ 10.5m 級）相当の簡略モデル。前扉・中扉（左側）、行先LED
    ※塗装は白地に紺・赤の帯としたが、両備バスの現行標準塗装は資料で確認できていない（写真があれば合わせられる） */
 
-function ryobiTex(dest, side){
-  // 側面 1024×320（長さ 10.5m × 高さ 3.2m）。side: "L"（扉側）/ "R"
-  return canvasTex(1024, 320, (g,w,h)=>{
-    const Y=(m)=>h-(m/3.2)*h, X=(m)=>side==="L" ? (1-m/10.5)*w : (m/10.5)*w;           // m 単位 → px。m は後ろから測る。v41.9: 左の面は画像の左端が車の前（文字が正しく読める向き）なので左右を入れかえ、右の面は反転せずそのまま貼る
-    g.fillStyle="#f4f5f3"; g.fillRect(0,0,w,h);
-    // 窓帯（黒）
-    g.fillStyle="#141a20"; g.fillRect(X(0.35), Y(2.62), X(9.6)-X(0.35), Y(1.3)-Y(2.62));
-    // 帯: 紺の裾・赤の細線（※推定）
-    g.fillStyle="#1d3f86"; g.fillRect(0, Y(0.95), w, Y(0.3)-Y(0.95));
-    g.fillStyle="#c8202c"; g.fillRect(0, Y(1.06), w, Y(0.98)-Y(1.06));
-    g.fillStyle="rgba(0,0,0,.08)"; g.fillRect(0, Y(3.2), w, Y(3.05)-Y(3.2));
-    // 窓柱
-    g.fillStyle="#f4f5f3";
-    for(let x=1.4; x<9.5; x+=1.28) g.fillRect(X(x), Y(2.62), 7, Y(1.3)-Y(2.62));
-    if(side==="L"){
-      // 前扉（前輪の前）・中扉（4枚折戸）
-      const door=(x0,x1)=>{ g.fillStyle="#1b2127"; g.fillRect(X(x0), Y(2.7), X(x1)-X(x0), Y(0.28)-Y(2.7));
-        g.fillStyle="#c9ccce"; g.fillRect(X(x0), Y(2.7), X(x1)-X(x0), 6); g.fillRect(X((x0+x1)/2)-2, Y(2.7), 4, Y(0.28)-Y(2.7)); };
-      door(9.35, 10.35); door(4.6, 5.65);
-      // 行先LED（側面・前扉の後ろ）
-      g.fillStyle="#0c0c0c"; g.fillRect(X(7.6), Y(2.55), X(9.2)-X(7.6), Y(2.25)-Y(2.55));
-      g.fillStyle="#ffb13a"; g.font="bold 20px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.textAlign="center"; g.textBaseline="middle";
-      g.fillText((dest||"西大寺BC")+" 行", X(8.4), Y(2.4));
-      g.fillStyle="#1d3f86"; g.font="bold 22px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.fillText("両備バス", X(7.2), Y(0.62));
-    } else {
-      g.fillStyle="#1d3f86"; g.font="bold 22px 'Hiragino Sans','Noto Sans JP',sans-serif"; g.textAlign="center"; g.textBaseline="middle";
-      g.fillText("両備バス", X(3.3), Y(0.62));
+
+const AEROSTAR_DOORS = [
+  {z:4.60,width:0.99,top:2.73},
+  {z:-0.12,width:1.14,top:2.56}
+];
+function ryobiTex(dest, left){
+  return canvasTex(1536,448,(c,w,h)=>{
+    const X=z=>w*(0.5+(left?-z:z)/10.5), Y=y=>h*(3.10-y)/2.8;
+    const r=(z0,z1,y0,y1,color)=>exteriorPanel(c,Math.min(X(z0),X(z1)),Y(y1),Math.abs(X(z1)-X(z0)),Y(y0)-Y(y1),color);
+    exteriorPanel(c,0,0,w,h,"#f1f1ed");
+    r(-5.25,5.25,0.30,0.86,"#214780"); r(-5.25,5.25,0.86,0.96,"#355c93");
+    r(-5.25,5.25,0.31,0.39,"#203855"); r(-5.25,5.25,2.86,2.90,"#d7d9d7");
+    const windows=left ? [[-4.88,-3.47],[-3.41,-2.06],[-2.00,-0.75],[0.49,1.58],[1.64,2.98],[3.04,4.04]] :
+      [[-4.88,-3.47],[-3.41,-2.06],[-2.00,-0.64],[-0.58,0.78],[0.84,2.18],[2.24,3.48],[3.54,4.96]];
+    for(const [a,b] of windows){
+      const top = a < -2.1 ? 2.61 : 2.68, bottom = a < -2.1 ? 1.52 : 1.36;
+      exteriorWindow(c,Math.min(X(a),X(b)),Y(top),Math.abs(X(b)-X(a)),Y(bottom)-Y(top),true);
     }
-    g.fillStyle="#1d3f86"; g.font="italic bold 26px Georgia,serif"; g.textAlign="center"; g.fillText("Ryobi", X(side==="L"?2.8:7.2), Y(1.75));
-    g.fillStyle="#333"; g.font="bold 15px Arial,sans-serif"; g.fillText("2507", X(side==="L"?9.9:0.8), Y(0.5));
+    for(const [a,b,y0,y1] of [[-4.78,-3.45,0.51,1.23],[-1.92,-0.9,0.56,1.15],[0.62,1.90,0.59,1.20]]){
+      c.strokeStyle="#64717a"; c.lineWidth=1.5;
+      c.strokeRect(Math.min(X(a),X(b)),Y(y1),Math.abs(X(b)-X(a)),Y(y0)-Y(y1));
+      r(a+0.21,a+0.37,y1-0.13,y1-0.10,"#535e65");
+    }
+    exteriorLettering(c,"両備バス",X(left?1.72:-1.25),Y(1.12),30,"#1f477e");
+    exteriorLettering(c,"Ryobi",X(left?-2.30:1.79),Y(0.67),30,"#e9eff5");
+    if(left){
+      r(2.07,3.48,2.22,2.60,"#121718");
+      exteriorLettering(c,dest||"西大寺BC",X(2.775),Y(2.42),35,"#ffc36b",194);
+      for(const {z,width,top} of AEROSTAR_DOORS){
+        const x=Math.min(X(z-width/2),X(z+width/2)), ww=Math.abs(X(z-width/2)-X(z+width/2));
+        r(z-width/2-0.024,z+width/2+0.024,0.31,top+0.026,"#373f43");
+        c.clearRect(x,Y(top),ww,Y(0.33)-Y(top));
+      }
+      exteriorLettering(c,"入口",X(-0.92),Y(1.28),17,"#1a4678");
+      exteriorLettering(c,"出口",X(3.90),Y(1.22),17,"#1a4678");
+    }
   });
 }
 function ryobiFrontTex(dest){
-  return canvasTex(256, 320, (g,w,h)=>{
-    g.fillStyle="#f4f5f3"; g.fillRect(0,0,w,h);
-    g.fillStyle="#141a20"; g.fillRect(10, h*0.16, w-20, h*0.52);                     // 大きな前面ガラス
-    g.fillStyle="#0c0c0c"; g.fillRect(24, h*0.03, w-48, h*0.1);                       // 行先LED
-    g.fillStyle="#ffb13a"; g.textAlign="center"; g.textBaseline="middle";
-    const t=(dest||"西大寺BC"); let fs=24; do{ g.font="bold "+fs+"px 'Hiragino Sans','Noto Sans JP',sans-serif"; fs--; }while(g.measureText(t).width>w-80 && fs>10);
-    g.fillText(t, w/2+14, h*0.08); g.fillStyle="#7dff7a"; g.font="bold 18px Arial"; g.fillText("314", 42, h*0.08);
-    g.fillStyle="#1d3f86"; g.fillRect(0, h*0.8, w, h*0.2); g.fillStyle="#c8202c"; g.fillRect(0, h*0.77, w, h*0.025);
-    g.fillStyle="#fff7da"; g.beginPath(); g.arc(34, h*0.86, 12, 0, 7); g.arc(w-34, h*0.86, 12, 0, 7); g.fill();
-    g.fillStyle="#fff"; g.font="bold 16px Arial"; g.fillText("RYOBI", w/2, h*0.9);
+  return canvasTex(512,560,(c,w,h)=>{
+    exteriorPanel(c,0,0,w,h,"#f1f1ed");
+    exteriorWindow(c,47,124,418,242);
+    exteriorPanel(c,90,43,332,67,"#1d2325");
+    exteriorPanel(c,99,49,314,55,"#111718");
+    exteriorLettering(c,"314",139,77,30,"#ffc869");
+    exteriorLettering(c,dest||"西大寺BC",286,77,38,"#ffbb60",216);
+    exteriorPanel(c,250,128,5,234,"#222a2f");
+    exteriorPanel(c,0,401,w,159,"#294c82");
+    exteriorPanel(c,0,401,w,12,"#3f679c");
+    exteriorLettering(c,"RYOBI",256,388,23,"#294c82");
+    for(const x of [44,365]){
+      exteriorPanel(c,x,432,103,33,"#263644");
+      exteriorPanel(c,x+5,436,62,24,"#dddcd5");
+      exteriorPanel(c,x+72,436,24,24,"#c99a61");
+    }
+    c.strokeStyle="#202527"; c.lineWidth=5; c.lineCap="round";
+    for(const x of [94,270]){
+      c.beginPath(); c.moveTo(x+51,355); c.lineTo(x+123,294); c.lineTo(x+123,226); c.stroke();
+    }
   });
 }
 /* ---------------- v41.7: トラック（2t 級・キャブオーバー・箱型の荷台）----------------
@@ -6383,8 +6530,8 @@ function dressAeroStar(hu) {
 function makeRyobiBus(dest){
   const g = new THREE.Group();
   const Lb=10.5, W=2.49, y0=0.3, y1=3.1;
-  const sideL=new THREE.MeshPhongMaterial({map:ryobiTex(dest,"L"), shininess:50, specular:0x555555});
-  const sideR=new THREE.MeshPhongMaterial({map:ryobiTex(dest,"R"), shininess:50, specular:0x555555});
+  const sideL=new THREE.MeshPhongMaterial({map:ryobiTex(dest,true), alphaTest:0.5, shininess:50, specular:0x555555});
+  const sideR=new THREE.MeshPhongMaterial({map:ryobiTex(dest,false), shininess:50, specular:0x555555});
   const front=new THREE.MeshPhongMaterial({map:ryobiFrontTex(dest), shininess:70, specular:0x777777});
   const white=new THREE.MeshPhongMaterial({color:0xf2f3f1, shininess:40, specular:0x444444});
   const dark=new THREE.MeshLambertMaterial({color:0x202326});
@@ -6398,8 +6545,17 @@ function makeRyobiBus(dest){
   // 前面ガラスのつや・屋根上の冷房装置
   const ac=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.28,2.6), white); ac.position.set(0,y1+0.14,-0.5); g.add(ac);
   // バンパー・ミラー
-  const bump=new THREE.Mesh(new THREE.BoxGeometry(W+0.04,0.3,0.25), dark); bump.position.set(0,0.42,Lb/2+0.05); g.add(bump);
-  const bump2=bump.clone(); bump2.position.z=-Lb/2-0.05; g.add(bump2);
+  const trim=new THREE.MeshPhongMaterial({color:0x263b59,shininess:30});
+  const details=new THREE.Group(), bumper=new THREE.Mesh(new THREE.BoxGeometry(W-0.44,0.16,0.10),trim);
+  for(const s of [-1,1]){
+    const b=bumper.clone(); b.position.set(0,0.42,s*(Lb/2-0.014)); details.add(b);
+    const plate=new THREE.Mesh(new THREE.PlaneGeometry(0.32,0.16),exteriorFinish(canvasTex(128,64,(c,w,h)=>{
+      exteriorPanel(c,0,0,w,h,"#233e30"); exteriorLettering(c,"岡山 200",64,15,17,"#f1f1df");
+      exteriorLettering(c,"か  ・529",64,42,27,"#f1f1df");
+    })));
+    plate.position.set(0,0.55,s*(Lb/2+0.038)); plate.rotation.y=s<0?Math.PI:0; details.add(plate);
+  }
+  g.add(details);
   const outer=[], mirrors=[];
   const mirG=new THREE.MeshPhongMaterial({color:0x9fb3c2, shininess:90, specular:0xffffff});
   for(const s of [1,-1]){
@@ -6413,7 +6569,7 @@ function makeRyobiBus(dest){
     const mg=new THREE.Mesh(lens,mirG);
     mg.position.set(s*1.58,2.0,Lb/2-0.164); mg.rotation.y=Math.PI; g.add(mg);
     mirrors.push({face:mg, live:new THREE.MeshBasicMaterial({toneMapped:false})}); }
-  outer.push(body, ac);
+  outer.push(body, ac, details);
   // 運転席（運転席視点で表示）と車輪: vehicles.js（Veh.hi("busP")）。運転席の内側は車体の中に隠れていて、運転席視点のときだけ車体を消して見せる
   const hi=Veh.hi("busP", {color:new THREE.Color(0xf2f3f1)}), hu=hi.userData, cab=hu.cab;
   const glass = hu.body.children[1];
@@ -6424,20 +6580,40 @@ function makeRyobiBus(dest){
   hu.body.children[0].geometry.dispose();
   const wheels=[], spin=[];
   for(const w of hu.wheels){ g.add(w.steer); wheels.push(w.steer); spin.push({ m:w.spin, grp:w.steer, front:w.front, r:w.r }); }
-  // 扉（開閉するパネル: 左側面の外側に重ねる）
-  const doorM=new THREE.MeshLambertMaterial({color:0x1b2127});
-  const mkDoor=(zc, wlen)=>{ const panels=[]; for(const s of [-1,1]){ const p=new THREE.Mesh(new THREE.BoxGeometry(0.04,2.35,wlen/2), doorM); p.position.set(W/2+0.02, 1.5, zc+s*wlen/4); g.add(p); panels.push({p, z0:zc+s*wlen/4, s}); } return panels; };
-  const df=mkDoor(Lb/2-0.65, 1.0), dm=mkDoor(-0.12, 1.05);
-  // 尾灯
-  for(const s of [1,-1]){ const t=new THREE.Mesh(new THREE.BoxGeometry(0.26,0.46,0.04), new THREE.MeshBasicMaterial({color:0x8a1010})); t.position.set(s*0.9,1.0,-Lb/2-0.025); g.add(t); }
-  g.userData={doors:[df,dm], wheels, spin, len:Lb, open:0, outer, cab, mirrors, mirrorGlass:mirG, updateDash, wheelG:{ rotation:{ z:0 } }, hiU:hu};
+
+  // 側板の開口とパネルは同じ寸法。前扉は折戸、中扉は車体に沿って開く。
+  const doors=AEROSTAR_DOORS.map(({z,width,top},i)=>{
+    const opening = new THREE.Group(); g.add(opening); outer.push(opening);
+    const height=top-0.33, cy=(top+0.33)/2;
+    const recess=new THREE.Mesh(new THREE.BoxGeometry(0.04,height,width),dark);
+    recess.position.set(W/2-0.42,cy,z); opening.add(recess);
+    const tread=new THREE.Mesh(new THREE.BoxGeometry(0.44,0.039,width),trim);
+    tread.position.set(W/2-0.22,0.35,z); opening.add(tread);
+    const leaf=exteriorFinish(canvasTex(128,512,(c,w,h)=>{
+      exteriorPanel(c,0,0,w,h,"#30383c"); exteriorPanel(c,5,5,w-10,h-10,"#dce0de");
+      exteriorWindow(c,10,16,w-20,266); exteriorWindow(c,13,306,w-26,122);
+      exteriorPanel(c,4,449,w-8,55,"#294c82");
+    }));
+    const panels=[];
+    for(const s of [-1,1]){
+      const pivot=new THREE.Group(), draw=new THREE.Mesh(new THREE.BoxGeometry(0.042,height,width/2-0.014),[leaf,leaf,dark,dark,dark,dark]);
+      draw.position.z=-s*width/4; pivot.add(draw); opening.add(pivot);
+      panels.push({p:pivot,z0:z+s*width/2,y:cy,s,width,fold:i===0});
+    }
+    return panels;
+  });
+  g.userData={doors,wheels,spin,len:Lb,open:0,outer,cab,mirrors,mirrorGlass:mirG,updateDash,wheelG:{rotation:{z:0}},hiU:hu};
+  setBusDoors(g,0);
   return g;
 }
-function setBusDoors(bus, t){      // t: 0=閉 1=開
+function setBusDoors(bus,t){
   bus.userData.open=t;
-  for(const panels of bus.userData.doors) for(const d of panels){ d.p.position.z = d.z0 + d.s*0.24*t; d.p.position.x = 2.49/2+0.02+0.06*t; }
+  for(const panels of bus.userData.doors) for(const d of panels){
+    d.p.position.set(2.49/2+0.016+(d.fold?0.014:0.063)*t,d.y,
+      d.z0+(d.fold?0:d.s*d.width*0.5*t));
+    d.p.rotation.y=d.fold?d.s*t*1.32:0;
+  }
 }
-
 /* 停留所の標柱（名前入り）・待っている人 */
 // v39: 両面の看板・標識は、裏から見ると文字が鏡文字になる。裏面では横を反転して、どちらから見ても読めるようにする
 function backFlip(m){
@@ -10596,57 +10772,229 @@ const JR = (() => {
       for(const q of [pm, am]){ q.castShadow = true; q.frustumCulled = false; root.add(q); }
     }
   }
+
   /* ---- 車両の形（+z 前、原点は車体中央のレール面） ---- */
-  const geoCache = {};
-  function carGeo(mk, lead, pan){
-    const k = mk + (lead ? "L" : "M") + (pan ? "P" : ""); if(geoCache[k]) return geoCache[k];
-    const M = MODELS[mk], len = lead ? M.lead : M.len, w = M.w, fl = 1.05, top = fl + M.h - 0.35, pos = [], col = [];
-    const C = new THREE.Color();
-    const box = (bw, y0, y1, z0, z1, c, seg) => { const g = new THREE.BoxGeometry(bw, y1 - y0, z1 - z0, 1, 1, seg || 1); g.translate(0, (y0 + y1) / 2, (z0 + z1) / 2);
-      const nx = g.toNonIndexed(); const a = nx.attributes.position.array; C.set(c);
-      for(let i = 0; i < a.length; i += 3){ pos.push(a[i], a[i + 1], a[i + 2]); col.push(C.r, C.g, C.b); } g.dispose(); nx.dispose(); };
-    const zf = len / 2, zb = -len / 2, ns = lead ? M.nose : 0, segs = lead && M.nose > 3 ? 24 : 2;
-    // 下から: 床下・スカート、帯、車体、窓の帯、車体（上）、屋根
-    box(w - 0.2, 0.25, fl, zb + 0.2, zf - (lead ? Math.min(ns, 3) : 0.2), M.skirt, segs);
-    box(w, fl, fl + 0.55, zb, zf, M.band === M.body ? M.body : M.body, segs);
-    box(w + 0.01, fl + 0.55, fl + 0.72, zb, zf, M.band, segs);
-    box(w, fl + 0.72, fl + 1.2, zb, zf, M.body, segs);
-    box(w + 0.02, fl + 1.2, fl + 2.1, zb + 1.2, zf - (lead ? Math.max(ns, 1.8) : 1.2), M.win, segs);
-    box(w, fl + 1.2, fl + 2.1, zb, zf, M.body, segs);
-    box(w - 0.05, fl + 2.1, top, zb, zf, M.body, segs);
-    if(M.band2 !== M.band) box(w + 0.015, fl + 0.46, fl + 0.52, zb, zf, M.band2, segs);
-    if(M.ends){ box(w + 0.03, fl + 0.2, top - 0.2, zf - 2.2, zf - 0.3, M.ends); box(w + 0.03, fl + 0.2, top - 0.2, zb + 0.3, zb + 2.2, M.ends); }
-    box(w - 0.6, top, top + 0.25, zb + 2, zf - 2, 0x9a9da2);                                // 屋根上の機器
-    // 台車
-    for(const zc of [zb + 2.6, zf - 2.6]) box(w - 0.5, 0.15, 0.95, zc - 1.3, zc + 1.3, 0x2a2b2d);
-    if(pan){ box(0.12, top + 0.25, top + 1.1, -1.5, -1.3, 0x3d3f42); box(1.6, top + 1.05, top + 1.12, -1.8, -1.0, 0x3d3f42); }
-    // 先頭の形: 前の ns m を細く・低く（新幹線は長い流線形、在来線は前面の傾斜のみ）
-    if(lead){
-      for(let i = 0; i < pos.length; i += 3){
-        const z = pos[i + 2]; if(z < zf - ns) continue;
-        const t = Math.min(1, (z - (zf - ns)) / Math.max(0.01, ns));
-        if(ns > 3){ const wsc = Math.sqrt(Math.max(0.05, 1 - Math.pow(t, 2.2) * 0.92)); pos[i] *= wsc;
-          const yT = top - (top - (fl + 0.35)) * Math.pow(t, 1.35); if(pos[i + 1] > fl + 0.35) pos[i + 1] = fl + 0.35 + (pos[i + 1] - (fl + 0.35)) * (yT - (fl + 0.35)) / (top - (fl + 0.35));
-          if(pos[i + 1] < fl) pos[i + 1] = Math.max(pos[i + 1], 0.25 + 0.5 * t); }
-        else { const yy = pos[i + 1]; if(yy > fl + 1.3) pos[i + 2] -= (yy - (fl + 1.3)) * 0.18 * t; }
+  function shinkansenBody(mk,lead,pan){
+    const train=MODELS[mk], length=lead?train.lead:train.len, end=length/2, half=train.w/2;
+    const base=new THREE.Color(train.body).getStyle(), stripe=new THREE.Color(train.band).getStyle();
+    const blueGold=mk==="n700k", start=lead?end-train.nose:end;
+    const finish=exteriorFinish(canvasTex(2048,512,(c,w,h)=>{
+      exteriorPanel(c,0,0,w,h,base);
+      const x=z=>w*(z/length+0.5), y=m=>h*(1-(m-0.66)/3.05);
+      const stroke=(z0,z1,low,high,color)=>exteriorPanel(c,x(z0),y(high),x(z1)-x(z0),y(low)-y(high),color);
+      stroke(-end,lead?end-4.6:end,1.56,1.78,stripe);
+      stroke(-end,lead?end-5.0:end,1.79,1.83,blueGold?"#b9984e":stripe);
+      stroke(-end,lead?end-4.6:end,1.50,1.53,blueGold?"#c1a765":"#285295");
+      for(let z=-end+2.67;z<start-0.58;z+=1.08) exteriorWindow(c,x(z-0.31),y(2.70),x(0.62)-x(0),y(2.12)-y(2.70));
+      for(const z of lead?[-end+1.35,start-0.25]:[-end+1.35,end-1.35]){
+        const a=x(z-0.46), ww=x(0.92)-x(0);
+        c.strokeStyle="#8a9296"; c.lineWidth=2; c.strokeRect(a,y(3.07),ww,y(1.06)-y(3.07));
+        exteriorWindow(c,a+ww*0.26,y(2.68),ww*0.48,y(2.22)-y(2.68));
+        exteriorPanel(c,a+ww*0.70,y(1.87),ww*0.16,4,"#6d7578");
       }
-      // 運転台の窓（流線形の上面の一部を暗く）・前照灯
-      if(ns > 3){ const Cw = new THREE.Color(0x1a1d22);
-        for(let i = 0; i < pos.length; i += 3){ const z = pos[i + 2]; const t = (z - (zf - ns)) / ns; if(t < 0.3 || t > 0.56) continue;
-          if(pos[i + 1] > fl + 1.25 && Math.abs(pos[i]) < w * 0.26){ col[i] = Cw.r; col[i + 1] = Cw.g; col[i + 2] = Cw.b; } } }
-      else { box(w - 0.3, fl + 1.3, fl + 2.15, zf - 0.02, zf + 0.03, M.win); box(0.35, fl + 0.6, fl + 0.8, zf, zf + 0.05, 0xfff4d0); pos.push(); }
+    }));
+    // 車体肩は丸く、先端は上下に薄い幅広の断面。運転台から先端まで断面を順に絞る。
+    const shape=[
+      [-end,1,0.66,3.74],[lead?start-0.01:end,1,0.66,3.74],
+      ...(lead?[
+        [start+1.0,0.99,0.70,3.62],[start+2.08,0.97,0.75,3.26],
+        [start+3.10,0.92,0.80,2.87],[start+4.34,0.89,0.82,2.23],
+        [start+5.63,0.83,0.87,1.85],[start+7.05,0.77,0.91,1.69],
+        [start+8.48,0.65,0.97,1.58],[start+9.62,0.52,1.02,1.50],
+        [end-0.20,0.30,1.11,1.39],[end,0.08,1.20,1.30]
+      ]:[])
+    ];
+    const profile=[[1,0.18],[1,0.52],[0.985,0.75],[0.91,0.88],[0.75,0.963],[0.52,1],[0,1],[-0.52,1],[-0.75,0.963],[-0.91,0.88],[-0.985,0.75],[-1,0.52],[-1,0.18],[-0.82,0],[0.82,0]];
+    const rings=shape.map(([z,wide,low,top])=>profile.map(([x,y])=>[x*half*wide,low+y*(top-low),z]));
+    const group=new THREE.Group(), geo=new THREE.BufferGeometry(), pos=[], uv=[], index=[];
+    for(const ring of rings) for(const [x,y,z] of ring){
+      pos.push(x,y,z); uv.push(0.5+z/length,Math.min(0.999,Math.max(0.001,(y-0.66)/3.05)));
     }
-    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
-    return geoCache[k] = g;
+    const n=profile.length;
+    for(let i=0;i<rings.length-1;i++) for(let j=0;j<n;j++){
+      const a=i*n+j,b=i*n+(j+1)%n;
+      index.push(a,b,b+n,a,b+n,a+n);
+    }
+    for(let j=1;j<n-1;j++){
+      const p=(rings.length-1)*n;
+      index.push(0,j+1,j,p,p+j,p+j+1);
+    }
+    geo.setIndex(index);
+    geo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+    geo.setAttribute("uv",new THREE.Float32BufferAttribute(uv,2));
+    geo.computeVertexNormals();
+    group.add(new THREE.Mesh(geo,finish));
+    const dark=exteriorFinish(null,0x30373e), glass=exteriorFinish(null,0x26363d);
+    const box=(w,h,d,x,y,z,mat=dark)=>{
+      const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+      m.position.set(x,y,z); group.add(m); return m;
+    };
+    rollingGear(group,[-end+3.0,lead?start+0.58:end-3.0],1.435,0.43,1.86,2.3);
+    if(pan){
+      box(1.27,0.17,2.76,0,3.78,0,exteriorFinish(null,0x909ba2));
+      box(0.07,0.60,0.07,0,4.15,-0.23).rotation.x=0.64;
+      box(0.06,0.59,0.06,0,4.56,-0.24).rotation.x=-0.64;
+      box(1.44,0.05,0.16,0,4.78,0);
+    }
+    if(lead){
+
+      const fitPanel=(row0,row1,col0,col1,mat)=>{
+        const v=[], indices=[], ncol=col1-col0+1;
+        for(let row=row0;row<=row1;row++) for(let col=col0;col<=col1;col++){
+          const [x,y,z]=rings[row][col];
+          v.push(x+Math.sign(x)*0.006,y+0.014,z);
+          if(row<row1&&col<col1){
+            const a=v.length/3-1,b=a+1;
+            indices.push(a,b,b+ncol,a,b+ncol,a+ncol);
+          }
+        }
+        const panel=new THREE.BufferGeometry();
+        panel.setAttribute("position",new THREE.Float32BufferAttribute(v,3));
+        panel.setIndex(indices); panel.computeVertexNormals();
+        group.add(new THREE.Mesh(panel,mat));
+      };
+      fitPanel(2,4,4,8,glass);
+      const lights=exteriorFinish(null,0xdbe2e1);
+      fitPanel(6,7,3,4,lights);
+      fitPanel(6,7,8,9,lights);
+
+    }
+    group.traverse(m=>{if(m.isMesh) m.castShadow=true;});
+    return group;
   }
-  const carMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const commuterBodies = new Map();
+  function commuterBody(mk,lead,pan){
+    const key=mk+"/"+lead+"/"+pan;
+    const cached=commuterBodies.get(key);
+    if(cached) return cached.clone(true);
+    const train=MODELS[mk], length=lead?train.lead:train.len, W=train.w, end=length/2, half=W/2;
+    const urara=mk==="u227", modern=urara||mk==="ml223", diesel=mk==="kiha47";
+    const paint=new THREE.Color(train.body).getStyle();
+    const stripe=new THREE.Color(train.band).getStyle();
+    const roof=exteriorFinish(null,0xa6a9a7), dark=new THREE.MeshLambertMaterial({color:0x363c40});
+    const sideMap=(left)=>exteriorFinish(canvasTex(2048,448,(c,w,h)=>{
+      const X=z=>w*(0.5+(left?-z:z)/length);
+      const panel=(a,b,y,hh,color)=>exteriorPanel(c,Math.min(X(a),X(b)),y,Math.abs(X(a)-X(b)),hh,color);
+      const glass=(a,b,y,hh)=>exteriorWindow(c,Math.min(X(a),X(b)),y,Math.abs(X(a)-X(b)),hh,!modern);
+      exteriorPanel(c,0,0,w,h,paint);
+      if(modern){
+        exteriorPanel(c,0,96,w,216,"#9fa7ab");
+        exteriorPanel(c,0,320,w,30,urara?"#d46a90":stripe);
+        exteriorPanel(c,0,352,w,5,urara?"#e6a13f":"#7794b9");
+        exteriorPanel(c,0,358,w,4,urara?"#e7c06d":"#294b8a");
+      }
+      exteriorPanel(c,0,417,w,31,"#737a7e");
+      const doors=diesel?[-6.65,6.30]:[-5.95,0,5.95];
+      const dw=diesel?0.95:1.31, limits=[-end+0.64,...doors.flatMap(z=>[z-dw/2-0.18,z+dw/2+0.18]),lead?end-2.36:end-0.64];
+      for(let i=0;i<limits.length-1;i+=2){
+        const a=limits[i], b=limits[i+1], n=Math.max(1,Math.round((b-a)/1.63));
+        for(let k=0;k<n;k++){
+          const aa=a+(b-a)*k/n+0.055, bb=a+(b-a)*(k+1)/n-0.055;
+          if(bb-aa>0.25) glass(aa,bb,105,148);
+        }
+      }
+      for(const z of doors){
+        panel(z-dw/2-0.025,z+dw/2+0.025,66,364,"#515c61");
+        panel(z-dw/2+0.018,z+dw/2-0.018,69,357,paint);
+        if(modern) panel(z-dw/2+0.017,z+dw/2-0.017,320,29,stripe);
+        for(const s of [-1,1]) glass(z+s*dw*0.25-dw*0.17,z+s*dw*0.25+dw*0.17,100,140);
+        panel(z-0.014,z+0.014,66,364,"#464e52");
+        panel(z-dw/2,z+dw/2,420,9,"#9ba3a4");
+      }
+      if(lead){
+        panel(end-2.17,end-1.32,78,276,"#626c71");
+        panel(end-2.12,end-1.37,81,266,paint);
+        glass(end-2.02,end-1.48,102,117);
+        glass(end-1.18,end-0.38,102,119);
+        if(urara) exteriorLettering(c,"Urara",X(end-3.31),378,25,"#923b60");
+      }
+    }));
+    const frontMap=(driving)=>exteriorFinish(canvasTex(512,512,(c,w,h)=>{
+      exteriorPanel(c,0,0,w,h,paint);
+      if(modern&&driving){
+        exteriorPanel(c,23,60,466,276,"#212629");
+        if(urara){
+          const pink=c.createLinearGradient(35,0,477,0);
+          pink.addColorStop(0,"#d17ba0"); pink.addColorStop(0.55,"#ee9cb4"); pink.addColorStop(1,"#d07397");
+          exteriorPanel(c,18,316,476,108,pink);
+        }else exteriorPanel(c,18,317,476,62,stripe);
+      }
+      // 真ん中は貫通戸。左右でガラスの境界と高さを分ける。
+      if(driving){
+        exteriorWindow(c,43,104,146,161); exteriorWindow(c,323,104,146,161);
+        exteriorPanel(c,195,82,122,335,modern?"#42474a":"#705342");
+      }else exteriorPanel(c,161,75,190,362,"#374045");
+      exteriorPanel(c,208,86,96,323,modern?"#777e80":paint);
+      exteriorWindow(c,218,113,76,142);
+      exteriorPanel(c,290,280,10,4,"#232626");
+      if(driving&&modern){
+        exteriorPanel(c,55,79,88,26,"#14171a"); exteriorPanel(c,328,79,129,26,"#14171a");
+        exteriorLettering(c,mk==="ml223"?"快速":"普通",99,92,16,"#e2ebeb");
+        if(urara) exteriorLettering(c,"Urara",256,350,28,"#992149");
+      }
+      if(driving){
+        for(const x of [51,397]){
+          exteriorPanel(c,x,modern?286:315,64,26,"#333b3e");
+          exteriorPanel(c,x+4,modern?290:319,29,17,"#eee7ca");
+          exteriorPanel(c,x+37,modern?290:319,23,17,"#991d29");
+        }
+      }
+      exteriorPanel(c,0,441,w,71,"#74797b");
+      exteriorPanel(c,190,442,132,70,"#353a3d");
+    }));
+    const g=new THREE.Group(), top=diesel?3.91:3.75, frontSlope=lead?(modern?0.27:0.12):0;
+    const front=frontMap(lead), rear=frontMap(false);
+    g.add(railShell([
+      [0.99,half-0.13,end-0.17,-end+0.03,0.16], [1.24,half,end-0.06,-end,0.18],
+      [2.16,half,end,-end,0.21], [3.15,half-0.02,end-frontSlope,-end,0.19],
+      [3.50,half-0.12,end-frontSlope-0.05,-end+0.06,0.17],
+      [top,half-0.37,end-frontSlope-0.17,-end+0.18,0.13]
+    ],W,length,[sideMap(true),sideMap(false),roof,dark,front,rear]));
+    rollingGear(g,[-end+2.65,end-2.65],1.067,0.43,1.89,2.1);
+    const box=(w,h,d,x,y,z,material=dark)=>{
+      const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
+      m.position.set(x,y,z); g.add(m); return m;
+    };
+    box(W-0.85,0.43,4.9,0,0.78,0);
+    box(W*0.57,0.19,3.48,0,top+0.075,-3.1,roof);
+    box(W*0.57,0.19,3.48,0,top+0.075,3.1,roof);
+    box(0.44,0.22,0.33,0,0.72,end-0.05);
+    box(0.44,0.22,0.35,0,0.72,-end);
+    if(lead){
+      for(const x of [-0.84,0.84]) box(0.80,0.31,0.42,x,0.93,end-0.24,roof);
+      if(modern){
+        const rubber=exteriorFinish(null,0x242b2d);
+        for(const x of [-0.355,0.355]){
+          const guard=box(0.065,1.42,0.17,x,2.43,end-0.13,rubber);
+          guard.rotation.x=-frontSlope*0.23;
+        }
+      }
+    }
+    if(pan){
+      box(0.94,0.10,1.2,0,top+0.12,-0.4);
+      box(0.064,1.04,0.064,0,top+0.58,-0.20).rotation.x=0.53;
+      box(0.055,0.86,0.055,0,top+1.29,-0.22).rotation.x=-0.69;
+      box(1.42,0.056,0.25,0,top+1.62,-0.50);
+    }
+    g.traverse(m=>{if(m.isMesh) m.castShadow=true;});
+    commuterBodies.set(key,g);
+    return g.clone(true);
+  }
+
+  const shinkansenBodies = new Map();
+  function buildRailCar(mk,lead,pan){
+    if(MODELS[mk].nose<3) return commuterBody(mk,lead,pan);
+    const key=mk+"/"+lead+"/"+pan;
+    if(!shinkansenBodies.has(key)) shinkansenBodies.set(key,shinkansenBody(mk,lead,pan));
+    return shinkansenBodies.get(key).clone(true);
+  }
   function makeTrain(L, dir, mk, ncar, sv){
     const M = MODELS[mk], cars = [], g = new THREE.Group();
     let total = 0;
     for(let i = 0; i < ncar; i++){
       const lead = i === 0 || i === ncar - 1, len = lead ? M.lead : M.len;
       const pan = M.pan.includes(i);
-      const m = new THREE.Mesh(carGeo(mk, lead, pan), carMat); m.castShadow = true;
+      const m = buildRailCar(mk, lead, pan);
       m.userData.flip = i === ncar - 1 && ncar > 1; cars.push({ m, len, off: total + len / 2 }); total += len + 0.6; g.add(m);
     }
     g.visible = false; root.add(g);
@@ -10781,7 +11129,7 @@ const JR = (() => {
     const V = VEHICLES[vkey], M = MODELS[V.mk], g = new THREE.Group(), cars = []; let total = 0;
     for(let i = 0; i < V.n; i++){
       const lead = i === 0 || i === V.n - 1, len = lead ? M.lead : M.len, pan = M.pan.includes(i);
-      const m = new THREE.Mesh(carGeo(V.mk, lead, pan), carMat); m.castShadow = true; m.userData.flip = i === V.n - 1 && V.n > 1;
+      const m = buildRailCar(V.mk, lead, pan); m.userData.flip = i === V.n - 1 && V.n > 1;
       cars.push({ m, len, off: total + len / 2 }); total += len + 0.6; g.add(m);
     }
     g.userData = { jr: true, cars, len: total }; return g;

@@ -89,3 +89,9 @@ build_v5.py の大きな格子の計算は行の帯ごとに行います（結�
 - [西川緑道公園付近（2025年2月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66555%2C133.92365&heading=100) · [太陽生命岡山ビル前（2025年2月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66548%2C133.92730&heading=132)
 - [城下・シンフォニービル前（2025年3月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66567%2C133.92990&heading=169) · [天満屋西面（2025年4月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.66171%2C133.92847&heading=90)
 - [中納言（2025年2月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.657548%2C133.937717&heading=54) · [東山（2025年4月）](https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=34.656248%2C133.942669&heading=96)
+
+### v68 の車両外観資料
+
+- 岡電 [車両紹介](https://okayama-kido.co.jp/tram/vehicle/) と [9201号の走行写真](https://hirolrt.sakura.ne.jp/syaryou/okayama/9200/9201.html)。MOMOは傾いた前面、低床の裾、連接幌、屋根上機器。3000形・7000形は丸い屋根肩と別体の台車。7001号では [たま電車の外観](https://okayama.keizai.biz/photoflash/6362/) を参考に耳と配色を追加。
+- [三菱ふそう エアロスター](https://www.mitsubishi-fuso.com/ja/product/aero-star/) と [両備バスのノンステップ車](https://www.kipio.net/ryobi-ka529.html)。前面ガラスとワイパー、ホイールアーチ、乗降口の位置。車体と開閉パネルで同じ開口寸法を使う。
+- JR西日本 [Urara 実車写真](https://www.westjr.co.jp/press/article/items/230529_00_press_okatetsu.pdf)、[N700系 みずほ・さくら](https://www.jr-odekake.net/railroad/shinkansen/mizuho/) と JR東海 [N700Aの先頭形状](https://jr-central.co.jp/news/release/_pdf/000030998.pdf)。在来線は車種別に窓・扉を配置し、先頭車と中間車の妻面を描き分ける。新幹線は断面をつないだ先頭部に窓・灯具のパネルを沿わせる。外装は写真に基づくシミュレーター用モデルで、編成内の個別仕様は簡略化している。
